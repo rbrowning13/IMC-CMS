@@ -18,3 +18,12 @@ instance/
 
 # macOS junk
 .DS_Store
+# Project-specific ignores
+uploads/
+uploads/*
+instance/
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+*.pyc
