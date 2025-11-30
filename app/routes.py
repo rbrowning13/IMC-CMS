@@ -26,18 +26,17 @@ from markupsafe import Markup, escape  # <-- ADD THIS LINE
 
 from .extensions import db
 from .models import (
-    Settings,
-    Claim,
-    BillableItem,
-    Report,
-    ClaimDocument,
-    ReportDocument,
-    Invoice,
     Carrier,
+    Claim,
     Employer,
-    Provider,
     Contact,
-    BarrierOption,
+    Provider,
+    BillableItem,
+    Invoice,
+    Report,
+    ReportDocument,
+    ClaimDocument,
+    Settings,
 )
 
 bp = Blueprint("main", __name__)
