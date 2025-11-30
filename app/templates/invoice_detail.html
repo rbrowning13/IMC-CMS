@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}Invoice {{ invoice.invoice_number or "Draft" }} - Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+  <div class="row mb-2">
+    <div class="col d-flex justify-content-between align-items-center">
+      <div>
+        <a href="{{ url_for('main.billing_list') }}" class="btn btn-sm btn-outline-secondary me-2">
+          &larr; Back to Billing
+        </a>
+        {% if claim %}
+          <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-sm btn-outline-secondary">
+            &larr; Back to Claim
+          </a>
+        {% endif %}
+      </div>
+      <div class="d-flex gap-2">
+        <a href="{{ url_for('main.invoice_print', invoice_id=invoice.id) }}"
+           class="btn btn-sm btn-outline-primary">
+          Print Invoice
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- Left: Invoice header / meta -->
+    <div class="col-lg-6 mb-3">
+      <div class="card shadow-sm">
+        <div class="card-header">
+          <h1 class="h5 mb-0">Invoice</h1>
+        </div>
+        <div class="card-body">
+          <dl class="row mb-2 small">
+            <dt class="col-sm-4">Invoice #</dt>
+            <dd class="col-sm-8">
+              {{ invoice.invoice_number or "Draft (no number yet)" }}
+            </dd>
+
+            <dt class="col-sm-4">Status</dt>
+            <dd class="col-sm-8">
+              {{ invoice.status or "Draft" }}
+            </dd>
+
+            <dt class="col-sm-4">Invoice Date</dt>
+            <dd class="col-sm-8">
+              {{ invoice.invoice_date or "—" }}
+            </dd>
+
+            <dt class="col-sm-4">Dates of Service</dt>
+            <dd class="col-sm-8">
+              {% if invoice.dos_start and invoice.dos_end %}
+                {{ invoice.dos_start }} – {{ invoice.dos_end }}
+              {% elif invoice.dos_start %}
+                From {{ invoice.dos_start }}
+              {% elif invoice.dos_end %}
+                Through {{ invoice.dos_end }}
+              {% else %}
+                —
+              {% endif %}
+            </dd>
+          </dl>
+
+          {% if claim %}
+          <hr>
+          <dl class="row mb-0 small">
+            <dt class="col-sm-4">Claim #</dt>
+            <dd class="col-sm-8">
+              <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
+                {{ claim.claim_number or "—" }}
+              </a>
+            </dd>
+
+            <dt class="col-sm-4">Claimant</dt>
+            <dd class="col-sm-8">
+              {{ claim.claimant_name or "—" }}
+            </dd>
+
+            <dt class="col-sm-4">Employer</dt>
+            <dd class="col-sm-8">
+              {% if claim.employer %}
+                <a href="{{ url_for('main.employer_detail', employer_id=claim.employer.id) }}">
+                  {{ claim.employer.name }}
+                </a>
+              {% else %}
+                —
+              {% endif %}
+            </dd>
+
+            <dt class="col-sm-4">Carrier</dt>
+            <dd class="col-sm-8">
+              {% if claim.carrier %}
+                <a href="{{ url_for('main.carrier_detail', carrier_id=claim.carrier.id) }}">
+                  {{ claim.carrier.name }}
+                </a>
+              {% else %}
+                —
+              {% endif %}
+            </dd>
+          </dl>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Status edit + actions -->
+    <div class="col-lg-6 mb-3">
+      <div class="card shadow-sm">
+        <div class="card-header">
+          <h2 class="h6 mb-0">Invoice Status</h2>
+        </div>
+        <div class="card-body">
+          <form method="post" action="{{ url_for('main.invoice_update', invoice_id=invoice.id) }}" class="row g-2 align-items-end">
+            <div class="col-sm-6">
+              <label class="form-label form-label-sm">Status</label>
+              <select name="status" class="form-select form-select-sm">
+                {% set current_status = invoice.status or "Draft" %}
+                {% for s in ["Draft", "Sent", "Paid", "Void"] %}
+                  <option value="{{ s }}" {% if s == current_status %}selected{% endif %}>
+                    {{ s }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label form-label-sm">Invoice Date</label>
+              <input type="date"
+                     name="invoice_date"
+                     class="form-control form-control-sm"
+                     value="{{ invoice.invoice_date or '' }}">
+            </div>
+            <div class="col-sm-2 d-grid">
+              <button type="submit" class="btn btn-sm btn-primary mt-3">
+                Save
+              </button>
+            </div>
+          </form>
+
+          <hr>
+
+          <form method="post"
+                action="{{ url_for('main.invoice_add_uninvoiced', invoice_id=invoice.id) }}"
+                class="mb-2">
+            <button type="submit"
+                    class="btn btn-sm btn-outline-secondary"
+                    {% if (invoice.status or "Draft") != "Draft" %}disabled{% endif %}>
+              Add all uninvoiced complete items
+            </button>
+          </form>
+
+          <form method="post"
+                action="{{ url_for('main.invoice_delete', invoice_id=invoice.id) }}"
+                onsubmit="return confirm('Delete this draft invoice and return its items to the claim?');">
+            <button type="submit"
+                    class="btn btn-sm btn-outline-danger"
+                    {% if (invoice.status or "Draft") != "Draft" %}disabled{% endif %}>
+              Delete Draft Invoice
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Line items + totals -->
+  <div class="row">
+    <div class="col-lg-8 mb-3">
+      <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h2 class="h6 mb-0">Line Items</h2>
+          <small class="text-muted">
+            {% if items %}
+              {{ items|length }} item{{ items|length != 1 and "s" or "" }}
+            {% else %}
+              No items
+            {% endif %}
+          </small>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm mb-0 align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th style="width: 9rem;">Service Date</th>
+                  <th style="width: 6rem;">Code</th>
+                  <th>Description</th>
+                  <th class="text-end" style="width: 8rem;">Quantity</th>
+                  <th class="text-end" style="width: 10rem;">From Claim</th>
+                  <th class="text-end" style="width: 7rem;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+              {% if items %}
+                {% for item in items %}
+                  <tr>
+                    <td>{{ item.service_date or "—" }}</td>
+                    <td>{{ item.activity_code or "" }}</td>
+                    <td>{{ item.description or "" }}</td>
+                    <td class="text-end">
+                      {% if item.quantity is not none %}
+                        {{ "%.2f"|format(item.quantity) }}
+                      {% else %}
+                        —
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      {% if item.claim_id %}
+                        <a href="{{ url_for('main.claim_detail', claim_id=item.claim_id) }}"
+                           class="link-secondary">
+                          Claim {{ item.claim.claim_number if item.claim and item.claim.claim_number else item.claim_id }}
+                        </a>
+                      {% else %}
+                        —
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      {% if (invoice.status or "Draft") == "Draft" %}
+                        <form method="post"
+                              action="{{ url_for('main.invoice_remove_item',
+                                                 invoice_id=invoice.id,
+                                                 item_id=item.id) }}"
+                              onsubmit="return confirm('Remove this item from the invoice and return it to the claim?');">
+                          <button type="submit" class="btn btn-sm btn-outline-danger">
+                            Remove
+                          </button>
+                        </form>
+                      {% else %}
+                        <span class="text-muted small">Locked</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="6" class="text-center text-muted py-3">
+                    No items on this invoice.
+                  </td>
+                </tr>
+              {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Totals -->
+    <div class="col-lg-4 mb-3">
+      <div class="card shadow-sm">
+        <div class="card-header">
+          <h2 class="h6 mb-0">Totals</h2>
+        </div>
+        <div class="card-body">
+          <dl class="row small mb-1">
+            <dt class="col-7">Billable hours</dt>
+            <dd class="col-5 text-end">
+              {{ "%.2f"|format(invoice.total_hours or 0) }}
+            </dd>
+
+            <dt class="col-7">Mileage (miles)</dt>
+            <dd class="col-5 text-end">
+              {{ "%.2f"|format(invoice.total_miles or 0) }}
+            </dd>
+
+            <dt class="col-7">Expenses ($)</dt>
+            <dd class="col-5 text-end">
+              {{ "%.2f"|format(invoice.total_expenses or 0) }}
+            </dd>
+          </dl>
+          <hr class="my-2">
+          <dl class="row fw-bold mb-0">
+            <dt class="col-7">Invoice total</dt>
+            <dd class="col-5 text-end">
+              ${{ "%.2f"|format(invoice.total_amount or 0) }}
+            </dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

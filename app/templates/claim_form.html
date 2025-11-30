@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}New Claim - Impact CMS{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="row">
+    <div class="col-lg-8 col-xl-6 mb-3">
+      <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h1 class="h5 mb-0">New Claim</h1>
+          <a href="{{ url_for('main.claims_list') }}" class="btn btn-outline-secondary btn-sm">
+            Back to Claims
+          </a>
+        </div>
+        <div class="card-body">
+
+          {% if error %}
+            <div class="alert alert-danger py-1 mb-3">
+              {{ error }}
+            </div>
+          {% endif %}
+
+          <form method="post">
+            <div class="mb-2">
+              <label class="form-label form-label-sm">Claim Number *</label>
+              <input type="text" name="claim_number" class="form-control form-control-sm" required>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label form-label-sm">Claimant Name *</label>
+              <input type="text" name="claimant_name" class="form-control form-control-sm" required>
+            </div>
+
+            <div class="row">
+              <div class="col-6 mb-2">
+                <label class="form-label form-label-sm">Date of Birth</label>
+                <input
+                  type="date"
+                  name="dob"
+                  class="form-control form-control-sm"
+                >
+              </div>
+              <div class="col-6 mb-2">
+                <label class="form-label form-label-sm">Date of Injury</label>
+                <input
+                  type="date"
+                  name="doi"
+                  class="form-control form-control-sm"
+                >
+              </div>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label form-label-sm">Carrier *</label>
+              <select name="carrier_id" class="form-select form-select-sm" required>
+                <option value="">-- Select Carrier --</option>
+                {% for carrier in carriers %}
+                  <option value="{{ carrier.id }}">{{ carrier.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label form-label-sm">Employer *</label>
+              <select name="employer_id" class="form-select form-select-sm" required>
+                <option value="">-- Select Employer --</option>
+                {% for employer in employers %}
+                  <option value="{{ employer.id }}">
+                    {{ employer.name }} ({{ employer.carrier.name if employer.carrier else "No carrier" }})
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label form-label-sm">Primary Care Provider</label>
+              <input type="text" name="pcp_name" class="form-control form-control-sm" placeholder="Name and practice">
+            </div>
+
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="telephonic" id="telephonicSwitch">
+              <label class="form-check-label small" for="telephonicSwitch">
+                Telephonic claim (reduced rate)
+              </label>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label form-label-sm">Notes</label>
+              <textarea name="notes" rows="3" class="form-control form-control-sm"></textarea>
+            </div>
+
+            <div class="d-flex justify-content-end">
+              <button type="submit" class="btn btn-primary btn-sm">
+                Save Claim
+              </button>
+            </div>
+          </form>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

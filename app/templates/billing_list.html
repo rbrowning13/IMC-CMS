@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Billing - Impact CMS{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">Billing</h1>
+    <div class="d-flex flex-wrap gap-2 mt-2 mt-sm-0">
+      <input
+        id="invoices-search"
+        type="text"
+        class="form-control form-control-sm"
+        style="min-width: 220px;"
+        placeholder="Search invoices..."
+        aria-label="Search invoices"
+      >
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header">
+      <h2 class="h6 mb-0">All Invoices</h2>
+    </div>
+    <div class="card-body p-0">
+      {% if invoices %}
+        <div class="table-responsive">
+          <table id="invoices-table" class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Invoice #</th>
+                <th>Claim</th>
+                <th>Status</th>
+                <th>Invoice Date</th>
+                <th class="text-end">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for invoice in invoices %}
+                <tr>
+                  <td>
+                    <a href="{{ url_for('main.invoice_detail', invoice_id=invoice.id) }}">
+                      {{ invoice.invoice_number }}
+                    </a>
+                  </td>
+                  <td>
+                    {% if invoice.claim %}
+                      <a href="{{ url_for('main.claim_detail', claim_id=invoice.claim.id) }}">
+                        {{ invoice.claim.claim_number }} · {{ invoice.claim.claimant_name }}
+                      </a>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {{ invoice.status or "Draft" }}
+                  </td>
+                  <td>
+                    {% if invoice.invoice_date %}
+                      {{ invoice.invoice_date }}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-end">
+                    {% if invoice.total_amount is not none %}
+                      ${{ "%.2f"|format(invoice.total_amount) }}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="p-3">
+          <p class="text-muted mb-0">No invoices have been created yet.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    attachTableSearch('invoices-search', 'invoices-table');
+  });
+</script>
+{% endblock %}

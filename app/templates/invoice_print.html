@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Print Invoice {{ invoice.invoice_number or "Draft" }} - Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container mt-3" id="invoice-print-root">
+  <div class="d-print-none mb-3">
+    <a href="{{ url_for('main.invoice_detail', invoice_id=invoice.id) }}"
+       class="btn btn-sm btn-outline-secondary">
+      &larr; Back to Invoice
+    </a>
+    <button class="btn btn-sm btn-primary ms-2" onclick="window.print()">
+      Print
+    </button>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <div class="row">
+        <!-- Business info -->
+        <div class="col-md-6">
+          <h1 class="h4 mb-1">
+            {{ settings.business_name or "Impact Medical Consulting, PLLC" }}
+          </h1>
+          <p class="mb-0 small">
+            {% if settings.address1 %}{{ settings.address1 }}<br>{% endif %}
+            {% if settings.address2 %}{{ settings.address2 }}<br>{% endif %}
+            {% if settings.city or settings.state or settings.postal_code %}
+              {{ settings.city or "" }}{% if settings.city and settings.state %}, {% endif %}
+              {{ settings.state or "" }} {{ settings.postal_code or "" }}<br>
+            {% endif %}
+            {% if settings.phone %}
+              Phone: {{ settings.phone }}<br>
+            {% endif %}
+            {% if settings.email %}
+              Email: {{ settings.email }}<br>
+            {% endif %}
+          </p>
+        </div>
+
+        <!-- Invoice meta -->
+        <div class="col-md-6 text-md-end mt-3 mt-md-0">
+          <h2 class="h4">Invoice</h2>
+          <p class="mb-0 small">
+            <strong>Invoice #:</strong> {{ invoice.invoice_number or "Draft" }}<br>
+            <strong>Date:</strong> {{ invoice.invoice_date or "—" }}<br>
+            <strong>Status:</strong> {{ invoice.status or "Draft" }}<br>
+            <strong>Claim #:</strong>
+              {{ claim.claim_number or "—" }}<br>
+            <strong>Claimant:</strong>
+              {{ claim.claimant_name or "—" }}<br>
+          </p>
+        </div>
+      </div>
+
+      <hr>
+
+      <!-- Bill to -->
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <h3 class="h6">Bill To</h3>
+          {% set bill_to = claim.carrier or None %}
+          {% if bill_to %}
+            <p class="mb-0 small">
+              <strong>{{ bill_to.name }}</strong><br>
+              {% if bill_to.address1 %}{{ bill_to.address1 }}<br>{% endif %}
+              {% if bill_to.address2 %}{{ bill_to.address2 }}<br>{% endif %}
+              {% if bill_to.city or bill_to.state or bill_to.postal_code %}
+                {{ bill_to.city or "" }}{% if bill_to.city and bill_to.state %}, {% endif %}
+                {{ bill_to.state or "" }} {{ bill_to.postal_code or "" }}<br>
+              {% endif %}
+              {% if bill_to.phone %}
+                Phone: {{ bill_to.phone }}<br>
+              {% endif %}
+              {% if bill_to.email %}
+                Email: {{ bill_to.email }}<br>
+              {% endif %}
+            </p>
+          {% else %}
+            <p class="small text-muted mb-0">No carrier assigned to this claim.</p>
+          {% endif %}
+        </div>
+
+        <div class="col-md-6">
+          <h3 class="h6">Dates of Service</h3>
+          <p class="small mb-0">
+            {% if invoice.dos_start and invoice.dos_end %}
+              {{ invoice.dos_start }} – {{ invoice.dos_end }}
+            {% elif invoice.dos_start %}
+              From {{ invoice.dos_start }}
+            {% elif invoice.dos_end %}
+              Through {{ invoice.dos_end }}
+            {% else %}
+              Not specified
+            {% endif %}
+          </p>
+        </div>
+      </div>
+
+      <!-- Line items table -->
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered align-middle mb-3">
+          <thead class="table-light">
+            <tr>
+              <th style="width: 9rem;">Service Date</th>
+              <th style="width: 6rem;">Code</th>
+              <th>Description</th>
+              <th class="text-end" style="width: 8rem;">Quantity</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% if items %}
+            {% for item in items %}
+              <tr>
+                <td>{{ item.service_date or "—" }}</td>
+                <td>{{ item.activity_code or "" }}</td>
+                <td>{{ item.description or "" }}</td>
+                <td class="text-end">
+                  {% if item.quantity is not none %}
+                    {{ "%.2f"|format(item.quantity) }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="4" class="text-center text-muted py-3">
+                No line items on this invoice.
+              </td>
+            </tr>
+          {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Totals -->
+      <div class="row">
+        <div class="col-md-6">
+          {% if settings.invoice_footer_text %}
+            <p class="small text-muted mb-0">
+              {{ settings.invoice_footer_text }}
+            </p>
+          {% endif %}
+        </div>
+        <div class="col-md-6">
+          <table class="table table-sm mb-0">
+            <tbody class="small">
+              <tr>
+                <th class="text-end">Billable hours</th>
+                <td class="text-end" style="width: 8rem;">
+                  {{ "%.2f"|format(invoice.total_hours or 0) }}
+                </td>
+              </tr>
+              <tr>
+                <th class="text-end">Mileage (miles)</th>
+                <td class="text-end">
+                  {{ "%.2f"|format(invoice.total_miles or 0) }}
+                </td>
+              </tr>
+              <tr>
+                <th class="text-end">Expenses ($)</th>
+                <td class="text-end">
+                  {{ "%.2f"|format(invoice.total_expenses or 0) }}
+                </td>
+              </tr>
+              <tr class="fw-bold">
+                <th class="text-end">Total Due</th>
+                <td class="text-end">
+                  ${{ "%.2f"|format(invoice.total_amount or 0) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<style>
+  @media print {
+    body {
+      background: #ffffff !important;
+    }
+    .navbar,
+    .d-print-none {
+      display: none !important;
+    }
+    #invoice-print-root {
+      margin-top: 0 !important;
+    }
+  }
+</style>
+{% endblock %}

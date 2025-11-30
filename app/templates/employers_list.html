@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Employers - Impact CMS{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">Employers</h1>
+    <div class="d-flex flex-wrap gap-2 mt-2 mt-sm-0">
+      <input
+        id="employers-search"
+        type="text"
+        class="form-control form-control-sm"
+        style="min-width: 220px;"
+        placeholder="Search employers..."
+        aria-label="Search employers"
+      >
+      <a href="{{ url_for('main.employer_new') }}" class="btn btn-primary btn-sm">
+        New Employer
+      </a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header">
+      <h2 class="h6 mb-0">All Employers</h2>
+    </div>
+    <div class="card-body p-0">
+      {% if employers %}
+        <div class="table-responsive">
+          <table id="employers-table" class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Name</th>
+                <th>Address</th>
+                <th>City / State / ZIP</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for employer in employers %}
+                <tr>
+                  <td>
+                    <a href="{{ url_for('main.employer_detail', employer_id=employer.id) }}">
+                      {{ employer.name }}
+                    </a>
+                  </td>
+                  <td>
+                    {% if employer.address1 or employer.address2 %}
+                      {{ employer.address1 or '' }}
+                      {% if employer.address2 %}
+                        <br>
+                        <span class="text-muted small">{{ employer.address2 }}</span>
+                      {% endif %}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if employer.city or employer.state or employer.postal_code %}
+                      {{ employer.city or '' }}
+                      {% if employer.state %}, {{ employer.state }}{% endif %}
+                      {% if employer.postal_code %} {{ employer.postal_code }}{% endif %}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if employer.phone %}
+                      {{ employer.phone }}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if employer.email %}
+                      {{ employer.email }}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-end">
+                    <div class="btn-group btn-group-sm" role="group">
+                      <a href="{{ url_for('main.employer_detail', employer_id=employer.id) }}"
+                         class="btn btn-outline-secondary btn-sm">
+                        View
+                      </a>
+                      <a href="{{ url_for('main.employer_edit', employer_id=employer.id) }}"
+                         class="btn btn-outline-secondary btn-sm">
+                        Edit
+                      </a>
+                      <form method="post"
+                            action="{{ url_for('main.employer_delete', employer_id=employer.id) }}"
+                            style="display: inline;"
+                            onsubmit="return confirm('Are you sure you want to delete this employer? This cannot be undone.');">
+                        <button type="submit" class="btn btn-outline-danger btn-sm">
+                          Delete
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="p-3">
+          <p class="text-muted mb-0">No employers have been added yet.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    attachTableSearch('employers-search', 'employers-table');
+  });
+</script>
+{% endblock %}

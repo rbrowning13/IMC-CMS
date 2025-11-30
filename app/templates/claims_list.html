@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Claims - Impact CMS{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">Claims</h1>
+    <div class="d-flex flex-wrap gap-2 mt-2 mt-sm-0">
+      <input
+        id="claims-search"
+        type="text"
+        class="form-control form-control-sm"
+        style="min-width: 220px;"
+        placeholder="Search claims..."
+        aria-label="Search claims"
+      >
+      <a href="{{ url_for('main.new_claim') }}" class="btn btn-primary btn-sm">
+        New Claim
+      </a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header">
+      <h2 class="h6 mb-0">All Claims</h2>
+    </div>
+    <div class="card-body p-0">
+      {% if claims %}
+        <div class="table-responsive">
+          <table id="claims-table" class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Claim #</th>
+                <th>Claimant</th>
+                <th>Carrier</th>
+                <th>Employer</th>
+                <th class="text-center">Billing</th>
+              </tr>
+            </thead>
+            <tbody>
+
+              {% for claim in claims %}
+                {% set summary = billing_summary.get(claim.id) if billing_summary else None %}
+
+                <tr>
+                  <td>
+                    <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
+                      {{ claim.claim_number }}
+                    </a>
+                  </td>
+
+                  <td>
+                    <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
+                      {{ claim.claimant_name }}
+                    </a>
+                  </td>
+
+                  <td>
+                    {% if claim.carrier %}
+                      {{ claim.carrier.name }}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+
+                  <td>
+                    {% if claim.employer %}
+                      {{ claim.employer.name }}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+
+                  <td class="text-center">
+
+                    {# ---------- BILLING BADGE LOGIC ---------- #}
+                    {% if not summary or summary["total"] == 0 %}
+                      <span class="badge bg-secondary">No invoices</span>
+
+                    {% elif summary["open"] > 0 %}
+                      <span class="badge bg-warning text-dark">
+                        {{ summary["open"] }} open invoice{% if summary["open"] != 1 %}s{% endif %}
+                      </span>
+
+                    {% else %}
+                      <span class="badge bg-success">All closed</span>
+                    {% endif %}
+
+                  </td>
+
+                </tr>
+              {% endfor %}
+
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="p-3">
+          <p class="text-muted mb-0">No claims have been created yet.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    attachTableSearch('claims-search', 'claims-table');
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Delete Report - Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row justify-content-center mt-4">
+    <div class="col-lg-8 col-xl-6">
+
+      <div class="card shadow-sm border-danger">
+        <div class="card-header bg-danger text-white">
+          <h1 class="h5 mb-0">Confirm Report Deletion</h1>
+        </div>
+        <div class="card-body">
+
+          <div class="alert alert-warning">
+            <strong>Warning:</strong> You are about to permanently delete this report.
+          </div>
+
+          <dl class="row mb-3 small">
+            <dt class="col-sm-4">Claim Number</dt>
+            <dd class="col-sm-8">{{ claim.claim_number }}</dd>
+
+            <dt class="col-sm-4">Claimant</dt>
+            <dd class="col-sm-8">{{ claim.claimant_name }}</dd>
+
+            <dt class="col-sm-4">Report Type</dt>
+            <dd class="col-sm-8">{{ report.report_type or "—" }}</dd>
+
+            <dt class="col-sm-4">DOS Range</dt>
+            <dd class="col-sm-8">
+              {% if report.dos_start and report.dos_end %}
+                {{ report.dos_start }} – {{ report.dos_end }}
+              {% elif report.dos_start %}
+                From {{ report.dos_start }}
+              {% elif report.dos_end %}
+                Through {{ report.dos_end }}
+              {% else %}
+                —
+              {% endif %}
+            </dd>
+          </dl>
+
+          <p class="small text-muted mb-4">
+            This will remove this report record from the system. It will not delete any
+            associated documents or invoices, but the report itself will no longer appear
+            on the claim.
+          </p>
+
+          <form method="post" action="{{ url_for('main.report_delete', report_id=report.id) }}">
+            <div class="d-flex justify-content-between">
+              <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
+                 class="btn btn-outline-secondary">
+                Cancel
+              </a>
+              <button type="submit" class="btn btn-danger">
+                Yes, permanently delete this report
+              </button>
+            </div>
+          </form>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}New Carrier - Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">New Carrier</h1>
+    <a href="{{ url_for('main.carriers_list') }}" class="btn btn-outline-secondary btn-sm">
+      Cancel
+    </a>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form method="post">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label for="name" class="form-label">Name</label>
+            <input type="text" name="name" id="name" class="form-control" required>
+          </div>
+
+          <div class="col-md-4">
+            <label for="city" class="form-label">City</label>
+            <input type="text" name="city" id="city" class="form-control">
+          </div>
+
+          <div class="col-md-2">
+            <label for="state" class="form-label">State</label>
+            <input type="text" name="state" id="state" class="form-control" maxlength="2" placeholder="ID">
+          </div>
+
+          <div class="col-md-3">
+            <label for="postal_code" class="form-label">Postal Code</label>
+            <input type="text" name="postal_code" id="postal_code" class="form-control">
+          </div>
+
+          <div class="col-md-3">
+            <label for="phone" class="form-label">Phone</label>
+            <input type="text" name="phone" id="phone" class="form-control">
+          </div>
+
+          <div class="col-md-3">
+            <label for="fax" class="form-label">Fax</label>
+            <input type="text" name="fax" id="fax" class="form-control">
+          </div>
+
+          <div class="col-md-6">
+            <label for="email" class="form-label">Email</label>
+            <input type="email" name="email" id="email" class="form-control">
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-end mt-3">
+          <button type="submit" class="btn btn-primary">
+            Create Carrier
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

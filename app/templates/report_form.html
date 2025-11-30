@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% block title %}{{ report_label }} - Claim {{ claim.claim_number }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h5 mb-0">
+        {{ report_label }}
+        {% if mode == 'edit' %}<span class="text-muted small">(edit)</span>{% endif %}
+      </h1>
+      <div class="text-muted small">
+        Claim {{ claim.claim_number }} · {{ claim.claimant_name }}
+      </div>
+    </div>
+    <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary btn-sm">
+      Back to Claim
+    </a>
+  </div>
+
+  <div class="row">
+    <div class="col-lg-8 col-xl-7 mb-3">
+      <div class="card shadow-sm">
+        <div class="card-header">
+          <h2 class="h6 mb-0">Report Details</h2>
+        </div>
+        <div class="card-body small">
+          {% if error %}
+            <div class="alert alert-danger py-1 mb-3">
+              {{ error }}
+            </div>
+          {% endif %}
+
+          <form method="post">
+            <!-- Dates of Service -->
+            <div class="row g-2 mb-2">
+              <div class="col-sm-6">
+                <label class="form-label form-label-sm">Dates of Service - Start *</label>
+                <input
+                  type="date"
+                  name="dos_start"
+                  class="form-control form-control-sm"
+                  value="{{ form_data.get('dos_start', report.dos_start if report and report.dos_start else '') }}"
+                >
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label form-label-sm">Dates of Service - End *</label>
+                <input
+                  type="date"
+                  name="dos_end"
+                  class="form-control form-control-sm"
+                  value="{{ form_data.get('dos_end', report.dos_end if report and report.dos_end else '') }}"
+                >
+              </div>
+            </div>
+
+            {% if report_type in ('initial', 'progress') %}
+              <div class="mb-2">
+                <label class="form-label form-label-sm">Next Report Due</label>
+                <input
+                  type="date"
+                  name="next_report_due"
+                  class="form-control form-control-sm"
+                  value="{{ form_data.get('next_report_due', report.next_report_due if report and report.next_report_due else '') }}"
+                >
+              </div>
+            {% endif %}
+
+            {% if report_type == 'initial' %}
+              <!-- PCP from Initial report -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm">Primary Care Provider</label>
+                <input
+                  type="text"
+                  name="pcp_name"
+                  class="form-control form-control-sm"
+                  value="{{ form_data.get('pcp_name', claim.pcp_name or '') }}"
+                  placeholder="Name and practice"
+                >
+              </div>
+
+              <!-- Initial-only fields -->
+              <hr>
+              <div class="mb-2">
+                <label class="form-label form-label-sm">Diagnosis</label>
+                <textarea
+                  name="diagnosis"
+                  rows="2"
+                  class="form-control form-control-sm"
+                >{{ form_data.get('diagnosis', report.diagnosis if report and report.diagnosis else '') }}</textarea>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label form-label-sm">Mechanism of Injury</label>
+                <textarea
+                  name="mechanism_of_injury"
+                  rows="3"
+                  class="form-control form-control-sm"
+                >{{ form_data.get('mechanism_of_injury', report.mechanism_of_injury if report and report.mechanism_of_injury else '') }}</textarea>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label form-label-sm">Co-Existing Conditions</label>
+                <textarea
+                  name="coexisting_conditions"
+                  rows="2"
+                  class="form-control form-control-sm"
+                >{{ form_data.get('coexisting_conditions', report.coexisting_conditions if report and report.coexisting_conditions else '') }}</textarea>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label form-label-sm">Surgical History</label>
+                <textarea
+                  name="surgical_history"
+                  rows="2"
+                  class="form-control form-control-sm"
+                >{{ form_data.get('surgical_history', report.surgical_history if report and report.surgical_history else '') }}</textarea>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label form-label-sm">Medications</label>
+                <textarea
+                  name="medications"
+                  rows="2"
+                  class="form-control form-control-sm"
+                >{{ form_data.get('medications', report.medications if report and report.medications else '') }}</textarea>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label form-label-sm">Diagnostics</label>
+                <textarea
+                  name="diagnostics"
+                  rows="2"
+                  class="form-control form-control-sm"
+                >{{ form_data.get('diagnostics', report.diagnostics if report and report.diagnostics else '') }}</textarea>
+              </div>
+
+              <hr>
+            {% endif %}
+
+            {% if report_type in ('initial', 'progress') %}
+              <div class="row g-2 mb-2">
+                <div class="col-md-4">
+                  <label class="form-label form-label-sm">Next Appointment - Date</label>
+                  <input
+                    type="date"
+                    name="next_appointment_date"
+                    class="form-control form-control-sm"
+                    value="{{ form_data.get('next_appointment_date', '') }}"
+                  >
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label form-label-sm">Next Appointment - Time</label>
+                  <input
+                    type="time"
+                    name="next_appointment_time"
+                    class="form-control form-control-sm"
+                    value="{{ form_data.get('next_appointment_time', '') }}"
+                  >
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label form-label-sm">Next Appointment - Provider</label>
+                  <select
+                    name="next_appointment_provider"
+                    class="form-select form-select-sm"
+                  >
+                    <option value="">-- Select Provider --</option>
+                    {% for p in providers %}
+                      <option
+                        value="{{ p.name }}"
+                        {% if form_data.get('next_appointment_provider', report.next_appointment_provider if report and report.next_appointment_provider else '') == p.name %}selected{% endif %}
+                      >
+                        {{ p.name }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                  <div class="form-text small">
+                    Manage providers under the Providers tab.
+                  </div>
+                </div>
+              </div>
+
+              {% if report_type == 'initial' %}
+                <div class="mb-2">
+                  <label class="form-label form-label-sm">Employment Status</label>
+                  <input
+                    type="text"
+                    name="employment_status"
+                    class="form-control form-control-sm"
+                    placeholder="e.g. Full-time, modified duty, off work"
+                    value="{{ form_data.get('employment_status', report.employment_status if report and report.employment_status else '') }}"
+                  >
+                </div>
+              {% endif %}
+            {% endif %}
+
+            <!-- Shared fields -->
+            <hr>
+            <div class="mb-2">
+              <label class="form-label form-label-sm">Current Status / Treatment Plan</label>
+              <textarea
+                name="current_status_plan"
+                rows="3"
+                class="form-control form-control-sm"
+              >{{ form_data.get('current_status_plan', report.current_status_plan if report and report.current_status_plan else '') }}</textarea>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label form-label-sm">Possible Barriers to Recovery</label>
+              <div class="row">
+                {% for b in barriers_choices %}
+                  <div class="col-sm-6">
+                    <div class="form-check">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        name="barriers"
+                        value="{{ b }}"
+                        id="barrier-{{ loop.index }}"
+                        {% if b in barriers_selected %}checked{% endif %}
+                      >
+                      <label class="form-check-label small" for="barrier-{{ loop.index }}">
+                        {{ b }}
+                      </label>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label form-label-sm">Work Status</label>
+              <textarea
+                name="work_status"
+                rows="2"
+                class="form-control form-control-sm"
+              >{{ form_data.get('work_status', report.work_status if report and report.work_status else '') }}</textarea>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label form-label-sm">Case Management Plan</label>
+              <textarea
+                name="case_management_plan"
+                rows="3"
+                class="form-control form-control-sm"
+              >{{ form_data.get('case_management_plan', report.case_management_plan if report and report.case_management_plan else '') }}</textarea>
+            </div>
+
+            {% if report_type == 'closure' %}
+              <hr>
+              <div class="mb-2">
+                <label class="form-label form-label-sm">Reason for Closure *</label>
+                <select name="closure_reason" class="form-select form-select-sm" required>
+                  <option value="">-- Select Reason --</option>
+                  {% for r in closure_reasons %}
+                    <option
+                      value="{{ r }}"
+                      {% if form_data.get('closure_reason', report.closure_reason if report and report.closure_reason else '') == r %}selected{% endif %}
+                    >
+                      {{ r }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label form-label-sm">Closure Details</label>
+                <input
+                  type="text"
+                  name="closure_details"
+                  class="form-control form-control-sm"
+                  placeholder="Brief explanation of closure"
+                  value="{{ form_data.get('closure_details', report.closure_details if report and report.closure_details else '') }}"
+                >
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label form-label-sm">Case Management Impact</label>
+                <textarea
+                  name="case_management_impact"
+                  rows="3"
+                  class="form-control form-control-sm"
+                >{{ form_data.get('case_management_impact', report.case_management_impact if report and report.case_management_impact else '') }}</textarea>
+              </div>
+            {% endif %}
+
+            <div class="d-flex justify-content-between">
+              <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
+                 class="btn btn-outline-secondary btn-sm">
+                Cancel
+              </a>
+              <button type="submit" class="btn btn-primary btn-sm">
+                {% if mode == 'edit' %}Save Changes{% else %}Save Report{% endif %}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

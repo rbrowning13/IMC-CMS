@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+{% block title %}Edit Report – Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+  <!-- Header / breadcrumb -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h4 mb-0">Edit Report</h1>
+      <div class="text-muted small">
+        Claim: {{ claim.claimant_name }} · Claim #{{ claim.claim_number }}
+        {% if report.report_type %}
+          · Type: {{ report.report_type }}
+        {% endif %}
+      </div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('main.report_detail', report_id=report.id) }}" class="btn btn-outline-secondary btn-sm">
+        Cancel
+      </a>
+    </div>
+  </div>
+
+  <form method="post" action="{{ url_for('main.report_edit', report_id=report.id) }}">
+    {{ csrf_field() if csrf_field is defined }}
+
+    <div class="row">
+      <!-- Left column: core fields -->
+      <div class="col-lg-8 mb-3">
+        <div class="card shadow-sm mb-3">
+          <div class="card-header">
+            <h2 class="h6 mb-0">Report Metadata</h2>
+          </div>
+          <div class="card-body small row g-3">
+
+            <!-- Report type (read-only display, keep value in hidden field) -->
+            <div class="col-md-4">
+              <label class="form-label form-label-sm mb-0">Report Type</label>
+              <input type="text"
+                     class="form-control form-control-sm"
+                     value="{{ report.report_type }}"
+                     readonly>
+              <input type="hidden" name="report_type" value="{{ report.report_type }}">
+            </div>
+
+            <!-- Provider selector -->
+            <div class="col-md-8">
+              <label class="form-label form-label-sm mb-0">Treating Provider</label>
+              <select name="provider_id" class="form-select form-select-sm">
+                <option value="">— Select provider —</option>
+                {% for provider in providers %}
+                  <option value="{{ provider.id }}"
+                          {% if report.provider_id == provider.id %}selected{% endif %}>
+                    {{ provider.name }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- DOS range -->
+            <div class="col-md-4">
+              <label class="form-label form-label-sm mb-0">DOS Start</label>
+              <input type="date"
+                     name="dos_start"
+                     class="form-control form-control-sm"
+                     value="{{ report.dos_start.strftime('%Y-%m-%d') if report.dos_start }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label form-label-sm mb-0">DOS End</label>
+              <input type="date"
+                     name="dos_end"
+                     class="form-control form-control-sm"
+                     value="{{ report.dos_end.strftime('%Y-%m-%d') if report.dos_end }}">
+            </div>
+
+            <!-- Next report due -->
+            <div class="col-md-4">
+              <label class="form-label form-label-sm mb-0">Next Report Due</label>
+              <input type="date"
+                     name="next_report_due"
+                     class="form-control form-control-sm"
+                     value="{{ report.next_report_due.strftime('%Y-%m-%d') if report.next_report_due }}">
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Clinical content -->
+        <div class="card shadow-sm mb-3">
+          <div class="card-header">
+            <h2 class="h6 mb-0">Clinical Content</h2>
+          </div>
+          <div class="card-body small row g-3">
+            <!-- Diagnosis -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Diagnosis</label>
+              <textarea name="diagnosis"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.diagnosis or "" }}</textarea>
+            </div>
+
+            <!-- Mechanism of injury -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Mechanism of Injury</label>
+              <textarea name="mechanism_of_injury"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.mechanism_of_injury or "" }}</textarea>
+            </div>
+
+            <!-- Co-existing conditions -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Co-Existing Conditions</label>
+              <textarea name="coexisting_conditions"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.coexisting_conditions or "" }}</textarea>
+            </div>
+
+            <!-- Surgical history -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Surgical History</label>
+              <textarea name="surgical_history"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.surgical_history or "" }}</textarea>
+            </div>
+
+            <!-- Medications -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Medications</label>
+              <textarea name="medications"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.medications or "" }}</textarea>
+            </div>
+
+            <!-- Diagnostics -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Diagnostics</label>
+              <textarea name="diagnostics"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.diagnostics or "" }}</textarea>
+            </div>
+
+            <!-- Current status / treatment plan -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Current Status / Treatment Plan</label>
+              <textarea name="current_status"
+                        class="form-control form-control-sm"
+                        rows="3">{{ report.current_status or "" }}</textarea>
+            </div>
+
+            <!-- Work status -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Work Status</label>
+              <textarea name="work_status"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.work_status or "" }}</textarea>
+            </div>
+
+            <!-- Case management plan -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Case Management Plan</label>
+              <textarea name="case_management_plan"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.case_management_plan or "" }}</textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Closure-only fields (they can stay empty for Initial/Progress) -->
+        <div class="card shadow-sm mb-3">
+          <div class="card-header">
+            <h2 class="h6 mb-0">Closure (if applicable)</h2>
+          </div>
+          <div class="card-body small row g-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm mb-0">Closure Reason</label>
+              <select name="closure_reason" class="form-select form-select-sm">
+                <option value="">— Not closed —</option>
+                {% set closure = report.closure_reason or "" %}
+                {% for opt in [
+                  "AMA", "Death", "MMI", "RTW", "Task Fulfilled",
+                  "Treatment completed", "Patient Non-compliance",
+                  "Lack of Contact", "Transferred care", "Claim Closure"
+                ] %}
+                  <option value="{{ opt }}"
+                          {% if closure == opt %}selected{% endif %}>
+                    {{ opt }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm mb-0">Closure Details</label>
+              <input type="text"
+                     name="closure_details"
+                     class="form-control form-control-sm"
+                     value="{{ report.closure_details or '' }}">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Case Management Impact</label>
+              <textarea name="case_management_impact"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.case_management_impact or "" }}</textarea>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right column: barriers + next appointment + actions -->
+      <div class="col-lg-4 mb-3">
+
+        <!-- Barriers -->
+        <div class="card shadow-sm mb-3">
+          <div class="card-header">
+            <h2 class="h6 mb-0">Possible Barriers to Recovery</h2>
+          </div>
+          <div class="card-body small" style="max-height: 260px; overflow-y: auto;">
+            {% set selected_ids = selected_barrier_ids if selected_barrier_ids is defined else [] %}
+            {% if barrier_options %}
+              <div class="form-check">
+                {% for opt in barrier_options %}
+                  <div class="form-check mb-1">
+                    <input class="form-check-input"
+                           type="checkbox"
+                           name="barrier_ids"
+                           id="barrier_{{ opt.id }}"
+                           value="{{ opt.id }}"
+                           {% if opt.id in selected_ids %}checked{% endif %}>
+                    <label class="form-check-label" for="barrier_{{ opt.id }}">
+                      {{ opt.label }}
+                    </label>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p class="text-muted mb-0">No barrier options configured.</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Next appointment -->
+        <div class="card shadow-sm mb-3">
+          <div class="card-header">
+            <h2 class="h6 mb-0">Next Appointment</h2>
+          </div>
+          <div class="card-body small row g-2">
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Date / Time</label>
+              <input type="datetime-local"
+                     name="next_appt_datetime"
+                     class="form-control form-control-sm"
+                     value="{% if report.next_appt_datetime %}{{ report.next_appt_datetime.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
+            </div>
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Provider</label>
+              <input type="text"
+                     name="next_appt_provider"
+                     class="form-control form-control-sm"
+                     value="{{ report.next_appt_provider or '' }}">
+            </div>
+          </div>
+        </div>
+
+        <!-- Save / cancel -->
+        <div class="card shadow-sm">
+          <div class="card-body d-flex justify-content-between align-items-center">
+            <a href="{{ url_for('main.report_detail', report_id=report.id) }}"
+               class="btn btn-outline-secondary btn-sm">
+              Cancel
+            </a>
+            <button type="submit" class="btn btn-primary btn-sm">
+              Save Changes
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

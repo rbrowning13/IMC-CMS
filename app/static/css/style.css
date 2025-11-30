@@ -1,0 +1,8 @@
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Accent color placeholder, we'll wire from settings later */
+.btn-primary {
+  /* Bootstrap primary override if desired */
+}

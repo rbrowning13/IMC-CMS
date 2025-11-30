@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Settings - Impact CMS{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Settings</h1>
+  </div>
+
+  {% if message %}
+    <div class="alert alert-success py-1">
+      {{ message }}
+    </div>
+  {% endif %}
+
+  <form method="post" class="mb-4">
+    <!-- Business identity -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header">
+        <h2 class="h6 mb-0">Business Information</h2>
+      </div>
+      <div class="card-body">
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Business Name</label>
+          <input type="text" name="business_name" class="form-control form-control-sm"
+                 value="{{ settings.business_name or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Address 1</label>
+          <input type="text" name="address1" class="form-control form-control-sm"
+                 value="{{ settings.address1 or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Address 2</label>
+          <input type="text" name="address2" class="form-control form-control-sm"
+                 value="{{ settings.address2 or '' }}">
+        </div>
+        <div class="row">
+          <div class="col-4 mb-2">
+            <label class="form-label form-label-sm">City</label>
+            <input type="text" name="city" class="form-control form-control-sm"
+                   value="{{ settings.city or '' }}">
+          </div>
+          <div class="col-4 mb-2">
+            <label class="form-label form-label-sm">State</label>
+            <select name="state" class="form-select form-select-sm">
+              {% set st = settings.state or 'ID' %}
+              {% for code in [
+                'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
+                'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
+                'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'
+              ] %}
+                <option value="{{ code }}" {% if code == st %}selected{% endif %}>{{ code }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-4 mb-2">
+            <label class="form-label form-label-sm">ZIP</label>
+            <input type="text" name="postal_code" class="form-control form-control-sm"
+                   value="{{ settings.postal_code or '' }}">
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Phone</label>
+          <input type="text" name="phone" class="form-control form-control-sm"
+                 value="{{ settings.phone or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Fax</label>
+          <input type="text" name="fax" class="form-control form-control-sm"
+                 value="{{ settings.fax or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Email</label>
+          <input type="email" name="email" class="form-control form-control-sm"
+                 value="{{ settings.email or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label form-label-sm">EIN / Tax ID</label>
+          <input type="text" name="ein" class="form-control form-control-sm"
+                 value="{{ settings.ein or '' }}">
+        </div>
+      </div>
+    </div>
+
+    <!-- Rates -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header">
+        <h2 class="h6 mb-0">Rates</h2>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-4 mb-2">
+            <label class="form-label form-label-sm">Hourly Rate (standard)</label>
+            <input type="text" name="hourly_rate" class="form-control form-control-sm"
+                   value="{{ settings.hourly_rate or '' }}">
+          </div>
+          <div class="col-md-4 mb-2">
+            <label class="form-label form-label-sm">Telephonic Rate</label>
+            <input type="text" name="telephonic_rate" class="form-control form-control-sm"
+                   value="{{ settings.telephonic_rate or '' }}">
+          </div>
+          <div class="col-md-4 mb-2">
+            <label class="form-label form-label-sm">Mileage Rate (per mile)</label>
+            <input type="text" name="mileage_rate" class="form-control form-control-sm"
+                   value="{{ settings.mileage_rate or '' }}">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Billing / workload -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header">
+        <h2 class="h6 mb-0">Billing & Workload</h2>
+      </div>
+      <div class="card-body">
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Default Payment Terms</label>
+          <input type="text" name="payment_terms_default" class="form-control form-control-sm"
+                 placeholder="e.g. Net 30"
+                 value="{{ settings.payment_terms_default or '' }}">
+        </div>
+        <div class="row">
+          <div class="col-md-4 mb-2">
+            <label class="form-label form-label-sm">Dormant Claim (days without activity)</label>
+            <input type="text" name="dormant_claim_days" class="form-control form-control-sm"
+                   value="{{ settings.dormant_claim_days or '' }}">
+          </div>
+          <div class="col-md-4 mb-2">
+            <label class="form-label form-label-sm">Target Min Hours/Week</label>
+            <input type="text" name="target_min_hours_per_week" class="form-control form-control-sm"
+                   value="{{ settings.target_min_hours_per_week or '' }}">
+          </div>
+          <div class="col-md-4 mb-2">
+            <label class="form-label form-label-sm">Target Max Hours/Week</label>
+            <input type="text" name="target_max_hours_per_week" class="form-control form-control-sm"
+                   value="{{ settings.target_max_hours_per_week or '' }}">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- UI / Documents -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header">
+        <h2 class="h6 mb-0">UI & Documents</h2>
+      </div>
+      <div class="card-body">
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Accent Color (hex)</label>
+          <input type="text" name="accent_color" class="form-control form-control-sm"
+                 placeholder="#0055ff"
+                 value="{{ settings.accent_color or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Report Footer Text</label>
+          <textarea name="report_footer_text" rows="2" class="form-control form-control-sm">{{ settings.report_footer_text or '' }}</textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Invoice Footer Text</label>
+          <textarea name="invoice_footer_text" rows="2" class="form-control form-control-sm">{{ settings.invoice_footer_text or '' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- File locations -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header">
+        <h2 class="h6 mb-0">File Storage</h2>
+      </div>
+      <div class="card-body">
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Documents Root Folder (full path)</label>
+          <input type="text" name="documents_root" class="form-control form-control-sm"
+                 placeholder="/Users/you/Documents/ImpactCMS"
+                 value="{{ settings.documents_root or '' }}">
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-end mb-5">
+      <button type="submit" class="btn btn-primary btn-sm">
+        Save Settings
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

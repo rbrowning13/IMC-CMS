@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Delete Claim {{ claim.claim_number }} - Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h4 mb-0 text-danger">Delete Claim</h1>
+      <div class="text-muted small">
+        Claim {{ claim.claim_number }} · {{ claim.claimant_name }}
+      </div>
+    </div>
+    <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary btn-sm">
+      Cancel &amp; Go Back
+    </a>
+  </div>
+
+  <div class="alert alert-warning">
+    <h2 class="h6 fw-bold mb-1">Danger: this action cannot be undone.</h2>
+    <p class="mb-0 small">
+      Deleting this claim will permanently remove the claim record from the system.
+      {% if has_related %}
+        <strong>This claim currently has related billable items, reports, invoices, or documents.</strong>
+        For safety, deletion is blocked until those are removed or detached.
+      {% endif %}
+    </p>
+  </div>
+
+  {% if error %}
+    <div class="alert alert-danger small">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  <div class="card shadow-sm">
+    <div class="card-header">
+      <h2 class="h6 mb-0">Claim Summary</h2>
+    </div>
+    <div class="card-body small">
+      <dl class="row mb-0">
+        <dt class="col-sm-3">Claimant</dt>
+        <dd class="col-sm-9">{{ claim.claimant_name or "—" }}</dd>
+
+        <dt class="col-sm-3">Claim #</dt>
+        <dd class="col-sm-9">{{ claim.claim_number or "—" }}</dd>
+
+        <dt class="col-sm-3">Date of Birth</dt>
+        <dd class="col-sm-9">{{ claim.dob or "—" }}</dd>
+
+        <dt class="col-sm-3">Date of Injury</dt>
+        <dd class="col-sm-9">{{ claim.doi or "—" }}</dd>
+
+        <dt class="col-sm-3">Carrier</dt>
+        <dd class="col-sm-9">
+          {% if claim.carrier %}
+            {{ claim.carrier.name }}
+          {% else %}
+            —
+          {% endif %}
+        </dd>
+
+        <dt class="col-sm-3">Employer</dt>
+        <dd class="col-sm-9">
+          {% if claim.employer %}
+            {{ claim.employer.name }}
+          {% else %}
+            —
+          {% endif %}
+        </dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mt-3">
+    <div class="card-header bg-danger text-white">
+      <h2 class="h6 mb-0">Confirm Deletion</h2>
+    </div>
+    <div class="card-body small">
+      {% if has_related %}
+        <p class="mb-2">
+          This claim has related data (billables, reports, invoices, or documents),
+          so deletion is <strong>blocked</strong> for now.
+        </p>
+        <p class="mb-0">
+          You’ll need to clear those items first before deletion is allowed.
+        </p>
+      {% else %}
+        <p class="mb-2">
+          If you are absolutely sure you want to permanently delete this claim,
+          type <code>DELETE</code> in the box below and click
+          <strong>Yes, permanently delete claim</strong>.
+        </p>
+
+        <form method="post">
+          <div class="mb-3">
+            <label for="confirm" class="form-label">Type <code>DELETE</code> to confirm</label>
+            <input type="text"
+                   id="confirm"
+                   name="confirm"
+                   class="form-control form-control-sm"
+                   autocomplete="off">
+          </div>
+
+          <div class="d-flex justify-content-between">
+            <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary btn-sm">
+              Cancel
+            </a>
+            <button type="submit" class="btn btn-danger btn-sm">
+              Yes, permanently delete claim
+            </button>
+          </div>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

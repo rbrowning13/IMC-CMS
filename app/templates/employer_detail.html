@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}Employer {{ employer.name }} - Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h4 mb-0">Employer: {{ employer.name }}</h1>
+      <div class="text-muted small">
+        {% if employer.city or employer.state %}
+          {{ employer.city or '' }}{% if employer.city and employer.state %}, {% endif %}{{ employer.state or '' }}
+        {% else %}
+          No location on file
+        {% endif %}
+      </div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('main.employers_list') }}" class="btn btn-outline-secondary btn-sm">
+        Back to Employers
+      </a>
+      <a href="{{ url_for('main.employer_edit', employer_id=employer.id) }}" class="btn btn-primary btn-sm">
+        Edit
+      </a>
+      <form method="post"
+            action="{{ url_for('main.employer_delete', employer_id=employer.id) }}"
+            onsubmit="return confirm('Are you sure you want to delete this employer? This cannot be undone.') && confirm('Really delete this employer and all related contacts?');">
+        <button type="submit" class="btn btn-outline-danger btn-sm">
+          Delete
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- Employer summary -->
+    <div class="col-lg-5 mb-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-header">
+          <h2 class="h6 mb-0">Employer Info</h2>
+        </div>
+        <div class="card-body small">
+          <dl class="row mb-0">
+            <dt class="col-sm-4">Name</dt>
+            <dd class="col-sm-8">{{ employer.name }}</dd>
+
+            <dt class="col-sm-4">City</dt>
+            <dd class="col-sm-8">{{ employer.city or "—" }}</dd>
+
+            <dt class="col-sm-4">State</dt>
+            <dd class="col-sm-8">{{ employer.state or "—" }}</dd>
+
+            <dt class="col-sm-4">Postal Code</dt>
+            <dd class="col-sm-8">{{ employer.postal_code or "—" }}</dd>
+
+            <dt class="col-sm-4">Phone</dt>
+            <dd class="col-sm-8">{{ employer.phone or "—" }}</dd>
+
+            <dt class="col-sm-4">Fax</dt>
+            <dd class="col-sm-8">{{ employer.fax or "—" }}</dd>
+
+            <dt class="col-sm-4">Email</dt>
+            <dd class="col-sm-8">
+              {% if employer.email %}
+                <a href="mailto:{{ employer.email }}">{{ employer.email }}</a>
+              {% else %}
+                —
+              {% endif %}
+            </dd>
+
+            <dt class="col-sm-4">Claims</dt>
+            <dd class="col-sm-8">
+              {{ employer.claims|length }}
+            </dd>
+
+            <dt class="col-sm-4">Invoices</dt>
+            <dd class="col-sm-8">
+              {{ employer.invoices|length }}
+            </dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contacts -->
+    <div class="col-lg-7 mb-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h2 class="h6 mb-0">Contacts</h2>
+        </div>
+        <div class="card-body small d-flex flex-column">
+          {% if employer.contacts %}
+            <div class="table-responsive mb-3" style="max-height: 260px; overflow-y: auto;">
+              <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th style="width: 30%;">Notes</th>
+                    <th class="text-end">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for contact in employer.contacts %}
+                    <tr>
+                      <td>{{ contact.name }}</td>
+                      <td>{{ contact.role or "—" }}</td>
+                      <td>{{ contact.phone or "—" }}</td>
+                      <td>
+                        {% if contact.email %}
+                          <a href="mailto:{{ contact.email }}">{{ contact.email }}</a>
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
+                      <td>
+                        {% if contact.notes %}
+                          <span class="text-muted text-truncate d-inline-block"
+                                style="max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            {{ contact.notes }}
+                          </span>
+                        {% else %}
+                          <span class="text-muted fst-italic">No notes</span>
+                        {% endif %}
+                      </td>
+                      <td class="text-end">
+                        <a href="{{ url_for('main.employer_detail', employer_id=employer.id, edit_contact_id=contact.id) }}"
+                           class="btn btn-sm btn-outline-secondary me-1">
+                          Edit
+                        </a>
+                        <form method="post"
+                              action="{{ url_for('main.contact_delete', contact_id=contact.id) }}"
+                              class="d-inline"
+                              onsubmit="return confirm('Delete this contact? This cannot be undone.');">
+                          <button type="submit" class="btn btn-sm btn-outline-danger">
+                            Delete
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="text-muted mb-3">
+              No contacts yet for this employer.
+            </p>
+          {% endif %}
+
+          <hr class="my-2">
+
+          <!-- Add / Edit contact form -->
+          <h3 class="h6 mt-2 mb-2">
+            {% if edit_contact %}
+              Edit Contact
+            {% else %}
+              Add Contact
+            {% endif %}
+          </h3>
+          <form method="post"
+                action="{{ url_for('main.contact_new', parent_type='employer', parent_id=employer.id) }}"
+                class="row g-2">
+            {% if edit_contact %}
+              <input type="hidden" name="contact_id" value="{{ edit_contact.id }}">
+            {% endif %}
+            <div class="col-md-4">
+              <label class="form-label form-label-sm mb-0">Name</label>
+              <input type="text" name="name" class="form-control form-control-sm" required
+                     value="{{ edit_contact.name if edit_contact else '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label form-label-sm mb-0">Role</label>
+              <input type="text" name="role" class="form-control form-control-sm" placeholder="HR, Supervisor, etc."
+                     value="{{ edit_contact.role if edit_contact else '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label form-label-sm mb-0">Phone</label>
+              <input type="text" name="phone" class="form-control form-control-sm"
+                     value="{{ edit_contact.phone if edit_contact else '' }}">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label form-label-sm mb-0">Email</label>
+              <input type="email" name="email" class="form-control form-control-sm"
+                     value="{{ edit_contact.email if edit_contact else '' }}">
+            </div>
+            <div class="col-md-7">
+              <label class="form-label form-label-sm mb-0">Notes</label>
+              <textarea name="notes"
+                class="form-control form-control-sm"
+                rows="2"
+                placeholder="Best contact for work status, etc.">{{ edit_contact.notes if edit_contact else '' }}</textarea>
+            </div>
+            <div class="col-12 d-flex justify-content-end gap-2">
+              {% if edit_contact %}
+                <a href="{{ url_for('main.employer_detail', employer_id=employer.id) }}" class="btn btn-sm btn-outline-secondary">
+                  Cancel
+                </a>
+                <button type="submit" class="btn btn-sm btn-primary">
+                  Save Changes
+                </button>
+              {% else %}
+                <button type="submit" class="btn btn-sm btn-primary">
+                  Add Contact
+                </button>
+              {% endif %}
+            </div>
+          </form>
+fd
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

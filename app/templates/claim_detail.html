@@ -1,0 +1,812 @@
+{% extends "base.html" %}
+{% block title %}Claim {{ claim.claim_number }} - Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Header row -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h4 mb-0">
+        Claim {{ claim.claim_number }}
+      </h1>
+      <a href="{{ url_for('main.claim_edit', claim_id=claim.id) }}"
+   class="btn btn-sm btn-outline-secondary">
+  Edit Claim
+</a>
+      <div class="text-muted small">
+        {{ claim.claimant_name }}
+        {% if employer %}
+          · Employer: {{ employer.name }}
+        {% endif %}
+        {% if carrier %}
+          · Carrier: {{ carrier.name }}
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="text-end">
+      <!-- Invoice state badge -->
+      {% if open_invoice_count > 0 %}
+        <span class="badge bg-warning text-dark mb-1">
+          {{ open_invoice_count }} Open Invoice{{ 's' if open_invoice_count != 1 else '' }}
+        </span>
+      {% else %}
+        <span class="badge bg-success mb-1">
+          All Invoices Closed
+        </span>
+      {% endif %}
+      <div class="d-flex gap-2 justify-content-end">
+        <a href="{{ url_for('main.billing_list') }}" class="btn btn-outline-secondary btn-sm">
+          Billing
+        </a>
+        <a href="{{ url_for('main.claims_list') }}" class="btn btn-outline-secondary btn-sm">
+          All Claims
+        </a>
+        <a href="{{ url_for('main.claim_delete', claim_id=claim.id) }}"
+           class="btn btn-outline-danger btn-sm">
+          Delete Claim
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Claim summary row -->
+  <div class="row mb-3">
+    <div class="col-md-6 mb-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-header">
+          <h2 class="h6 mb-0">Claim Summary</h2>
+        </div>
+        <div class="card-body small">
+          <dl class="row mb-0">
+            <dt class="col-sm-4">Claimant</dt>
+            <dd class="col-sm-8">{{ claim.claimant_name }}</dd>
+
+            <dt class="col-sm-4">Claim #</dt>
+            <dd class="col-sm-8">{{ claim.claim_number }}</dd>
+
+            <dt class="col-sm-4">DOB</dt>
+            <dd class="col-sm-8">{{ claim.dob or "—" }}</dd>
+
+            <dt class="col-sm-4">DOI</dt>
+            <dd class="col-sm-8">{{ claim.doi or "—" }}</dd>
+
+            <dt class="col-sm-4">Address</dt>
+            <dd class="col-sm-8">
+              {% if claim.claimant_address1 %}
+                {{ claim.claimant_address1 }}{% if claim.claimant_address2 %}, {{ claim.claimant_address2 }}{% endif %}<br>
+                {{ claim.claimant_city or '' }}{% if claim.claimant_state %}, {{ claim.claimant_state }}{% endif %} {{ claim.claimant_postal_code or '' }}
+              {% else %}
+                —
+              {% endif %}
+            </dd>
+
+            <dt class="col-sm-4">Phone</dt>
+            <dd class="col-sm-8">{{ claim.claimant_phone or "—" }}</dd>
+
+            <dt class="col-sm-4">Email</dt>
+            <dd class="col-sm-8">{{ claim.claimant_email or "—" }}</dd>
+
+            <dt class="col-sm-4">Primary Care</dt>
+            <dd class="col-sm-8">{{ claim.primary_care_provider or "—" }}</dd>
+
+
+            <dt class="col-sm-4">Claim State</dt>
+            <dd class="col-sm-8">{{ claim.claim_state or "—" }}</dd>
+
+            <dt class="col-sm-4">Adjuster</dt>
+            <dd class="col-sm-8">
+              {% if claim.carrier_contact %}
+                {{ claim.carrier_contact.name }}
+                {% if claim.carrier_contact.phone %}
+                  · {{ claim.carrier_contact.phone }}
+                {% endif %}
+                {% if claim.carrier_contact.email %}
+                  · {{ claim.carrier_contact.email }}
+                {% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </dd>
+
+            <dt class="col-sm-4">Telephonic?</dt>
+            <dd class="col-sm-8">
+              {% if claim.is_telephonic %}
+                Yes
+              {% else %}
+                No
+              {% endif %}
+            </dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <!-- Invoices for this claim -->
+    <div class="col-md-6 mb-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h2 class="h6 mb-0">Invoices for this Claim</h2>
+          <a href="{{ url_for('main.invoice_new_for_claim', claim_id=claim.id) }}"
+             class="btn btn-sm btn-primary">
+            Create Invoice from Billable Items
+          </a>
+        </div>
+        <div class="card-body small p-0">
+          {% if invoices %}
+            <div class="table-responsive">
+              <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th>#</th>
+                    <th>Status</th>
+                    <th>DOS Range</th>
+                    <th class="text-end">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for inv in invoices %}
+                    {% set status = inv.status or "Draft" %}
+                    <tr>
+                      <td>
+                        <a href="{{ url_for('main.invoice_detail', invoice_id=inv.id) }}">
+                          {{ inv.invoice_number }}
+                        </a>
+                      </td>
+                      <td>
+                        {% if status == "Paid" %}
+                          <span class="badge bg-success">Paid</span>
+                        {% elif status == "Void" %}
+                          <span class="badge bg-secondary">Void</span>
+                        {% elif status == "Sent" %}
+                          <span class="badge bg-info text-dark">Sent</span>
+                        {% else %}
+                          <span class="badge bg-warning text-dark">Draft</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        {% if inv.dos_start or inv.dos_end %}
+                          {{ inv.dos_start or '—' }} &rarr; {{ inv.dos_end or '—' }}
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
+                      <td class="text-end">
+                        ${{ "%.2f"|format(inv.total_amount or 0.0) }}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="p-3">
+              <p class="text-muted mb-0">No invoices yet for this claim.</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Accordions for Billable, Reports, Documents -->
+  <div class="accordion" id="claimAccordion">
+
+    <!-- Billable Items -->
+    <div class="accordion-item mb-2">
+      <h2 class="accordion-header" id="billableHeading">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#billableCollapse" aria-expanded="true"
+                aria-controls="billableCollapse">
+          Billable Items
+        </button>
+      </h2>
+      <div id="billableCollapse" class="accordion-collapse collapse show"
+           aria-labelledby="billableHeading" data-bs-parent="#claimAccordion">
+        <div class="accordion-body">
+
+          <!-- Existing items -->
+          <div class="card shadow-sm mb-3">
+            <div class="card-body p-0">
+              {% if billable_items %}
+                <div class="table-responsive">
+                  <table class="table table-sm table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Date</th>
+                        <th>Activity</th>
+                        <th class="text-end">Qty</th>
+                        <th>Units</th>
+                        <th>Description</th>
+                        <th>Invoice</th>
+                        <th class="text-end">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for item in billable_items %}
+                        {% set code = (item.activity_code or '') %}
+                        {% if code == 'MIL' %}
+                          {% set units = 'mi' %}
+                        {% elif code == 'EXP' %}
+                          {% set units = '$' %}
+                        {% else %}
+                          {% set units = 'hr' %}
+                        {% endif %}
+                        <tr>
+                          <td>{{ item.service_date or '—' }}</td>
+                          <td>{{ item.activity_code }}</td>
+                          <td class="text-end">
+                            {% if item.quantity is not none %}
+                              {{ "%.1f"|format(item.quantity) }}
+                            {% else %}
+                              —
+                            {% endif %}
+                          </td>
+                          <td>{{ units }}</td>
+                          <td style="max-width: 280px;">
+                            {% if item.description %}
+                              <span class="text-muted text-truncate d-inline-block"
+                                    style="max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                {{ item.description }}
+                              </span>
+                            {% else %}
+                              <span class="text-muted fst-italic">No description</span>
+                            {% endif %}
+                          </td>
+                          <td>
+                            {% if item.invoice_id %}
+                              {% set inv = invoice_map.get(item.invoice_id) %}
+                              {% if inv %}
+                                <a href="{{ url_for('main.invoice_detail', invoice_id=inv.id) }}"
+                                   class="badge bg-info text-dark text-decoration-none">
+                                  {{ inv.invoice_number }} ({{ inv.status or 'Draft' }})
+                                </a>
+                              {% else %}
+                                <span class="badge bg-secondary">Invoiced</span>
+                              {% endif %}
+                            {% else %}
+                              <span class="badge bg-secondary">Not invoiced</span>
+                            {% endif %}
+                          </td>
+                          <td class="text-end">
+                            <a href="{{ url_for('main.billable_edit', claim_id=claim.id, item_id=item.id) }}"
+                               class="btn btn-outline-secondary btn-sm">
+                              Edit
+                            </a>
+                            <form method="post"
+                                  action="{{ url_for('main.billable_delete', claim_id=claim.id, item_id=item.id) }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('Delete this item?');">
+                              <button type="submit" class="btn btn-outline-danger btn-sm">
+                                Delete
+                              </button>
+                            </form>
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% else %}
+                <div class="p-3">
+                  <p class="text-muted mb-0">No billable items yet.</p>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Add new billable item -->
+          <div class="card shadow-sm">
+            <div class="card-header">
+              <h3 class="h6 mb-0">Add Billable Item</h3>
+            </div>
+            <div class="card-body small">
+              <form method="post" action="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
+                <input type="hidden" name="form_type" value="billable_new">
+
+                <div class="row g-2 align-items-end">
+                  <div class="col-6 col-md-3">
+                    <label for="activity_code" class="form-label form-label-sm mb-1">Activity</label>
+                    <!-- DROPDOWN restored instead of free-text -->
+                    <select name="activity_code"
+                            id="activity_code"
+                            class="form-select form-select-sm"
+                            required>
+                      <option value="">Select activity…</option>
+                      {% for code, label in billable_activity_choices %}
+                        <option value="{{ code }}">{{ code }} – {{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+
+                  <div class="col-6 col-md-3">
+                    <label for="service_date" class="form-label form-label-sm mb-1">Date</label>
+                    <input type="date"
+                           id="service_date"
+                           name="service_date"
+                           class="form-control form-control-sm">
+                  </div>
+
+                  <div class="col-6 col-md-2">
+                    <label for="quantity" class="form-label form-label-sm mb-1">Qty</label>
+                    <input type="number"
+                           step="0.1"
+                           min="0"
+                           id="quantity"
+                           name="quantity"
+                           class="form-control form-control-sm">
+                  </div>
+
+                  <div class="col-12 col-md-4">
+                    <label for="description" class="form-label form-label-sm mb-1">Description</label>
+                    <input type="text"
+                           id="description"
+                           name="description"
+                           class="form-control form-control-sm"
+                           placeholder="e.g. CM – review records, phone calls…">
+                  </div>
+
+                  <div class="col-12 mt-2 text-end">
+                    <button type="submit" class="btn btn-primary btn-sm">
+                      Add Item
+                    </button>
+                  </div>
+                </div>
+              </form>
+              <p class="text-muted mt-2 mb-0 small">
+                Mileage (MIL) is in miles; EXP is in dollars; all other codes are treated as hours.
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    {# ------------------ REPORTS ------------------ #}
+    <div class="accordion-item mb-2">
+      <h2 class="accordion-header" id="reportsHeading">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#reportsCollapse" aria-expanded="true"
+                aria-controls="reportsCollapse">
+          Reports
+        </button>
+      </h2>
+      <div id="reportsCollapse" class="accordion-collapse collapse show"
+           aria-labelledby="reportsHeading" data-bs-parent="#claimAccordion">
+        <div class="accordion-body">
+
+          <!-- Existing reports table -->
+          <div class="card shadow-sm mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h2 class="h6 mb-0">Reports</h2>
+            </div>
+            <div class="card-body p-0">
+              <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width: 12%">Created</th>
+                    <th style="width: 14%">Type</th>
+                    <th style="width: 24%">DOS Range</th>
+                    <th style="width: 20%">Current Status</th>
+                    <th style="width: 15%">Next Report Due</th>
+                    <th style="width: 15%" class="text-end">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                {% if reports %}
+                  {% for r in reports %}
+                    <tr>
+                      <td class="small">
+                        {{ r.created_at.strftime("%Y-%m-%d") if r.created_at else "—" }}
+                      </td>
+                      <td class="small">
+                        {{ r.report_type or "—" }}
+                      </td>
+                      <td class="small">
+                        {% if r.dos_start or r.dos_end %}
+                          {{ r.dos_start or "?" }} – {{ r.dos_end or "?" }}
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
+                      <td class="small">
+                        {{ r.current_status or "—" }}
+                      </td>
+                      <td class="small">
+                        {{ r.next_report_due or "—" }}
+                      </td>
+                      <td class="text-end">
+                        <a href="{{ url_for('main.report_detail', claim_id=claim.id, report_id=r.id) }}"
+                           class="btn btn-sm btn-outline-secondary me-1">
+                          View
+                        </a>
+
+                        <a href="{{ url_for('main.report_edit', claim_id=claim.id, report_id=r.id) }}"
+                           class="btn btn-sm btn-primary me-1">
+                          Edit
+                        </a>
+
+                        <form method="post"
+                              action="{{ url_for('main.report_delete', claim_id=claim.id, report_id=r.id) }}"
+                              class="d-inline"
+                              onsubmit="return confirm('Delete this report? This cannot be undone.');">
+                          <button type="submit" class="btn btn-sm btn-outline-danger">
+                            Delete
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                {% else %}
+                  <tr>
+                    <td colspan="6" class="text-center text-muted small py-3">
+                      No reports yet for this claim.
+                    </td>
+                  </tr>
+                {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- New report form -->
+          <div class="card shadow-sm">
+            <div class="card-header">
+              <h3 class="h6 mb-0">Add Report</h3>
+            </div>
+            <div class="card-body small" id="report-new-form">
+              <form method="post" action="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
+                <input type="hidden" name="form_type" value="report_new">
+
+                <div class="row g-2">
+                  <div class="col-md-3">
+                    <label for="report_type" class="form-label form-label-sm mb-1">Report Type</label>
+                    <select id="report_type"
+                            name="report_type"
+                            class="form-select form-select-sm"
+                            required>
+                      <option value="">Select type…</option>
+                      <option value="Initial">Initial</option>
+                      <option value="Progress">Progress</option>
+                      <option value="Closure">Closure</option>
+                    </select>
+                    <div id="report_type_help" class="form-text small text-muted">
+                      Select a report type to see suggested labels below.
+                    </div>
+                  </div>
+
+                  <div class="col-md-3">
+                    <label for="dos_start" class="form-label form-label-sm mb-1">DOS Start</label>
+                    <input type="date"
+                           id="dos_start"
+                           name="dos_start"
+                           class="form-control form-control-sm">
+                  </div>
+
+                  <div class="col-md-3">
+                    <label for="dos_end" class="form-label form-label-sm mb-1">DOS End</label>
+                    <input type="date"
+                           id="dos_end"
+                           name="dos_end"
+                           class="form-control form-control-sm">
+                  </div>
+
+                  <div class="col-md-3">
+                    <label for="next_report_due"
+                           id="next_report_due_label"
+                           class="form-label form-label-sm mb-1">
+                      Next Report Due
+                    </label>
+                    <input type="date"
+                           id="next_report_due"
+                           name="next_report_due"
+                           class="form-control form-control-sm">
+                    <div id="next_report_help" class="form-text small text-muted">
+                      Optional follow-up date, depending on report type.
+                    </div>
+                  </div>
+                </div>
+
+                <div class="row g-2 mt-2">
+                  <div class="col-md-4">
+                    <label for="status_text"
+                           id="status_text_label"
+                           class="form-label form-label-sm mb-1">
+                      Current Status
+                    </label>
+                    <textarea id="status_text"
+                              name="status_text"
+                              rows="3"
+                              class="form-control form-control-sm"
+                              placeholder="Clinical status, key issues, changes since last report…"></textarea>
+                  </div>
+
+                  <div class="col-md-4">
+                    <label for="work_status"
+                           id="work_status_label"
+                           class="form-label form-label-sm mb-1 d-flex justify-content-between align-items-center">
+                      <span>Work Status</span>
+                      <button type="button"
+                              class="btn btn-link btn-sm p-0 ms-2"
+                              data-append-field="work_status">
+                        Append from last report
+                      </button>
+                    </label>
+                    <textarea id="work_status"
+                              name="work_status"
+                              rows="3"
+                              class="form-control form-control-sm"
+                              placeholder="Current work / duty status, restrictions, RTW plans…"></textarea>
+                  </div>
+
+                  <div class="col-md-4">
+                    <label for="case_management_plan"
+                           id="plan_label"
+                           class="form-label form-label-sm mb-1 d-flex justify-content-between align-items-center">
+                      <span>Case Management Plan</span>
+                      <button type="button"
+                              class="btn btn-link btn-sm p-0 ms-2"
+                              data-append-field="case_management_plan">
+                        Append from last report
+                      </button>
+                    </label>
+                    <textarea id="case_management_plan"
+                              name="case_management_plan"
+                              rows="3"
+                              class="form-control form-control-sm"
+                              placeholder="Planned interventions, follow-up tasks, providers, timelines…"></textarea>
+                  </div>
+                </div>
+
+                <div class="mt-3 text-end">
+                  <button type="submit" class="btn btn-primary btn-sm">
+                    Add Report
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+    {# -------------- END REPORTS ------------------ #}
+
+    <!-- Documents -->
+    <div class="accordion-item mb-2">
+      <h2 class="accordion-header" id="documentsHeading">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#documentsCollapse" aria-expanded="true"
+                aria-controls="documentsCollapse">
+          Documents
+        </button>
+      </h2>
+      <div id="documentsCollapse" class="accordion-collapse collapse show"
+           aria-labelledby="documentsHeading" data-bs-parent="#claimAccordion">
+        <div class="accordion-body">
+
+          <!-- List documents -->
+          <div class="card shadow-sm mb-3">
+            <div class="card-body p-0">
+              {% if documents %}
+                <div class="table-responsive">
+                  <table class="table table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Uploaded</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>File</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for d in documents %}
+                        <tr>
+                          <td>{{ d.uploaded_at.strftime("%Y-%m-%d") if d.uploaded_at else "—" }}</td>
+                          <td>{{ d.doc_type or d.document_type or "—" }}</td>
+                          <td style="max-width: 260px;">
+                            {% if d.description %}
+                              <span class="text-muted text-truncate d-inline-block"
+                                    style="max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                {{ d.description }}
+                              </span>
+                            {% else %}
+                              <span class="text-muted fst-italic">No description</span>
+                            {% endif %}
+                          </td>
+                          <td>
+                            {{ d.original_filename or d.filename_original or "—" }}
+                          </td>
+<td class="text-end">
+  <a href="{{ url_for('main.document_download', claim_id=claim.id, doc_id=d.id) }}"
+     class="btn btn-outline-secondary btn-sm">
+    Open
+  </a>
+
+  <form method="post"
+        action="{{ url_for('main.document_delete', claim_id=claim.id, doc_id=d.id) }}"
+        class="d-inline"
+        onsubmit="return confirm('Delete this document? This cannot be undone.');">
+    <button type="submit" class="btn btn-outline-danger btn-sm ms-1">
+      Delete
+    </button>
+  </form>
+</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% else %}
+                <div class="p-3">
+                  <p class="text-muted mb-0">No documents uploaded yet.</p>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Upload document -->
+          <div class="card shadow-sm">
+            <div class="card-header">
+              <h3 class="h6 mb-0">Upload Document</h3>
+            </div>
+            <div class="card-body small">
+              <form method="post"
+                    action="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
+                    enctype="multipart/form-data">
+                <input type="hidden" name="form_type" value="document_upload">
+                <div class="row g-2 align-items-end">
+                  <div class="col-md-3">
+                    <label for="doc_type" class="form-label form-label-sm mb-1">Type</label>
+                    <input type="text"
+                           id="doc_type"
+                           name="doc_type"
+                           class="form-control form-control-sm"
+                           placeholder="e.g. Records, IME, Imaging, Form…">
+                  </div>
+
+                  <div class="col-md-5">
+                    <label for="doc_description" class="form-label form-label-sm mb-1">Description</label>
+                    <input type="text"
+                           id="doc_description"
+                           name="description"
+                           class="form-control form-control-sm"
+                           placeholder="Short description…">
+                  </div>
+
+                  <div class="col-md-4">
+                    <label for="doc_file" class="form-label form-label-sm mb-1">File</label>
+                    <input type="file"
+                           id="doc_file"
+                           name="file"
+                           class="form-control form-control-sm"
+                           required>
+                  </div>
+
+                  <div class="col-12 mt-2 text-end">
+                    <button type="submit" class="btn btn-primary btn-sm">
+                      Upload
+                    </button>
+                  </div>
+                </div>
+                <p class="text-muted mt-2 mb-0 small">
+                  Allowed: pdf, doc, docx, rtf, txt, jpg, jpeg, png, mp4, mov, avi.
+                </p>
+              </form>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div> <!-- /accordion -->
+</div>
+
+<!-- Report type + append-from-last-report JS -->
+<script>
+  (function() {
+    const typeSelect = document.getElementById("report_type");
+
+    const statusLabel = document.getElementById("status_text_label");
+    const workLabel = document.getElementById("work_status_label");
+    const planLabel = document.getElementById("plan_label");
+    const nextDueLabel = document.getElementById("next_report_due_label");
+    const help = document.getElementById("report_type_help");
+    const nextHelp = document.getElementById("next_report_help");
+
+    function updateForType() {
+      const t = typeSelect ? typeSelect.value : "";
+
+      if (!t) {
+        if (help) help.textContent = "Select a report type to see suggested fields below.";
+        if (statusLabel) statusLabel.textContent = "Current Status";
+        if (workLabel) workLabel.textContent = "Work Status";
+        if (planLabel) planLabel.textContent = "Case Management Plan";
+        if (nextDueLabel) nextDueLabel.textContent = "Next Report Due";
+        if (nextHelp) nextHelp.textContent = "Optional follow-up date, depending on report type.";
+        return;
+      }
+
+      if (t === "Initial") {
+        if (help) help.textContent = "Initial report: background, current status, and initial plan.";
+        if (statusLabel) statusLabel.textContent = "Initial Clinical Status / Background";
+        if (workLabel) workLabel.textContent = "Initial Work Status";
+        if (planLabel) planLabel.textContent = "Initial Case Management Plan";
+        if (nextDueLabel) nextDueLabel.textContent = "Next Report Target Date";
+        if (nextHelp) nextHelp.textContent = "Optional, but helpful to set an initial follow-up date.";
+      } else if (t === "Progress") {
+        if (help) help.textContent = "Progress report: changes since last report and updated plan.";
+        if (statusLabel) statusLabel.textContent = "Interval Progress / Clinical Update";
+        if (workLabel) workLabel.textContent = "Work Status / Changes";
+        if (planLabel) planLabel.textContent = "Updated Case Management Plan";
+        if (nextDueLabel) nextDueLabel.textContent = "Next Report Due";
+        if (nextHelp) nextHelp.textContent = "Set the next progress report date.";
+      } else if (t === "Closure") {
+        if (help) help.textContent = "Closure report: final status, outcome, and closure rationale.";
+        if (statusLabel) statusLabel.textContent = "Final Clinical Status / Outcome";
+        if (workLabel) workLabel.textContent = "Final Work Status";
+        if (planLabel) planLabel.textContent = "Closure Summary / Disposition";
+        if (nextDueLabel) nextDueLabel.textContent = "Next Report Due";
+        if (nextHelp) nextHelp.textContent = "Usually left blank for closure reports.";
+      }
+    }
+
+    if (typeSelect) {
+      typeSelect.addEventListener("change", updateForType);
+      // Initialize labels on first load, in case a type is preselected
+      updateForType();
+    }
+
+    // ---- Append-from-last-report wiring ----
+    const baseAppendUrl = "{{ url_for('main.report_append_field', claim_id=claim.id) }}";
+
+    function appendFromLastReport(fieldName, textareaId) {
+      const textarea = document.getElementById(textareaId);
+      if (!textarea || !baseAppendUrl) return;
+
+      const url = baseAppendUrl + "?field=" + encodeURIComponent(fieldName);
+
+      fetch(url, { method: "GET" })
+        .then(function(response) {
+          if (!response.ok) {
+            throw new Error("Network response was not ok");
+          }
+          return response.json();
+        })
+        .then(function(data) {
+          if (!data || typeof data.value !== "string") {
+            return;
+          }
+          const existing = textarea.value || "";
+          if (!existing.trim()) {
+            textarea.value = data.value;
+          } else if (data.value.trim()) {
+            textarea.value = existing.replace(/\s*$/, "") + "\n\n" + data.value;
+          }
+          textarea.focus();
+        })
+        .catch(function(err) {
+          console.error("Error appending from last report:", err);
+        });
+    }
+
+    const appendButtons = document.querySelectorAll("[data-append-field]");
+    appendButtons.forEach(function(btn) {
+      btn.addEventListener("click", function(evt) {
+        evt.preventDefault();
+        const fieldName = btn.getAttribute("data-append-field");
+        if (!fieldName) return;
+
+        if (fieldName === "work_status") {
+          appendFromLastReport("work_status", "work_status");
+        } else if (fieldName === "case_management_plan") {
+          appendFromLastReport("case_management_plan", "case_management_plan");
+        }
+      });
+    });
+  })();
+</script>
+{% endblock %}

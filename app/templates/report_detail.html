@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+
+{% block title %}Report Detail - Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h4 mb-1">
+        Report: {{ report.report_type or "Report" }}
+      </h1>
+      <div class="small text-muted">
+        Claim {{ claim.claim_number }} — {{ claim.claimant_name }}
+      </div>
+    </div>
+    <div class="btn-toolbar gap-2">
+      <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary btn-sm">
+        Back to Claim
+      </a>
+      <a href="{{ url_for('main.report_edit', claim_id=claim.id, report_id=report.id) }}" class="btn btn-primary btn-sm">
+        Edit Report
+      </a>
+      <a href="{{ url_for('main.report_delete', claim_id=claim.id, report_id=report.id) }}" class="btn btn-outline-danger btn-sm">
+        Delete Report
+      </a>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <!-- Left column: report summary / medical details / status -->
+    <div class="col-lg-8">
+      <div class="card shadow-sm mb-3">
+        <div class="card-header bg-light">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <strong>{{ report.report_type or "Report" }}</strong>
+              {% if report.dos_start or report.dos_end %}
+                <span class="text-muted ms-2 small">
+                  DOS:
+                  {% if report.dos_start %}{{ report.dos_start }}{% endif %}
+                  {% if report.dos_end %} – {{ report.dos_end }}{% endif %}
+                </span>
+              {% endif %}
+            </div>
+            <div class="small text-muted">
+              {% if report.created_at %}
+                Created {{ report.created_at.strftime('%Y-%m-%d %H:%M') }}
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <!-- Dates of service & providers -->
+          <div class="row mb-3 small">
+            <div class="col-md-6">
+              <h2 class="h6">Dates of Service</h2>
+              <dl class="mb-0">
+                <dt class="small text-muted">Start</dt>
+                <dd>{{ report.dos_start or '—' }}</dd>
+                <dt class="small text-muted">End</dt>
+                <dd>{{ report.dos_end or '—' }}</dd>
+              </dl>
+            </div>
+            <div class="col-md-6">
+              <h2 class="h6">Providers</h2>
+              <dl class="mb-0">
+                <dt class="small text-muted">Treating</dt>
+                <dd>
+                  {% if report.treating_provider %}
+                    {{ report.treating_provider.name }}
+                  {% elif report.treating_provider_name %}
+                    {{ report.treating_provider_name }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
+                <dt class="small text-muted">Primary Care</dt>
+                <dd>
+                  {% if report.primary_care_provider %}
+                    {{ report.primary_care_provider }}
+                  {% elif claim.primary_care_provider %}
+                    {{ claim.primary_care_provider }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
+              </dl>
+            </div>
+          </div>
+
+          <!-- Medical overview -->
+          <div class="mb-3">
+            <h2 class="h6 mb-1">Diagnosis</h2>
+            <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
+              {{ report.diagnosis or 'No diagnosis recorded.' }}
+            </div>
+          </div>
+
+          {% if report.report_type == 'INITIAL' or not report.report_type %}
+            <div class="mb-3">
+              <h2 class="h6 mb-1">Mechanism of Injury</h2>
+              <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
+                {{ report.mechanism_of_injury or 'Not documented.' }}
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <h2 class="h6 mb-1">Co-Existing Conditions</h2>
+              <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
+                {{ report.coexisting_conditions or 'Not documented.' }}
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <h2 class="h6 mb-1">Surgical History</h2>
+              <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
+                {{ report.surgical_history or 'Not documented.' }}
+              </div>
+            </div>
+          {% endif %}
+
+          <div class="mb-3">
+            <h2 class="h6 mb-1">Medications</h2>
+            <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
+              {{ report.medications or 'Not documented.' }}
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <h2 class="h6 mb-1">Diagnostics</h2>
+            <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
+              {{ report.diagnostics or 'No diagnostics recorded.' }}
+            </div>
+          </div>
+
+          <!-- Status & planning -->
+          <div class="mb-3">
+            <h2 class="h6 mb-1">Current Status / Treatment Plan</h2>
+            <div class="border rounded p-2 bg-light" style="min-height: 5rem; white-space: pre-wrap;">
+              {{ report.status_text or 'No current status entered.' }}
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <h2 class="h6 mb-1">Work Status</h2>
+            <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
+              {{ report.work_status or 'No work status entered.' }}
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <h2 class="h6 mb-1">Employment Status</h2>
+            <div class="border rounded p-2 bg-light" style="min-height: 2.5rem; white-space: pre-wrap;">
+              {{ report.employment_status or 'Not set.' }}
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <h2 class="h6 mb-1">Case Management Plan</h2>
+            <div class="border rounded p-2 bg-light" style="min-height: 5rem; white-space: pre-wrap;">
+              {{ report.case_management_plan or 'No case management plan entered.' }}
+            </div>
+          </div>
+
+          {% if report.report_type == 'CLOSURE' %}
+            <div class="mb-3">
+              <h2 class="h6 mb-1">Reason for Closure</h2>
+              <div class="border rounded p-2 bg-light" style="min-height: 2.5rem; white-space: pre-wrap;">
+                {{ report.reason_for_closure or 'Not specified.' }}
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <h2 class="h6 mb-1">Closure Details</h2>
+              <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
+                {{ report.closure_details or 'No closure details entered.' }}
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <h2 class="h6 mb-1">Case Management Impact</h2>
+              <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
+                {{ report.case_management_impact or 'Not documented.' }}
+              </div>
+            </div>
+          {% endif %}
+
+          <!-- Scheduling info -->
+          <div class="row mb-2 small">
+            <div class="col-md-6 mb-2">
+              <h2 class="h6 mb-1">Next Appointment</h2>
+              <dl class="mb-0">
+                <dt class="small text-muted">Date / Time</dt>
+                <dd>
+                  {% if report.next_appointment_datetime %}
+                    {{ report.next_appointment_datetime }}
+                  {% elif report.next_appointment_date %}
+                    {{ report.next_appointment_date }} {{ report.next_appointment_time or '' }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
+                <dt class="small text-muted">Provider</dt>
+                <dd>{{ report.next_appointment_provider or '—' }}</dd>
+              </dl>
+            </div>
+            <div class="col-md-6 mb-2">
+              <h2 class="h6 mb-1">Next Report Due</h2>
+              <div class="border rounded p-2 bg-light" style="min-height: 2.5rem;">
+                {{ report.next_report_due or 'Not set.' }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column: barriers & documents -->
+    <div class="col-lg-4">
+      <!-- Possible barriers -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header bg-light">
+          <strong>Possible Barriers to Recovery</strong>
+        </div>
+        <div class="card-body small">
+          {% set barriers_text = report.barriers_text or report.possible_barriers or report.barriers %}
+          {% if barriers_text %}
+            <div class="border rounded p-2 bg-light" style="min-height: 4rem; white-space: pre-wrap;">
+              {{ barriers_text }}
+            </div>
+          {% else %}
+            <p class="text-muted mb-0">No barriers recorded.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Report documents -->
+      <div class="card shadow-sm mb-3">
+        <div class="card-header bg-light">
+          <strong>Report Documents</strong>
+        </div>
+        <div class="card-body">
+          {% if report.documents %}
+            <div class="table-responsive" style="max-height: 260px; overflow-y: auto;">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">Type</th>
+                    <th scope="col">Description</th>
+                    <th scope="col">Date</th>
+                    <th scope="col" class="text-end">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for doc in report.documents %}
+                    <tr>
+                      <td class="small">{{ doc.doc_type or 'Document' }}</td>
+                      <td class="small">{{ doc.description or doc.original_filename or '—' }}</td>
+                      <td class="small">{{ doc.document_date or '' }}</td>
+                      <td class="text-end">
+                        {% if doc.stored_path %}
+                          <a href="{{ url_for('main.report_document_download', report_document_id=doc.id) }}" class="btn btn-sm btn-outline-secondary">Download</a>
+                        {% else %}
+                          <span class="badge bg-secondary">No file</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="small text-muted mb-0">No documents linked to this report yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
