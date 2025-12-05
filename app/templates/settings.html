@@ -163,6 +163,19 @@
       </div>
     </div>
 
+    <!-- Contact Roles -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header">
+        <h2 class="h6 mb-0">Contact Roles</h2>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-2">
+          Enter one role per line. These roles populate the dropdown menus when adding or editing contacts for Carriers, Employers, and Providers.
+        </p>
+        <textarea name="contact_roles" rows="6" class="form-control form-control-sm">{{ contact_roles_text }}</textarea>
+      </div>
+    </div>
+
     <!-- File locations -->
     <div class="card shadow-sm mb-3">
       <div class="card-header">
@@ -170,10 +183,24 @@
       </div>
       <div class="card-body">
         <div class="mb-2">
-          <label class="form-label form-label-sm">Documents Root Folder (full path)</label>
-          <input type="text" name="documents_root" class="form-control form-control-sm"
-                 placeholder="/Users/you/Documents/ImpactCMS"
-                 value="{{ settings.documents_root or '' }}">
+          <label class="form-label form-label-sm" for="documents_root">
+            Documents Root Folder (local storage only)
+          </label>
+          <input type="text"
+                 name="documents_root"
+                 id="documents_root"
+                 class="form-control form-control-sm"
+                 value="{{ settings.documents_root or 'documents' }}">
+          <div class="form-text small mt-1">
+            You can enter a folder name (for example <code>documents</code>) to store files inside the app folder,
+            or a full absolute path (for example <code>/Users/yourname/IMC_Documents</code>) to store files elsewhere
+            on this computer.
+          </div>
+          <div class="alert alert-warning mt-2 mb-0 py-2 px-3 small">
+            <strong>HIPAA / privacy note:</strong> Use a local, non-synced folder only.
+            Do <em>not</em> store documents on iCloud Drive, Dropbox, OneDrive, Google Drive, or any other cloud
+            service unless you have a signed HIPAA-compliant agreement with that provider.
+          </div>
         </div>
       </div>
     </div>

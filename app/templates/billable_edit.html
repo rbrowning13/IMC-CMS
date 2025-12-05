@@ -34,7 +34,7 @@
                 type="date"
                 name="service_date"
                 class="form-control form-control-sm"
-                value="{{ item.service_date or '' }}"
+                value="{{ item.date_of_service.strftime('%Y-%m-%d') if item.date_of_service else '' }}"
               >
             </div>
 

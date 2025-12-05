@@ -1,17 +1,3 @@
-"""
-SQLAlchemy models for Impact Medical Consulting CMS.
-
-This file defines:
-- Core entities: Carrier, Employer, Provider, Contact, Claim
-- Documents: ClaimDocument, ReportDocument
-- Reports with types (initial/progress/closure) and barriers
-- Billable items and invoices
-- Settings, BarrierOption, BillingActivityCode
-
-All models are designed to work with a single-user, local Flask app
-using SQLite and a filesystem-based document root.
-"""
-
 from datetime import datetime, date
 from .extensions import db
 
@@ -26,15 +12,25 @@ class Carrier(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
 
+    # Full mailing info
+    address1 = db.Column(db.String(255))
+    address2 = db.Column(db.String(255))
+    city = db.Column(db.String(120))
+    state = db.Column(db.String(10))
+    postal_code = db.Column(db.String(20))
+
     phone = db.Column(db.String(50))
     fax = db.Column(db.String(50))
     email = db.Column(db.String(255))
-    address = db.Column(db.String(255))
-    city = db.Column(db.String(120))
-    state = db.Column(db.String(10))
-    zip = db.Column(db.String(20))
 
     claims = db.relationship("Claim", back_populates="carrier")
+    contacts = db.relationship(
+        "Contact",
+        backref="carrier",
+        lazy=True,
+        cascade="all, delete-orphan",
+        foreign_keys="Contact.carrier_id",
+    )
 
     def __repr__(self):
         return f"<Carrier {self.name}>"
@@ -46,14 +42,24 @@ class Employer(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
 
-    phone = db.Column(db.String(50))
-    email = db.Column(db.String(255))
-    address = db.Column(db.String(255))
+    address1 = db.Column(db.String(255))
+    address2 = db.Column(db.String(255))
     city = db.Column(db.String(120))
     state = db.Column(db.String(10))
-    zip = db.Column(db.String(20))
+    postal_code = db.Column(db.String(20))
+
+    phone = db.Column(db.String(50))
+    fax = db.Column(db.String(50))
+    email = db.Column(db.String(255))
 
     claims = db.relationship("Claim", back_populates="employer")
+    contacts = db.relationship(
+        "Contact",
+        backref="employer",
+        lazy=True,
+        cascade="all, delete-orphan",
+        foreign_keys="Contact.employer_id",
+    )
 
     def __repr__(self):
         return f"<Employer {self.name}>"
@@ -65,17 +71,17 @@ class Provider(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
 
+    address1 = db.Column(db.String(255))
+    address2 = db.Column(db.String(255))
+    city = db.Column(db.String(120))
+    state = db.Column(db.String(10))
+    postal_code = db.Column(db.String(20))
+
     phone = db.Column(db.String(50))
     fax = db.Column(db.String(50))
     email = db.Column(db.String(255))
 
-    # For ICS location
-    address = db.Column(db.String(255))
-    city = db.Column(db.String(120))
-    state = db.Column(db.String(10))
-    zip = db.Column(db.String(20))
-
-    # Claims where this provider is the PCP
+    # Claims where this provider is the PCP (future use)
     pcp_for_claims = db.relationship(
         "Claim",
         back_populates="pcp_provider",
@@ -89,24 +95,37 @@ class Provider(db.Model):
         foreign_keys="Report.treating_provider_id",
     )
 
+    contacts = db.relationship(
+        "Contact",
+        backref="provider",
+        lazy=True,
+        cascade="all, delete-orphan",
+        foreign_keys="Contact.provider_id",
+    )
+
     def __repr__(self):
         return f"<Provider {self.name}>"
 
 
 class Contact(db.Model):
     """
-    Generic contact person (often carrier adjusters, employer contact, etc.).
-    Currently simple and free-form; can be linked from other models/routes.
+    Contact linked to a carrier, employer, or provider.
     """
     __tablename__ = "contact"
 
     id = db.Column(db.Integer, primary_key=True)
 
     name = db.Column(db.String(255), nullable=False)
-    phone = db.Column(db.String(50))
-    email = db.Column(db.String(255))
+    role = db.Column(db.String(120))
 
-    role = db.Column(db.String(120))  # e.g. "Adjuster", "HR", etc.
+    phone = db.Column(db.String(50))
+    fax = db.Column(db.String(50))
+    email = db.Column(db.String(255))
+    notes = db.Column(db.Text)
+
+    carrier_id = db.Column(db.Integer, db.ForeignKey("carrier.id"))
+    employer_id = db.Column(db.Integer, db.ForeignKey("employer.id"))
+    provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"))
 
     def __repr__(self):
         return f"<Contact {self.name}>"
@@ -124,26 +143,46 @@ class Claim(db.Model):
     claimant_name = db.Column(db.String(255), nullable=False)
     claim_number = db.Column(db.String(120))
 
-    # Dates as strings or dates; can be migrated to Date later if desired
-    dob = db.Column(db.String(50))            # Date of birth
-    date_of_injury = db.Column(db.String(50)) # DOI / DOL
+    # Dates as actual Date objects (parsed from HTML date inputs)
+    dob = db.Column(db.Date)   # Date of birth
+    doi = db.Column(db.Date)   # Date of injury
 
-    claim_state = db.Column(db.String(10))    # State code, e.g. "ID"
+    claim_state = db.Column(db.String(10))  # e.g. "ID"
 
+    # Claimant contact info (from existing UI/routes)
+    claimant_address1 = db.Column(db.String(255))
+    claimant_address2 = db.Column(db.String(255))
+    claimant_city = db.Column(db.String(120))
+    claimant_state = db.Column(db.String(10))
+    claimant_postal_code = db.Column(db.String(20))
+    claimant_phone = db.Column(db.String(50))
+    claimant_email = db.Column(db.String(255))
+
+    # Telephonic flag (used in some flows)
+    is_telephonic = db.Column(db.Boolean, default=False)
+
+    # PCP as free-text for now (captured on Initial report)
+    primary_care_provider = db.Column(db.String(255))
+
+    # Future: PCP as a linked Provider
+    pcp_provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"))
+    pcp_provider = db.relationship("Provider", back_populates="pcp_for_claims")
+
+    # Carrier / Employer / Adjuster
     carrier_id = db.Column(db.Integer, db.ForeignKey("carrier.id"))
     employer_id = db.Column(db.Integer, db.ForeignKey("employer.id"))
+    carrier_contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"))
 
-    # Primary Care Provider (PCP) at the claim level
-    pcp_provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"))
-    pcp_name = db.Column(db.String(255))  # optional text snapshot of PCP name
-
-    # Basic "closed/open" state; can be extended with more statuses later
+    # Basic open/closed state
     is_closed = db.Column(db.Boolean, default=False)
     status = db.Column(db.String(50), default="open")
 
     carrier = db.relationship("Carrier", back_populates="claims")
     employer = db.relationship("Employer", back_populates="claims")
-    pcp_provider = db.relationship("Provider", back_populates="pcp_for_claims")
+    carrier_contact = db.relationship(
+        "Contact",
+        foreign_keys=[carrier_contact_id],
+    )
 
     documents = db.relationship(
         "ClaimDocument",
@@ -171,7 +210,6 @@ class Claim(db.Model):
         return f"<Claim {self.claimant_name} — {self.claim_number}>"
 
 
-
 # ============================================================
 #  CLAIM & REPORT DOCUMENTS
 # ============================================================
@@ -183,16 +221,17 @@ class ClaimDocument(db.Model):
     claim_id = db.Column(db.Integer, db.ForeignKey("claim.id"), nullable=False)
     claim = db.relationship("Claim", back_populates="documents")
 
-    filename_original = db.Column(db.String(255), nullable=False)
+    original_filename = db.Column(db.String(255), nullable=False)
     filename_stored = db.Column(db.String(255), nullable=False)
 
+    doc_type = db.Column(db.String(120))
     description = db.Column(db.String(255))
-    category = db.Column(db.String(120))
+    document_date = db.Column(db.String(50))  # YYYY-MM-DD string is fine for now
 
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<ClaimDocument {self.filename_original}>"
+        return f"<ClaimDocument {self.original_filename}>"
 
 
 class ReportDocument(db.Model):
@@ -203,20 +242,21 @@ class ReportDocument(db.Model):
     report_id = db.Column(db.Integer, db.ForeignKey("report.id"), nullable=False)
     report = db.relationship("Report", back_populates="documents")
 
-    # optional back-link to Claim for convenience / querying
+    # optional back-link to Claim for convenience
     claim_id = db.Column(db.Integer, db.ForeignKey("claim.id"))
     claim = db.relationship("Claim")
 
-    filename_original = db.Column(db.String(255), nullable=False)
-    filename_stored = db.Column(db.String(255), nullable=False)
+    original_filename = db.Column(db.String(255), nullable=False)
+    stored_path = db.Column(db.String(512), nullable=False)
 
+    doc_type = db.Column(db.String(120))
     description = db.Column(db.String(255))
-    category = db.Column(db.String(120))
+    document_date = db.Column(db.String(50))
 
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<ReportDocument {self.filename_original}>"
+        return f"<ReportDocument {self.original_filename}>"
 
 
 # ============================================================
@@ -226,8 +266,7 @@ class ReportDocument(db.Model):
 class BarrierOption(db.Model):
     """
     Master list of "Possible Barriers to Recovery" options.
-    These are edited from Settings and rendered as multi-select checkboxes
-    on report edit screens. Selected IDs are stored on Report.barriers_json.
+    Edited from Settings; rendered as checkboxes in report edit.
     """
     __tablename__ = "barrier_option"
 
@@ -247,12 +286,7 @@ class BarrierOption(db.Model):
 
 class Report(db.Model):
     """
-    Single table for all report types: Initial, Progress, Closure.
-
-    report_type controls which fields are relevant:
-    - "initial": includes initial_* fields and next appointment
-    - "progress": shares DOS + status/plan/work/case plan + barriers
-    - "closure": adds closure_reason / closure_details / closure_case_management_impact
+    Single table for all report types: initial / progress / closure.
     """
     __tablename__ = "report"
 
@@ -266,26 +300,26 @@ class Report(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Shared meta
-    referral_date = db.Column(db.Date)         # often from claim/referral
-    dos_start = db.Column(db.Date)             # Dates of Service start
-    dos_end = db.Column(db.Date)               # Dates of Service end
-    next_report_due = db.Column(db.Date)       # For initial/progress
+    # Shared dates/meta
+    referral_date = db.Column(db.Date)
+    dos_start = db.Column(db.Date)
+    dos_end = db.Column(db.Date)
+    next_report_due = db.Column(db.Date)
 
-    # Treating provider per report (dropdown from Provider table)
+    # Treating provider per report
     treating_provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"))
     treating_provider = db.relationship("Provider", back_populates="reports")
 
-    # Shared long-text fields (roll-forward enabled)
+    # Shared long-text fields (roll-forward candidates)
     status_treatment_plan = db.Column(db.Text)
     work_status = db.Column(db.Text)
-    employment_status = db.Column(db.String(255))  # one-line text
+    employment_status = db.Column(db.String(255))
     case_management_plan = db.Column(db.Text)
 
-    # Barriers stored as JSON array of BarrierOption IDs
+    # Barriers JSON (list of BarrierOption IDs)
     barriers_json = db.Column(db.Text)
 
-    # INITIAL REPORT–specific fields
+    # INITIAL-specific fields
     initial_diagnosis = db.Column(db.Text)
     initial_mechanism_of_injury = db.Column(db.Text)
     initial_coexisting_conditions = db.Column(db.Text)
@@ -293,23 +327,20 @@ class Report(db.Model):
     initial_medications = db.Column(db.Text)
     initial_diagnostics = db.Column(db.Text)
 
-    # PCP is stored on Claim; here we keep only treating provider and next appt
     initial_next_appt_datetime = db.Column(db.DateTime)
     initial_next_appt_provider_name = db.Column(db.String(255))
 
-    # CLOSURE REPORT–specific fields
-    closure_reason = db.Column(db.String(120))  # AMA, Death, MMI, RTW, etc.
+    # CLOSURE-specific fields
+    closure_reason = db.Column(db.String(120))
     closure_details = db.Column(db.Text)
     closure_case_management_impact = db.Column(db.Text)
 
-    # Report-level documents (including generated PDFs)
     documents = db.relationship(
         "ReportDocument",
         back_populates="report",
         cascade="all, delete-orphan",
     )
 
-    # Billable items auto-created for this report (1.0, 0.5, 0.5 hrs, etc.)
     billables = db.relationship("BillableItem", back_populates="report")
 
     def __repr__(self):
@@ -317,22 +348,15 @@ class Report(db.Model):
 
 
 # ============================================================
-#  BILLING ACTIVITY CODES
+#  BILLING ACTIVITY CODES (future editable list)
 # ============================================================
 
 class BillingActivityCode(db.Model):
-    """
-    Editable list of billing activities:
-    Admin, Email, Exp, Fax, FR, GDL, LTR, MR, MTG, MIL, REP, RR, TC, TCM, Text, Travel, Wait, NO BILL, etc.
-
-    Used to populate dropdowns in the quick-entry Billable Item box and
-    other billable forms.
-    """
     __tablename__ = "billing_activity_code"
 
     id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(20), nullable=False, unique=True)   # e.g. 'REP', 'TC'
-    label = db.Column(db.String(255), nullable=False)              # e.g. 'Report', 'Telephone Call'
+    code = db.Column(db.String(20), nullable=False, unique=True)
+    label = db.Column(db.String(255), nullable=False)
     sort_order = db.Column(db.Integer, default=0)
     is_active = db.Column(db.Boolean, default=True)
 
@@ -352,34 +376,26 @@ class BillableItem(db.Model):
     claim_id = db.Column(db.Integer, db.ForeignKey("claim.id"), nullable=False)
     claim = db.relationship("Claim", back_populates="billables")
 
-    # Optional linkage to a specific Report (e.g., auto-created report-writing time)
     report_id = db.Column(db.Integer, db.ForeignKey("report.id"))
     report = db.relationship("Report", back_populates="billables")
 
-    # Optional linkage to an Invoice
     invoice_id = db.Column(db.Integer, db.ForeignKey("invoice.id"))
 
-    # When the activity occurred; can be string now, migrated to Date later
-    date = db.Column(db.String(50))
+    # When the activity occurred
+    date_of_service = db.Column(db.Date)
 
-    # Free-form description and code
     description = db.Column(db.String(255), nullable=False)
-    activity_code = db.Column(db.String(20))  # matches BillingActivityCode.code
+    activity_code = db.Column(db.String(20))  # MIL, EXP, NO BILL, etc.
 
-    quantity = db.Column(db.Float)  # hours, units, miles, etc.
-    rate = db.Column(db.Float)      # hourly or per-unit rate
+    quantity = db.Column(db.Float)  # hours, miles, dollars, etc.
 
-    category = db.Column(db.String(120))  # optional extra classification
+    # Completion flag (used by invoice logic)
+    is_complete = db.Column(db.Boolean, default=False)
 
-    is_billed = db.Column(db.Boolean, default=False)
-
-    def amount(self) -> float:
-        if self.quantity is not None and self.rate is not None:
-            return float(self.quantity) * float(self.rate)
-        return 0.0
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<BillableItem {self.description} (${self.amount():.2f})>"
+        return f"<BillableItem {self.description}>"
 
 
 # ============================================================
@@ -394,25 +410,32 @@ class Invoice(db.Model):
     claim_id = db.Column(db.Integer, db.ForeignKey("claim.id"), nullable=False)
     claim = db.relationship("Claim", back_populates="invoices")
 
+    # For reference on the invoice itself
+    carrier_id = db.Column(db.Integer, db.ForeignKey("carrier.id"))
+    employer_id = db.Column(db.Integer, db.ForeignKey("employer.id"))
+
+    invoice_number = db.Column(db.String(50))
+    status = db.Column(db.String(50), default="Draft")  # Draft/Sent/Paid/Void
+    invoice_date = db.Column(db.Date)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
-    # Optional DOS range for this invoice, often matching a Report's DOS
+    # DOS range
     dos_start = db.Column(db.Date)
     dos_end = db.Column(db.Date)
 
+    # Totals persisted on the invoice
+    total_hours = db.Column(db.Float, default=0.0)
+    total_miles = db.Column(db.Float, default=0.0)
+    total_expenses = db.Column(db.Float, default=0.0)
     total_amount = db.Column(db.Float, default=0.0)
-    is_paid = db.Column(db.Boolean, default=False)
 
     notes = db.Column(db.Text)
 
-    billables = db.relationship("BillableItem", backref="invoice", lazy=True)
-
-    def calculate_total(self) -> float:
-        self.total_amount = sum(b.amount() for b in self.billables)
-        return self.total_amount
+    items = db.relationship("BillableItem", backref="invoice", lazy=True)
 
     def __repr__(self):
-        return f"<Invoice {self.id} – Claim {self.claim_id} – ${self.total_amount:.2f}>"
+        return f"<Invoice {self.invoice_number or self.id} – Claim {self.claim_id}>"
 
 
 # ============================================================
@@ -421,29 +444,48 @@ class Invoice(db.Model):
 
 class Settings(db.Model):
     """
-    Singleton-style settings row (usually only one record) for
-    global configuration and defaults.
+    Global configuration and defaults.
     """
     __tablename__ = "settings"
 
     id = db.Column(db.Integer, primary_key=True)
 
     business_name = db.Column(db.String(255))
-    footer_text = db.Column(db.Text)
 
-    # Filesystem root for documents; should be a local path Gina can back up
+    # Business contact info
+    address1 = db.Column(db.String(255))
+    address2 = db.Column(db.String(255))
+    city = db.Column(db.String(120))
+    state = db.Column(db.String(10))
+    postal_code = db.Column(db.String(20))
+    phone = db.Column(db.String(50))
+    email = db.Column(db.String(255))
+
+    # Billing rates
+    hourly_rate = db.Column(db.Float)
+    telephonic_rate = db.Column(db.Float)
+    mileage_rate = db.Column(db.Float)
+
+    # Defaults / text
+    payment_terms_default = db.Column(db.String(255))
+
+    dormant_claim_days = db.Column(db.Integer)
+    target_min_hours_per_week = db.Column(db.Float)
+    target_max_hours_per_week = db.Column(db.Float)
+
+    accent_color = db.Column(db.String(20))
+    report_footer_text = db.Column(db.Text)
+    invoice_footer_text = db.Column(db.Text)
+
+    # Filesystem root for documents
     documents_root = db.Column(db.String(255))
 
-    # Billing defaults (hours and/or rates can be configured here)
-    default_hourly_rate = db.Column(db.Float)
+    # Report billing defaults (for auto billable items)
     initial_report_hours = db.Column(db.Float, default=1.0)
     progress_report_hours = db.Column(db.Float, default=0.5)
     closure_report_hours = db.Column(db.Float, default=0.5)
 
-    # Workload targets and claim dormancy
-    dormant_claim_days = db.Column(db.Integer)        # days with no activity before "dormant"
-    target_min_hours_per_week = db.Column(db.Float)
-    target_max_hours_per_week = db.Column(db.Float)
+    contact_roles_json = db.Column(db.Text)
 
     def __repr__(self):
         return "<Settings>"

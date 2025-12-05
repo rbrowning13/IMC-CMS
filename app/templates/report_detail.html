@@ -8,7 +8,7 @@
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
       <h1 class="h4 mb-1">
-        Report: {{ report.report_type or "Report" }}
+        Report: {{ (report.report_type or "Report")|capitalize }}
       </h1>
       <div class="small text-muted">
         Claim {{ claim.claim_number }} — {{ claim.claimant_name }}
@@ -21,9 +21,14 @@
       <a href="{{ url_for('main.report_edit', claim_id=claim.id, report_id=report.id) }}" class="btn btn-primary btn-sm">
         Edit Report
       </a>
-      <a href="{{ url_for('main.report_delete', claim_id=claim.id, report_id=report.id) }}" class="btn btn-outline-danger btn-sm">
-        Delete Report
-      </a>
+      <form method="post"
+            action="{{ url_for('main.report_delete', claim_id=claim.id, report_id=report.id) }}"
+            class="d-inline"
+            onsubmit="return confirm('This will permanently delete this report. This cannot be undone. Continue?');">
+        <button type="submit" class="btn btn-outline-danger btn-sm">
+          Delete Report
+        </button>
+      </form>
     </div>
   </div>
 
@@ -34,18 +39,18 @@
         <div class="card-header bg-light">
           <div class="d-flex justify-content-between align-items-center">
             <div>
-              <strong>{{ report.report_type or "Report" }}</strong>
+              <strong>{{ (report.report_type or "Report")|capitalize }}</strong>
               {% if report.dos_start or report.dos_end %}
                 <span class="text-muted ms-2 small">
                   DOS:
-                  {% if report.dos_start %}{{ report.dos_start }}{% endif %}
-                  {% if report.dos_end %} – {{ report.dos_end }}{% endif %}
+                  {% if report.dos_start %}{{ report.dos_start|format_date }}{% endif %}
+                  {% if report.dos_end %} – {{ report.dos_end|format_date }}{% endif %}
                 </span>
               {% endif %}
             </div>
             <div class="small text-muted">
               {% if report.created_at %}
-                Created {{ report.created_at.strftime('%Y-%m-%d %H:%M') }}
+                Created {{ report.created_at|format_date }}
               {% endif %}
             </div>
           </div>
@@ -57,9 +62,9 @@
               <h2 class="h6">Dates of Service</h2>
               <dl class="mb-0">
                 <dt class="small text-muted">Start</dt>
-                <dd>{{ report.dos_start or '—' }}</dd>
+                <dd>{{ report.dos_start|format_date or '—' }}</dd>
                 <dt class="small text-muted">End</dt>
-                <dd>{{ report.dos_end or '—' }}</dd>
+                <dd>{{ report.dos_end|format_date or '—' }}</dd>
               </dl>
             </div>
             <div class="col-md-6">
@@ -93,29 +98,29 @@
           <div class="mb-3">
             <h2 class="h6 mb-1">Diagnosis</h2>
             <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
-              {{ report.diagnosis or 'No diagnosis recorded.' }}
+              {{ report.initial_diagnosis or 'No diagnosis recorded.' }}
             </div>
           </div>
 
-          {% if report.report_type == 'INITIAL' or not report.report_type %}
+          {% if report.report_type and report.report_type|lower == 'initial' or not report.report_type %}
             <div class="mb-3">
               <h2 class="h6 mb-1">Mechanism of Injury</h2>
               <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
-                {{ report.mechanism_of_injury or 'Not documented.' }}
+                {{ report.initial_mechanism_of_injury or 'Not documented.' }}
               </div>
             </div>
 
             <div class="mb-3">
               <h2 class="h6 mb-1">Co-Existing Conditions</h2>
               <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
-                {{ report.coexisting_conditions or 'Not documented.' }}
+                {{ report.initial_coexisting_conditions or 'Not documented.' }}
               </div>
             </div>
 
             <div class="mb-3">
               <h2 class="h6 mb-1">Surgical History</h2>
               <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
-                {{ report.surgical_history or 'Not documented.' }}
+                {{ report.initial_surgical_history or 'Not documented.' }}
               </div>
             </div>
           {% endif %}
@@ -123,14 +128,14 @@
           <div class="mb-3">
             <h2 class="h6 mb-1">Medications</h2>
             <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
-              {{ report.medications or 'Not documented.' }}
+              {{ report.initial_medications or 'Not documented.' }}
             </div>
           </div>
 
           <div class="mb-3">
             <h2 class="h6 mb-1">Diagnostics</h2>
             <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
-              {{ report.diagnostics or 'No diagnostics recorded.' }}
+              {{ report.initial_diagnostics or 'No diagnostics recorded.' }}
             </div>
           </div>
 
@@ -138,7 +143,7 @@
           <div class="mb-3">
             <h2 class="h6 mb-1">Current Status / Treatment Plan</h2>
             <div class="border rounded p-2 bg-light" style="min-height: 5rem; white-space: pre-wrap;">
-              {{ report.status_text or 'No current status entered.' }}
+              {{ report.status_treatment_plan or 'No current status entered.' }}
             </div>
           </div>
 
@@ -163,11 +168,11 @@
             </div>
           </div>
 
-          {% if report.report_type == 'CLOSURE' %}
+          {% if report.report_type and report.report_type|lower == 'closure' %}
             <div class="mb-3">
               <h2 class="h6 mb-1">Reason for Closure</h2>
               <div class="border rounded p-2 bg-light" style="min-height: 2.5rem; white-space: pre-wrap;">
-                {{ report.reason_for_closure or 'Not specified.' }}
+                {{ report.closure_reason or 'Not specified.' }}
               </div>
             </div>
 
@@ -181,7 +186,7 @@
             <div class="mb-3">
               <h2 class="h6 mb-1">Case Management Impact</h2>
               <div class="border rounded p-2 bg-light" style="min-height: 3rem; white-space: pre-wrap;">
-                {{ report.case_management_impact or 'Not documented.' }}
+                {{ report.closure_case_management_impact or 'Not documented.' }}
               </div>
             </div>
           {% endif %}
@@ -193,22 +198,20 @@
               <dl class="mb-0">
                 <dt class="small text-muted">Date / Time</dt>
                 <dd>
-                  {% if report.next_appointment_datetime %}
-                    {{ report.next_appointment_datetime }}
-                  {% elif report.next_appointment_date %}
-                    {{ report.next_appointment_date }} {{ report.next_appointment_time or '' }}
+                  {% if report.initial_next_appt_datetime %}
+                    {{ report.initial_next_appt_datetime|format_date }}
                   {% else %}
                     —
                   {% endif %}
                 </dd>
                 <dt class="small text-muted">Provider</dt>
-                <dd>{{ report.next_appointment_provider or '—' }}</dd>
+                <dd>{{ report.initial_next_appt_provider_name or '—' }}</dd>
               </dl>
             </div>
             <div class="col-md-6 mb-2">
               <h2 class="h6 mb-1">Next Report Due</h2>
               <div class="border rounded p-2 bg-light" style="min-height: 2.5rem;">
-                {{ report.next_report_due or 'Not set.' }}
+                {{ report.next_report_due|format_date or 'Not set.' }}
               </div>
             </div>
           </div>
@@ -257,7 +260,7 @@
                     <tr>
                       <td class="small">{{ doc.doc_type or 'Document' }}</td>
                       <td class="small">{{ doc.description or doc.original_filename or '—' }}</td>
-                      <td class="small">{{ doc.document_date or '' }}</td>
+                      <td class="small">{{ doc.document_date|format_date or '' }}</td>
                       <td class="text-end">
                         {% if doc.stored_path %}
                           <a href="{{ url_for('main.report_document_download', report_document_id=doc.id) }}" class="btn btn-sm btn-outline-secondary">Download</a>

@@ -17,74 +17,7 @@
   <div class="card">
     <div class="card-body">
       <form method="post">
-        <div class="row mb-3">
-          <div class="col-md-4">
-            <label class="form-label">Claim Number</label>
-            <input
-              type="text"
-              name="claim_number"
-              class="form-control"
-              value="{{ claim.claim_number or '' }}"
-              required
-            >
-          </div>
-          <div class="col-md-8">
-            <label class="form-label">Claimant Name</label>
-            <input
-              type="text"
-              name="claimant_name"
-              class="form-control"
-              value="{{ claim.claimant_name or '' }}"
-              required
-            >
-          </div>
-        </div>
-
-        <div class="row mb-3">
-          <div class="col-md-3">
-            <label class="form-label">DOB</label>
-            <input
-              type="date"
-              name="dob"
-              class="form-control"
-              value="{{ claim.dob or '' }}"
-            >
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">DOI</label>
-            <input
-              type="date"
-              name="doi"
-              class="form-control"
-              value="{{ claim.doi or '' }}"
-            >
-          </div>
-        </div>
-
-        <div class="row mb-3">
-          <div class="col-md-6">
-            <label class="form-label">Carrier</label>
-            <select name="carrier_id" class="form-select">
-              {% for c in carriers %}
-                <option value="{{ c.id }}"
-                        {% if claim.carrier_id == c.id %}selected{% endif %}>
-                  {{ c.name }}
-                </option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Employer</label>
-            <select name="employer_id" class="form-select">
-              {% for e in employers %}
-                <option value="{{ e.id }}"
-                        {% if claim.employer_id == e.id %}selected{% endif %}>
-                  {{ e.name }}
-                </option>
-              {% endfor %}
-            </select>
-          </div>
-        </div>
+        {% include "_claim_form.html" %}
 
         <div class="d-flex justify-content-end">
           <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary me-2">

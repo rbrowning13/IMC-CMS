@@ -1,5 +1,3 @@
-
-
 {% extends "base.html" %}
 {% block title %}Carrier {{ carrier.name }} - Impact CMS{% endblock %}
 
@@ -36,9 +34,9 @@
   </div>
 
   <div class="row">
-    <!-- Carrier summary -->
-    <div class="col-lg-5 mb-3">
-      <div class="card shadow-sm h-100">
+    <div class="col-12 mb-3">
+      <!-- Carrier summary -->
+      <div class="card shadow-sm mb-3">
         <div class="card-header">
           <h2 class="h6 mb-0">Carrier Info</h2>
         </div>
@@ -83,11 +81,9 @@
           </dl>
         </div>
       </div>
-    </div>
 
-    <!-- Contacts -->
-    <div class="col-lg-7 mb-3">
-      <div class="card shadow-sm h-100">
+      <!-- Contacts -->
+      <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h2 class="h6 mb-0">Contacts</h2>
         </div>
@@ -100,6 +96,7 @@
                     <th>Name</th>
                     <th>Role</th>
                     <th>Phone</th>
+                    <th>Fax</th>
                     <th>Email</th>
                     <th style="width: 30%;">Notes</th>
                     <th class="text-end">Actions</th>
@@ -111,6 +108,7 @@
                       <td>{{ contact.name }}</td>
                       <td>{{ contact.role or "—" }}</td>
                       <td>{{ contact.phone or "—" }}</td>
+                      <td>{{ contact.fax or "—" }}</td>
                       <td>
                         {% if contact.email %}
                           <a href="mailto:{{ contact.email }}">{{ contact.email }}</a>
@@ -176,13 +174,25 @@
             </div>
             <div class="col-md-3">
               <label class="form-label form-label-sm mb-0">Role</label>
-              <input type="text" name="role" class="form-control form-control-sm" placeholder="Adjuster, etc."
-                     value="{{ edit_contact.role if edit_contact else '' }}">
+              <select name="role" class="form-select form-select-sm">
+                <option value="">Select role…</option>
+                {% for r in contact_roles %}
+                  <option value="{{ r }}"
+                          {% if edit_contact and edit_contact.role == r %}selected{% endif %}>
+                    {{ r }}
+                  </option>
+                {% endfor %}
+              </select>
             </div>
             <div class="col-md-3">
               <label class="form-label form-label-sm mb-0">Phone</label>
               <input type="text" name="phone" class="form-control form-control-sm"
                      value="{{ edit_contact.phone if edit_contact else '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label form-label-sm mb-0">Fax</label>
+              <input type="text" name="fax" class="form-control form-control-sm"
+                     value="{{ edit_contact.fax if edit_contact else '' }}">
             </div>
             <div class="col-md-5">
               <label class="form-label form-label-sm mb-0">Email</label>

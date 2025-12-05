@@ -66,10 +66,10 @@
             <dd class="col-sm-8">{{ claim.claim_number }}</dd>
 
             <dt class="col-sm-4">DOB</dt>
-            <dd class="col-sm-8">{{ claim.dob or "—" }}</dd>
+            <dd class="col-sm-8">{{ claim.dob|format_date or "—" }}</dd>
 
             <dt class="col-sm-4">DOI</dt>
-            <dd class="col-sm-8">{{ claim.doi or "—" }}</dd>
+            <dd class="col-sm-8">{{ claim.doi|format_date or "—" }}</dd>
 
             <dt class="col-sm-4">Address</dt>
             <dd class="col-sm-8">
@@ -166,7 +166,7 @@
                       </td>
                       <td>
                         {% if inv.dos_start or inv.dos_end %}
-                          {{ inv.dos_start or '—' }} &rarr; {{ inv.dos_end or '—' }}
+                          {{ inv.dos_start|format_date or '—' }} &rarr; {{ inv.dos_end|format_date or '—' }}
                         {% else %}
                           —
                         {% endif %}
@@ -233,7 +233,7 @@
                           {% set units = 'hr' %}
                         {% endif %}
                         <tr>
-                          <td>{{ item.service_date or '—' }}</td>
+                          <td>{{ item.date_of_service|format_date or '—' }}</td>
                           <td>{{ item.activity_code }}</td>
                           <td class="text-end">
                             {% if item.quantity is not none %}
@@ -385,10 +385,10 @@
               <table class="table table-sm mb-0 align-middle">
                 <thead class="table-light">
                   <tr>
-                    <th style="width: 12%">Created</th>
-                    <th style="width: 14%">Type</th>
+                    <th style="width: 16%">Type</th>
                     <th style="width: 24%">DOS Range</th>
-                    <th style="width: 20%">Current Status</th>
+                    <th style="width: 20%">Treating Provider</th>
+                    <th style="width: 20%">Next Appointment</th>
                     <th style="width: 15%">Next Report Due</th>
                     <th style="width: 15%" class="text-end">Actions</th>
                   </tr>
@@ -398,30 +398,33 @@
                   {% for r in reports %}
                     <tr>
                       <td class="small">
-                        {{ r.created_at.strftime("%Y-%m-%d") if r.created_at else "—" }}
-                      </td>
-                      <td class="small">
-                        {{ r.report_type or "—" }}
+                        {{ (r.report_type or "—")|capitalize }}
                       </td>
                       <td class="small">
                         {% if r.dos_start or r.dos_end %}
-                          {{ r.dos_start or "?" }} – {{ r.dos_end or "?" }}
+                          {{ r.dos_start|format_date if r.dos_start else "?" }} – {{ r.dos_end|format_date if r.dos_end else "?" }}
                         {% else %}
                           —
                         {% endif %}
                       </td>
                       <td class="small">
-                        {{ r.current_status or "—" }}
+                        {% if r.treating_provider %}
+                          {{ r.treating_provider.name }}
+                        {% else %}
+                          —
+                        {% endif %}
                       </td>
                       <td class="small">
-                        {{ r.next_report_due or "—" }}
+                        {% if r.initial_next_appt_datetime %}
+                          {{ r.initial_next_appt_datetime.strftime('%m/%d/%Y %I:%M %p') }}
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
+                      <td class="small">
+                        {{ r.next_report_due|format_date or "—" }}
                       </td>
                       <td class="text-end">
-                        <a href="{{ url_for('main.report_detail', claim_id=claim.id, report_id=r.id) }}"
-                           class="btn btn-sm btn-outline-secondary me-1">
-                          View
-                        </a>
-
                         <a href="{{ url_for('main.report_edit', claim_id=claim.id, report_id=r.id) }}"
                            class="btn btn-sm btn-primary me-1">
                           Edit
@@ -456,115 +459,33 @@
               <h3 class="h6 mb-0">Add Report</h3>
             </div>
             <div class="card-body small" id="report-new-form">
-              <form method="post" action="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
+              <form method="post"
+                    action="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
+                    class="row g-2 align-items-end mb-0">
                 <input type="hidden" name="form_type" value="report_new">
 
-                <div class="row g-2">
-                  <div class="col-md-3">
-                    <label for="report_type" class="form-label form-label-sm mb-1">Report Type</label>
-                    <select id="report_type"
-                            name="report_type"
-                            class="form-select form-select-sm"
-                            required>
-                      <option value="">Select type…</option>
-                      <option value="Initial">Initial</option>
-                      <option value="Progress">Progress</option>
-                      <option value="Closure">Closure</option>
-                    </select>
-                    <div id="report_type_help" class="form-text small text-muted">
-                      Select a report type to see suggested labels below.
-                    </div>
-                  </div>
-
-                  <div class="col-md-3">
-                    <label for="dos_start" class="form-label form-label-sm mb-1">DOS Start</label>
-                    <input type="date"
-                           id="dos_start"
-                           name="dos_start"
-                           class="form-control form-control-sm">
-                  </div>
-
-                  <div class="col-md-3">
-                    <label for="dos_end" class="form-label form-label-sm mb-1">DOS End</label>
-                    <input type="date"
-                           id="dos_end"
-                           name="dos_end"
-                           class="form-control form-control-sm">
-                  </div>
-
-                  <div class="col-md-3">
-                    <label for="next_report_due"
-                           id="next_report_due_label"
-                           class="form-label form-label-sm mb-1">
-                      Next Report Due
-                    </label>
-                    <input type="date"
-                           id="next_report_due"
-                           name="next_report_due"
-                           class="form-control form-control-sm">
-                    <div id="next_report_help" class="form-text small text-muted">
-                      Optional follow-up date, depending on report type.
-                    </div>
-                  </div>
+                <div class="col-auto">
+                  <label for="report_type" class="form-label form-label-sm mb-1">Report Type</label>
+                  <select id="report_type"
+                          name="report_type"
+                          class="form-select form-select-sm"
+                          required>
+                    <option value="">Select type…</option>
+                    <option value="initial">Initial</option>
+                    <option value="progress">Progress</option>
+                    <option value="closure">Closure</option>
+                  </select>
                 </div>
 
-                <div class="row g-2 mt-2">
-                  <div class="col-md-4">
-                    <label for="status_text"
-                           id="status_text_label"
-                           class="form-label form-label-sm mb-1">
-                      Current Status
-                    </label>
-                    <textarea id="status_text"
-                              name="status_text"
-                              rows="3"
-                              class="form-control form-control-sm"
-                              placeholder="Clinical status, key issues, changes since last report…"></textarea>
-                  </div>
-
-                  <div class="col-md-4">
-                    <label for="work_status"
-                           id="work_status_label"
-                           class="form-label form-label-sm mb-1 d-flex justify-content-between align-items-center">
-                      <span>Work Status</span>
-                      <button type="button"
-                              class="btn btn-link btn-sm p-0 ms-2"
-                              data-append-field="work_status">
-                        Append from last report
-                      </button>
-                    </label>
-                    <textarea id="work_status"
-                              name="work_status"
-                              rows="3"
-                              class="form-control form-control-sm"
-                              placeholder="Current work / duty status, restrictions, RTW plans…"></textarea>
-                  </div>
-
-                  <div class="col-md-4">
-                    <label for="case_management_plan"
-                           id="plan_label"
-                           class="form-label form-label-sm mb-1 d-flex justify-content-between align-items-center">
-                      <span>Case Management Plan</span>
-                      <button type="button"
-                              class="btn btn-link btn-sm p-0 ms-2"
-                              data-append-field="case_management_plan">
-                        Append from last report
-                      </button>
-                    </label>
-                    <textarea id="case_management_plan"
-                              name="case_management_plan"
-                              rows="3"
-                              class="form-control form-control-sm"
-                              placeholder="Planned interventions, follow-up tasks, providers, timelines…"></textarea>
-                  </div>
-                </div>
-
-                <div class="mt-3 text-end">
-                  <button type="submit" class="btn btn-primary btn-sm">
-                    Add Report
+                <div class="col-auto">
+                  <button type="submit" class="btn btn-primary btn-sm mt-4">
+                    New Report
                   </button>
                 </div>
               </form>
+              <p class="text-muted small mt-2 mb-0">
+                After selecting a type, you&#39;ll complete dates, status, barriers, and other details on the report screen.
+              </p>
             </div>
           </div>
 
@@ -604,7 +525,7 @@
                     <tbody>
                       {% for d in documents %}
                         <tr>
-                          <td>{{ d.uploaded_at.strftime("%Y-%m-%d") if d.uploaded_at else "—" }}</td>
+                          <td>{{ d.uploaded_at|format_date or "—" }}</td>
                           <td>{{ d.doc_type or d.document_type or "—" }}</td>
                           <td style="max-width: 260px;">
                             {% if d.description %}
@@ -624,6 +545,14 @@
      class="btn btn-outline-secondary btn-sm">
     Open
   </a>
+
+  <form method="post"
+        action="{{ url_for('main.document_open_location', claim_id=claim.id, doc_id=d.id) }}"
+        class="d-inline ms-1">
+    <button type="submit" class="btn btn-outline-secondary btn-sm">
+      Open Location
+    </button>
+  </form>
 
   <form method="post"
         action="{{ url_for('main.document_delete', claim_id=claim.id, doc_id=d.id) }}"
@@ -705,108 +634,4 @@
   </div> <!-- /accordion -->
 </div>
 
-<!-- Report type + append-from-last-report JS -->
-<script>
-  (function() {
-    const typeSelect = document.getElementById("report_type");
-
-    const statusLabel = document.getElementById("status_text_label");
-    const workLabel = document.getElementById("work_status_label");
-    const planLabel = document.getElementById("plan_label");
-    const nextDueLabel = document.getElementById("next_report_due_label");
-    const help = document.getElementById("report_type_help");
-    const nextHelp = document.getElementById("next_report_help");
-
-    function updateForType() {
-      const t = typeSelect ? typeSelect.value : "";
-
-      if (!t) {
-        if (help) help.textContent = "Select a report type to see suggested fields below.";
-        if (statusLabel) statusLabel.textContent = "Current Status";
-        if (workLabel) workLabel.textContent = "Work Status";
-        if (planLabel) planLabel.textContent = "Case Management Plan";
-        if (nextDueLabel) nextDueLabel.textContent = "Next Report Due";
-        if (nextHelp) nextHelp.textContent = "Optional follow-up date, depending on report type.";
-        return;
-      }
-
-      if (t === "Initial") {
-        if (help) help.textContent = "Initial report: background, current status, and initial plan.";
-        if (statusLabel) statusLabel.textContent = "Initial Clinical Status / Background";
-        if (workLabel) workLabel.textContent = "Initial Work Status";
-        if (planLabel) planLabel.textContent = "Initial Case Management Plan";
-        if (nextDueLabel) nextDueLabel.textContent = "Next Report Target Date";
-        if (nextHelp) nextHelp.textContent = "Optional, but helpful to set an initial follow-up date.";
-      } else if (t === "Progress") {
-        if (help) help.textContent = "Progress report: changes since last report and updated plan.";
-        if (statusLabel) statusLabel.textContent = "Interval Progress / Clinical Update";
-        if (workLabel) workLabel.textContent = "Work Status / Changes";
-        if (planLabel) planLabel.textContent = "Updated Case Management Plan";
-        if (nextDueLabel) nextDueLabel.textContent = "Next Report Due";
-        if (nextHelp) nextHelp.textContent = "Set the next progress report date.";
-      } else if (t === "Closure") {
-        if (help) help.textContent = "Closure report: final status, outcome, and closure rationale.";
-        if (statusLabel) statusLabel.textContent = "Final Clinical Status / Outcome";
-        if (workLabel) workLabel.textContent = "Final Work Status";
-        if (planLabel) planLabel.textContent = "Closure Summary / Disposition";
-        if (nextDueLabel) nextDueLabel.textContent = "Next Report Due";
-        if (nextHelp) nextHelp.textContent = "Usually left blank for closure reports.";
-      }
-    }
-
-    if (typeSelect) {
-      typeSelect.addEventListener("change", updateForType);
-      // Initialize labels on first load, in case a type is preselected
-      updateForType();
-    }
-
-    // ---- Append-from-last-report wiring ----
-    const baseAppendUrl = "{{ url_for('main.report_append_field', claim_id=claim.id) }}";
-
-    function appendFromLastReport(fieldName, textareaId) {
-      const textarea = document.getElementById(textareaId);
-      if (!textarea || !baseAppendUrl) return;
-
-      const url = baseAppendUrl + "?field=" + encodeURIComponent(fieldName);
-
-      fetch(url, { method: "GET" })
-        .then(function(response) {
-          if (!response.ok) {
-            throw new Error("Network response was not ok");
-          }
-          return response.json();
-        })
-        .then(function(data) {
-          if (!data || typeof data.value !== "string") {
-            return;
-          }
-          const existing = textarea.value || "";
-          if (!existing.trim()) {
-            textarea.value = data.value;
-          } else if (data.value.trim()) {
-            textarea.value = existing.replace(/\s*$/, "") + "\n\n" + data.value;
-          }
-          textarea.focus();
-        })
-        .catch(function(err) {
-          console.error("Error appending from last report:", err);
-        });
-    }
-
-    const appendButtons = document.querySelectorAll("[data-append-field]");
-    appendButtons.forEach(function(btn) {
-      btn.addEventListener("click", function(evt) {
-        evt.preventDefault();
-        const fieldName = btn.getAttribute("data-append-field");
-        if (!fieldName) return;
-
-        if (fieldName === "work_status") {
-          appendFromLastReport("work_status", "work_status");
-        } else if (fieldName === "case_management_plan") {
-          appendFromLastReport("case_management_plan", "case_management_plan");
-        }
-      });
-    });
-  })();
-</script>
 {% endblock %}

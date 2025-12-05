@@ -4,25 +4,36 @@
 {% block content %}
 <div class="container-fluid">
 
+  {% if error %}
+    <div class="alert alert-danger small" role="alert">
+      {{ error }}
+    </div>
+  {% endif %}
+
   <!-- Header / breadcrumb -->
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-      <h1 class="h4 mb-0">Edit Report</h1>
+      <h1 class="h4 mb-0">
+        Edit {{ (report.report_type or 'Report')|capitalize }} Report
+      </h1>
       <div class="text-muted small">
         Claim: {{ claim.claimant_name }} · Claim #{{ claim.claim_number }}
         {% if report.report_type %}
-          · Type: {{ report.report_type }}
+          · Type: {{ (report.report_type or '')|capitalize }}
         {% endif %}
       </div>
     </div>
     <div class="d-flex gap-2">
-      <a href="{{ url_for('main.report_detail', report_id=report.id) }}" class="btn btn-outline-secondary btn-sm">
+      <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary btn-sm">
         Cancel
+      </a>
+      <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary btn-sm">
+        Back to Claim
       </a>
     </div>
   </div>
 
-  <form method="post" action="{{ url_for('main.report_edit', report_id=report.id) }}">
+  <form method="post" action="{{ url_for('main.report_edit', claim_id=claim.id, report_id=report.id) }}">
     {{ csrf_field() if csrf_field is defined }}
 
     <div class="row">
@@ -39,7 +50,7 @@
               <label class="form-label form-label-sm mb-0">Report Type</label>
               <input type="text"
                      class="form-control form-control-sm"
-                     value="{{ report.report_type }}"
+                     value="{{ (report.report_type or '')|capitalize }}"
                      readonly>
               <input type="hidden" name="report_type" value="{{ report.report_type }}">
             </div>
@@ -47,16 +58,27 @@
             <!-- Provider selector -->
             <div class="col-md-8">
               <label class="form-label form-label-sm mb-0">Treating Provider</label>
-              <select name="provider_id" class="form-select form-select-sm">
+              <select name="treating_provider_id" class="form-select form-select-sm">
                 <option value="">— Select provider —</option>
                 {% for provider in providers %}
                   <option value="{{ provider.id }}"
-                          {% if report.provider_id == provider.id %}selected{% endif %}>
+                          {% if report.treating_provider_id == provider.id %}selected{% endif %}>
                     {{ provider.name }}
                   </option>
                 {% endfor %}
               </select>
             </div>
+
+            {% if report.report_type == 'initial' %}
+            <!-- Primary Care Provider (stored on the Claim) -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Primary Care Provider</label>
+              <input type="text"
+                     name="primary_care_provider"
+                     class="form-control form-control-sm"
+                     value="{{ claim.primary_care_provider or '' }}">
+            </div>
+            {% endif %}
 
             <!-- DOS range -->
             <div class="col-md-4">
@@ -92,80 +114,107 @@
             <h2 class="h6 mb-0">Clinical Content</h2>
           </div>
           <div class="card-body small row g-3">
+            {% if report.report_type == 'initial' %}
             <!-- Diagnosis -->
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Diagnosis</label>
-              <textarea name="diagnosis"
+              <textarea name="initial_diagnosis"
                         class="form-control form-control-sm"
-                        rows="2">{{ report.diagnosis or "" }}</textarea>
+                        rows="2">{{ report.initial_diagnosis or "" }}</textarea>
             </div>
 
             <!-- Mechanism of injury -->
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Mechanism of Injury</label>
-              <textarea name="mechanism_of_injury"
+              <textarea name="initial_mechanism_of_injury"
                         class="form-control form-control-sm"
-                        rows="2">{{ report.mechanism_of_injury or "" }}</textarea>
+                        rows="2">{{ report.initial_mechanism_of_injury or "" }}</textarea>
             </div>
 
             <!-- Co-existing conditions -->
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Co-Existing Conditions</label>
-              <textarea name="coexisting_conditions"
+              <textarea name="initial_coexisting_conditions"
                         class="form-control form-control-sm"
-                        rows="2">{{ report.coexisting_conditions or "" }}</textarea>
+                        rows="2">{{ report.initial_coexisting_conditions or "" }}</textarea>
             </div>
 
             <!-- Surgical history -->
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Surgical History</label>
-              <textarea name="surgical_history"
+              <textarea name="initial_surgical_history"
                         class="form-control form-control-sm"
-                        rows="2">{{ report.surgical_history or "" }}</textarea>
+                        rows="2">{{ report.initial_surgical_history or "" }}</textarea>
             </div>
 
             <!-- Medications -->
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Medications</label>
-              <textarea name="medications"
+              <textarea name="initial_medications"
                         class="form-control form-control-sm"
-                        rows="2">{{ report.medications or "" }}</textarea>
+                        rows="2">{{ report.initial_medications or "" }}</textarea>
             </div>
 
             <!-- Diagnostics -->
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Diagnostics</label>
-              <textarea name="diagnostics"
+              <textarea name="initial_diagnostics"
                         class="form-control form-control-sm"
-                        rows="2">{{ report.diagnostics or "" }}</textarea>
+                        rows="2">{{ report.initial_diagnostics or "" }}</textarea>
             </div>
+            {% endif %}
 
             <!-- Current status / treatment plan -->
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Current Status / Treatment Plan</label>
-              <textarea name="current_status"
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Current Status / Treatment Plan</label>
+                <button type="button"
+                        class="btn btn-link btn-sm p-0"
+                        onclick="rollForwardField('status_treatment_plan', 'status_treatment_plan_field')">
+                  Roll forward from last report
+                </button>
+              </div>
+              <textarea name="status_treatment_plan"
+                        id="status_treatment_plan_field"
                         class="form-control form-control-sm"
-                        rows="3">{{ report.current_status or "" }}</textarea>
+                        rows="3">{{ report.status_treatment_plan or "" }}</textarea>
             </div>
 
             <!-- Work status -->
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Work Status</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Work Status</label>
+                <button type="button"
+                        class="btn btn-link btn-sm p-0"
+                        onclick="rollForwardField('work_status', 'work_status_field')">
+                  Roll forward from last report
+                </button>
+              </div>
               <textarea name="work_status"
+                        id="work_status_field"
                         class="form-control form-control-sm"
                         rows="2">{{ report.work_status or "" }}</textarea>
             </div>
 
             <!-- Case management plan -->
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Case Management Plan</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Case Management Plan</label>
+                <button type="button"
+                        class="btn btn-link btn-sm p-0"
+                        onclick="rollForwardField('case_management_plan', 'case_management_plan_field')">
+                  Roll forward from last report
+                </button>
+              </div>
               <textarea name="case_management_plan"
+                        id="case_management_plan_field"
                         class="form-control form-control-sm"
                         rows="2">{{ report.case_management_plan or "" }}</textarea>
             </div>
           </div>
         </div>
 
+        {% if report.report_type == 'closure' %}
         <!-- Closure-only fields (they can stay empty for Initial/Progress) -->
         <div class="card shadow-sm mb-3">
           <div class="card-header">
@@ -190,21 +239,38 @@
               </select>
             </div>
             <div class="col-md-6">
-              <label class="form-label form-label-sm mb-0">Closure Details</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Closure Details</label>
+                <button type="button"
+                        class="btn btn-link btn-sm p-0"
+                        onclick="rollForwardField('closure_details', 'closure_details_field')">
+                  Roll forward from last report
+                </button>
+              </div>
               <input type="text"
                      name="closure_details"
+                     id="closure_details_field"
                      class="form-control form-control-sm"
                      value="{{ report.closure_details or '' }}">
             </div>
 
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Case Management Impact</label>
-              <textarea name="case_management_impact"
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Case Management Impact</label>
+                <button type="button"
+                        class="btn btn-link btn-sm p-0"
+                        onclick="rollForwardField('closure_case_management_impact', 'closure_case_management_impact_field')">
+                  Roll forward from last report
+                </button>
+              </div>
+              <textarea name="closure_case_management_impact"
+                        id="closure_case_management_impact_field"
                         class="form-control form-control-sm"
-                        rows="2">{{ report.case_management_impact or "" }}</textarea>
+                        rows="2">{{ report.closure_case_management_impact or "" }}</textarea>
             </div>
           </div>
         </div>
+        {% endif %}
 
       </div>
 
@@ -218,22 +284,25 @@
           </div>
           <div class="card-body small" style="max-height: 260px; overflow-y: auto;">
             {% set selected_ids = selected_barrier_ids if selected_barrier_ids is defined else [] %}
-            {% if barrier_options %}
-              <div class="form-check">
-                {% for opt in barrier_options %}
-                  <div class="form-check mb-1">
-                    <input class="form-check-input"
-                           type="checkbox"
-                           name="barrier_ids"
-                           id="barrier_{{ opt.id }}"
-                           value="{{ opt.id }}"
-                           {% if opt.id in selected_ids %}checked{% endif %}>
-                    <label class="form-check-label" for="barrier_{{ opt.id }}">
-                      {{ opt.label }}
-                    </label>
-                  </div>
-                {% endfor %}
-              </div>
+            {% if barriers_by_category %}
+              {% for category, options in barriers_by_category.items() %}
+                <div class="mb-2">
+                  <div class="fw-semibold small">{{ category }}</div>
+                  {% for opt in options %}
+                    <div class="form-check mb-1">
+                      <input class="form-check-input"
+                             type="checkbox"
+                             name="barrier_ids"
+                             id="barrier_{{ opt.id }}"
+                             value="{{ opt.id }}"
+                             {% if opt.id in selected_ids %}checked{% endif %}>
+                      <label class="form-check-label" for="barrier_{{ opt.id }}">
+                        {{ opt.label }}
+                      </label>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endfor %}
             {% else %}
               <p class="text-muted mb-0">No barrier options configured.</p>
             {% endif %}
@@ -249,24 +318,59 @@
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Date / Time</label>
               <input type="datetime-local"
-                     name="next_appt_datetime"
+                     id="initial_next_appt_datetime"
+                     name="initial_next_appt_datetime"
                      class="form-control form-control-sm"
-                     value="{% if report.next_appt_datetime %}{{ report.next_appt_datetime.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
+                     value="{% if report.initial_next_appt_datetime %}{{ report.initial_next_appt_datetime.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
             </div>
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Provider</label>
-              <input type="text"
-                     name="next_appt_provider"
-                     class="form-control form-control-sm"
-                     value="{{ report.next_appt_provider or '' }}">
+              <select
+                name="initial_next_appt_provider_name"
+                class="form-select form-select-sm"
+              >
+                <option value="">— Select provider… —</option>
+                {% for p in providers %}
+                  <option value="{{ p.name }}"
+                          {% if report.initial_next_appt_provider_name == p.name %}selected{% endif %}>
+                    {{ p.name }}
+                  </option>
+                {% endfor %}
+              </select>
             </div>
+            <div class="col-12 d-flex justify-content-between align-items-center mt-1">
+              <small class="text-muted">Generate a calendar event for this appointment.</small>
+              <a href="{{ url_for('main.report_next_appointment_ics', claim_id=claim.id, report_id=report.id) }}"
+                 id="download_ics_btn"
+                 class="btn btn-outline-secondary btn-sm"
+                 {% if not report.initial_next_appt_datetime %}disabled{% endif %}>
+                Download .ics
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Billing / invoice actions -->
+        <div class="card shadow-sm mb-3">
+          <div class="card-header">
+            <h2 class="h6 mb-0">Billing &amp; Invoice</h2>
+          </div>
+          <div class="card-body small d-flex flex-column gap-2">
+            <p class="mb-1 text-muted">
+              Create an invoice for this report using all uninvoiced, complete billable items
+              within this report's date-of-service range.
+            </p>
+            <a href="{{ url_for('main.invoice_new_for_report', claim_id=claim.id, report_id=report.id) }}"
+               class="btn btn-sm btn-outline-primary">
+              Create Invoice for this Report
+            </a>
           </div>
         </div>
 
         <!-- Save / cancel -->
         <div class="card shadow-sm">
           <div class="card-body d-flex justify-content-between align-items-center">
-            <a href="{{ url_for('main.report_detail', report_id=report.id) }}"
+            <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
                class="btn btn-outline-secondary btn-sm">
               Cancel
             </a>
@@ -280,5 +384,139 @@
     </div>
   </form>
 
+  <!-- Report Documents -->
+  <div class="row mb-3">
+    <div class="col-lg-12">
+      <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h2 class="h6 mb-0">Report Documents</h2>
+        </div>
+        <div class="card-body small">
+          {% if report.documents %}
+            <div class="table-responsive mb-3">
+              <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width: 40%">File Name</th>
+                    <th style="width: 35%">Description</th>
+                    <th style="width: 15%">Uploaded</th>
+                    <th style="width: 10%" class="text-end">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for d in report.documents %}
+                    <tr>
+                      <td class="small">{{ d.original_filename or "(unnamed)" }}</td>
+                      <td class="small">{{ d.description or "—" }}</td>
+                      <td class="small">
+                        {% if d.uploaded_at %}
+                          {{ d.uploaded_at.strftime('%m/%d/%Y %I:%M %p') }}
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
+                      <td class="text-end">
+                        <a href="{{ url_for('main.report_document_download', report_document_id=d.id) }}"
+                           class="btn btn-sm btn-outline-secondary me-1">
+                          Open
+                        </a>
+
+                        <form method="post"
+                              action="{{ url_for('main.report_document_open_location', report_document_id=d.id) }}"
+                              class="d-inline me-1">
+                          {{ csrf_field() if csrf_field is defined }}
+                          <button type="submit" class="btn btn-sm btn-outline-secondary">
+                            Open Location
+                          </button>
+                        </form>
+
+                        <form method="post"
+                              action="{{ url_for('main.report_document_delete', report_document_id=d.id) }}"
+                              class="d-inline"
+                              onsubmit="return confirm('Delete this document? This cannot be undone.');">
+                          {{ csrf_field() if csrf_field is defined }}
+                          <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                        </form>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="text-muted mb-3">No documents uploaded for this report yet.</p>
+          {% endif %}
+
+          <hr class="my-2">
+
+          <form method="post"
+                action="{{ url_for('main.report_document_upload', claim_id=claim.id, report_id=report.id) }}"
+                enctype="multipart/form-data"
+                class="row g-2 align-items-end">
+            {{ csrf_field() if csrf_field is defined }}
+            <div class="col-md-5">
+              <label class="form-label form-label-sm mb-0">Select File</label>
+              <input type="file" name="file" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label form-label-sm mb-0">Description (optional)</label>
+              <input type="text" name="description" class="form-control form-control-sm" placeholder="e.g., Clinic notes, imaging, correspondence">
+            </div>
+            <div class="col-md-2 text-end">
+              <button type="submit" class="btn btn-primary btn-sm w-100 mt-3 mt-md-0">
+                Upload
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
+<script>
+  (function () {
+    const baseUrl = "{{ url_for('main.report_roll_forward', claim_id=claim.id, report_id=report.id, field_name='__FIELD__') }}";
+
+    window.rollForwardField = function (fieldName, elementId) {
+      const url = baseUrl.replace("__FIELD__", fieldName);
+      fetch(url, {method: "GET"})
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("Network response was not ok");
+          }
+          return response.json();
+        })
+        .then(function (data) {
+          const el = document.getElementById(elementId);
+          if (el && data && typeof data.value === "string") {
+            el.value = data.value;
+          }
+        })
+        .catch(function (error) {
+          console.error("Roll forward failed:", error);
+        });
+    };
+
+    // Enable/disable the ICS download button based on the next appointment datetime field
+    const dtInput = document.getElementById("initial_next_appt_datetime");
+    const icsButton = document.getElementById("download_ics_btn");
+
+    function updateIcsButtonState() {
+      if (!dtInput || !icsButton) return;
+      // Disable the button when there is no value in the datetime field
+      if (!dtInput.value) {
+        icsButton.setAttribute("disabled", "disabled");
+      } else {
+        icsButton.removeAttribute("disabled");
+      }
+    }
+
+    if (dtInput && icsButton) {
+      updateIcsButtonState();
+      dtInput.addEventListener("input", updateIcsButtonState);
+      dtInput.addEventListener("change", updateIcsButtonState);
+    }
+  })();
+</script>
 {% endblock %}

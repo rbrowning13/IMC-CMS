@@ -1,5 +1,7 @@
 import os
 import uuid
+import sys
+import subprocess
 from pathlib import Path
 from datetime import date
 import json
@@ -7,7 +9,7 @@ from collections import defaultdict
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from .models import Carrier, Claim, Employer, Contact
-
+from flask import send_from_directory
 
 from flask import (
     Blueprint,
@@ -17,9 +19,11 @@ from flask import (
     url_for,
     current_app,
     send_from_directory,
+    send_file,
     flash,  # <-- added flash
     abort,
     jsonify,
+    make_response,
 )
 from werkzeug.utils import secure_filename
 from markupsafe import Markup, escape  # <-- ADD THIS LINE
@@ -37,6 +41,7 @@ from .models import (
     ReportDocument,
     ClaimDocument,
     Settings,
+    BarrierOption,
 )
 
 bp = Blueprint("main", __name__)
@@ -53,6 +58,36 @@ BILLABLE_ACTIVITY_CHOICES = [
     ("EXP", "Expenses (dollars)"),
     ("NO BILL", "Non-billable activity"),
 ]
+
+# ---- Contact roles (editable via Settings) ----
+CONTACT_ROLE_DEFAULTS = [
+    "Adjuster",
+    "Nurse Case Manager",
+    "Claims Representative",
+    "HR / Employer Contact",
+    "Billing",
+    "Attorney",
+    "Provider Office Contact",
+    "Other",
+]
+
+def _get_contact_roles():
+    """
+    Load contact roles from Settings.contact_roles_json, falling back
+    to CONTACT_ROLE_DEFAULTS if not set or invalid.
+    """
+    settings = _ensure_settings()
+    raw = getattr(settings, "contact_roles_json", None)
+    if raw:
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                roles = [str(r).strip() for r in data if str(r).strip()]
+                if roles:
+                    return roles
+        except (TypeError, ValueError):
+            pass
+    return CONTACT_ROLE_DEFAULTS[:]
 
 # ---------- helpers ----------
 
@@ -145,6 +180,30 @@ def _safe_segment(text: str) -> str:
     """Filesystem-safe name chunk."""
     return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in text)
 
+def _open_in_file_manager(path: Path) -> None:
+    """
+    Open the given folder path in the host OS file manager (Finder / Explorer / etc).
+
+    This only makes sense because the app and the browser are on the same machine.
+    Errors are swallowed so we don't crash the request if the OS call fails.
+    """
+    folder = Path(path).resolve()
+    if not folder.exists():
+        return
+
+    try:
+        if sys.platform.startswith("darwin"):
+            # macOS
+            subprocess.Popen(["open", str(folder)])
+        elif os.name == "nt":
+            # Windows
+            os.startfile(str(folder))  # type: ignore[attr-defined]
+        else:
+            # Linux / other
+            subprocess.Popen(["xdg-open", str(folder)])
+    except Exception:
+        # Don't let OS issues break the web request
+        pass
 
 # ---- date parsing helper ----
 def _parse_date(value: str):
@@ -202,14 +261,32 @@ def _validate_postal_code(value: str) -> bool:
 
 def _get_documents_root() -> Path:
     """
-    Base folder for all documents. If Settings.documents_root is set, use that.
-    Otherwise default to instance/documents.
+    Resolve the root folder for all documents.
+
+    Behavior:
+    - If Settings.documents_root is an ABSOLUTE path, use it exactly.
+    - If it's RELATIVE, interpret it as relative to the project root
+      (current_app.root_path), not instance/, and not inside a cloud-synced folder.
+    - Create the folder if missing.
+
+    This helps avoid accidentally storing documents in cloud-synced locations
+    that can interfere with file availability or privacy.
     """
     settings = Settings.query.first()
-    if settings and settings.documents_root:
-        root = Path(settings.documents_root)
+    raw = settings.documents_root if settings and settings.documents_root else ""
+
+    # Project root: where the Flask app package actually lives on disk
+    project_root = Path(current_app.root_path).resolve()
+
+    if raw:
+        root = Path(raw).expanduser()
+
+        # If user gave a relative path, anchor it under the project root
+        if not root.is_absolute():
+            root = project_root / root
     else:
-        root = Path(current_app.instance_path) / "documents"
+        # Default: ./documents under the project directory
+        root = project_root / "documents"
 
     root.mkdir(parents=True, exist_ok=True)
     return root
@@ -383,6 +460,28 @@ def _claim_has_related_data(claim: Claim) -> bool:
     has_documents = ClaimDocument.query.filter_by(claim_id=claim.id).count() > 0
     return has_billables or has_reports or has_invoices or has_documents
 
+# Helper to load active BarrierOption rows grouped by category
+def _get_barrier_options_grouped():
+    """
+    Return active BarrierOption rows grouped by category.
+
+    barriers_by_category = {
+        "Psychosocial": [BarrierOption, ...],
+        "Medical": [...],
+        ...
+    }
+    """
+    options = (
+        BarrierOption.query.filter_by(is_active=True)
+        .order_by(BarrierOption.sort_order, BarrierOption.label)
+        .all()
+    )
+    grouped = defaultdict(list)
+    for opt in options:
+        category = opt.category or "General"
+        grouped[category].append(opt)
+    return grouped
+
 # ---------- basic pages ----------
 
 
@@ -495,6 +594,61 @@ def invoice_new_for_claim(claim_id):
 
     return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
 
+@bp.route("/claims/<int:claim_id>/reports/<int:report_id>/invoice/new", methods=["GET"])
+def invoice_new_for_report(claim_id, report_id):
+    """
+    Create a new invoice for a claim using all uninvoiced, complete billable items
+    whose dates of service fall within this report's DOS range.
+    """
+    claim = Claim.query.get_or_404(claim_id)
+    report = (
+        Report.query.filter_by(id=report_id, claim_id=claim.id)
+        .first_or_404()
+    )
+
+    # Require a DOS range to filter by
+    if not report.dos_start or not report.dos_end:
+        flash("This report does not have a complete date-of-service range.", "warning")
+        return redirect(url_for("main.report_edit", claim_id=claim.id, report_id=report.id))
+
+    # Find all complete, uninvoiced billable items for this claim within the report's DOS window
+    items = (
+        BillableItem.query
+        .filter_by(claim_id=claim.id, invoice_id=None)
+        .filter(BillableItem.is_complete.is_(True))
+        .filter(BillableItem.date_of_service >= report.dos_start)
+        .filter(BillableItem.date_of_service <= report.dos_end)
+        .all()
+    )
+
+    if not items:
+        flash("No complete billable items in this report's date range to invoice.", "warning")
+        return redirect(url_for("main.report_edit", claim_id=claim.id, report_id=report.id))
+
+    # Create invoice shell using the report's DOS range
+    invoice = Invoice(
+        claim_id=claim.id,
+        carrier_id=claim.carrier_id,
+        employer_id=claim.employer_id,
+        invoice_number=_generate_invoice_number(),
+        status="Draft",
+        invoice_date=None,
+        dos_start=report.dos_start,
+        dos_end=report.dos_end,
+    )
+    db.session.add(invoice)
+    db.session.flush()
+
+    # Attach items to this invoice
+    for item in items:
+        item.invoice_id = invoice.id
+
+    # Calculate and persist totals
+    _calculate_invoice_totals(invoice)
+
+    db.session.commit()
+
+    return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
 
 @bp.route("/billing/<int:invoice_id>")
 def invoice_detail(invoice_id):
@@ -539,14 +693,15 @@ def invoice_update(invoice_id):
     old_invoice_date = invoice.invoice_date
 
     new_status = (request.form.get("status") or "").strip() or None
-    new_invoice_date = (request.form.get("invoice_date") or "").strip() or None
+    invoice_date_raw = (request.form.get("invoice_date") or "").strip() or None
+    invoice_date = _parse_date(invoice_date_raw) if invoice_date_raw else None
 
     allowed_statuses = ["Draft", "Sent", "Paid", "Void"]
     if new_status not in allowed_statuses:
         new_status = old_status or "Draft"
 
     invoice.status = new_status
-    invoice.invoice_date = new_invoice_date
+    invoice.invoice_date = invoice_date
 
     db.session.commit()
 
@@ -646,18 +801,99 @@ def invoice_remove_item(invoice_id, item_id):
 
     return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
 
-# ----------- Placeholder for new report creation ----------
+# ----------- New report creation ----------
 @bp.route("/claims/<int:claim_id>/reports/new/<report_type>")
 def report_new(claim_id, report_type):
-    """Placeholder route for creating a new report.
+    """
+    Create a new report for a claim and redirect to the report edit screen.
 
-    Currently just ensures the claim exists and redirects back to the
-    claim detail page. This satisfies url_for('main.report_new', ...)
-    in the templates so the page can render without error. Later we
-    can expand this into a full-screen report creation workflow.
+    For now we:
+    - Validate the report type (initial/progress/closure)
+    - Compute a simple DOS range based on the last report for this claim
+    - Create the Report row
+    - Redirect to report_edit() so Gina can fill in the details
     """
     claim = Claim.query.get_or_404(claim_id)
-    return redirect(url_for("main.claim_detail", claim_id=claim.id))
+    rt = (report_type or "").strip().lower()
+
+    if rt not in ("initial", "progress", "closure"):
+        flash("Invalid report type.", "danger")
+        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+    # Look at the most recent report to suggest DOS defaults
+    last_report = (
+        Report.query
+        .filter_by(claim_id=claim.id)
+        .order_by(Report.dos_end.desc().nullslast(), Report.created_at.desc())
+        .first()
+    )
+
+    today = date.today()
+
+    if rt == "initial" or not last_report or not last_report.dos_end:
+        # For an initial (or first) report, default both dates to today for now.
+        dos_start = today
+        dos_end = today
+    else:
+        # For progress/closure, default start to the last report's DOS end,
+        # and end to today. Gina can tweak these on the edit screen.
+        if isinstance(last_report.dos_end, date):
+            dos_start = last_report.dos_end
+        else:
+            dos_start = today
+        dos_end = today
+
+    # Default treating provider from the most recent prior report (if any)
+    treating_provider_id = None
+    if last_report and last_report.treating_provider_id:
+        treating_provider_id = last_report.treating_provider_id
+
+    report = Report(
+        claim_id=claim.id,
+        report_type=rt,
+        dos_start=dos_start,
+        dos_end=dos_end,
+        treating_provider_id=treating_provider_id,
+    )
+    # Roll forward barriers from the most recent prior report on this claim
+    if last_report and last_report.barriers_json:
+        report.barriers_json = last_report.barriers_json
+
+    db.session.add(report)
+    db.session.commit()
+
+    # --- Auto-create a billable item for this report ---
+    activity_code = "RPT"
+    if rt == "initial":
+        qty = 1.0
+        description = "Initial report"
+    elif rt in ("progress", "closure"):
+        qty = 0.5
+        description = f"{rt.capitalize()} report"
+    else:
+        qty = None
+        description = "Report"
+
+    if qty is not None:
+        # Prefer DOS end, then DOS start, else None
+        dos_for_billing = report.dos_end or report.dos_start or None
+        is_complete = _billable_is_complete(activity_code, dos_for_billing, qty)
+
+        billable = BillableItem(
+            claim_id=claim.id,
+            report_id=report.id,
+            activity_code=activity_code,
+            date_of_service=dos_for_billing,
+            quantity=qty,
+            description=description,
+            is_complete=is_complete,
+        )
+        db.session.add(billable)
+        db.session.commit()
+
+    return redirect(url_for("main.report_edit", claim_id=claim.id, report_id=report.id))
+
+
 
 @bp.route("/claims/<int:claim_id>/delete", methods=["GET", "POST"])
 def claim_delete(claim_id):
@@ -805,7 +1041,7 @@ def claim_edit(claim_id):
     carriers = Carrier.query.order_by(Carrier.name).all()
     employers = Employer.query.order_by(Employer.name).all()
 
-    # Default contact list based on the claim's current carrier
+    # Default contact list based on the claim's current carrier (for initial GET)
     carrier_contacts = []
     if claim.carrier_id:
         carrier_contacts = (
@@ -819,15 +1055,43 @@ def claim_edit(claim_id):
         claimant_name = (request.form.get("claimant_name") or "").strip()
         claim_number = (request.form.get("claim_number") or "").strip()
 
-        # Parse dates from HTML date inputs
+        # Dates
         dob = _parse_date(request.form.get("dob"))
         doi = _parse_date(request.form.get("doi"))
 
-        carrier_id = (request.form.get("carrier_id") or "").strip() or None
-        employer_id = (request.form.get("employer_id") or "").strip() or None
+        # Claim-level state
+        claim_state = (request.form.get("claim_state") or "").strip() or None
 
-        # Optional carrier contact (adjuster)
+        # Claimant contact fields
+        claimant_address1 = (request.form.get("claimant_address1") or "").strip() or None
+        claimant_address2 = (request.form.get("claimant_address2") or "").strip() or None
+        claimant_city = (request.form.get("claimant_city") or "").strip() or None
+        claimant_state = (request.form.get("claimant_state") or "").strip() or None
+        claimant_postal_code = (request.form.get("claimant_postal_code") or "").strip() or None
+        claimant_phone = (request.form.get("claimant_phone") or "").strip() or None
+        claimant_email = (request.form.get("claimant_email") or "").strip() or None
+
+        primary_care_provider = (request.form.get("primary_care_provider") or "").strip() or None
+
+        # Carrier / employer / contact ids
+        carrier_id_raw = (request.form.get("carrier_id") or "").strip()
+        employer_id_raw = (request.form.get("employer_id") or "").strip()
         carrier_contact_id_raw = (request.form.get("carrier_contact_id") or "").strip()
+
+        carrier_id = None
+        if carrier_id_raw:
+            try:
+                carrier_id = int(carrier_id_raw)
+            except ValueError:
+                carrier_id = None
+
+        employer_id = None
+        if employer_id_raw:
+            try:
+                employer_id = int(employer_id_raw)
+            except ValueError:
+                employer_id = None
+
         carrier_contact_id = None
         if carrier_contact_id_raw:
             try:
@@ -835,8 +1099,8 @@ def claim_edit(claim_id):
             except ValueError:
                 carrier_contact_id = None
 
-        # If the user changed the carrier, refresh the contact list for that carrier
-        effective_carrier_id = carrier_id or claim.carrier_id
+        # Refresh carrier contacts list based on newly selected carrier (or existing one)
+        effective_carrier_id = carrier_id if carrier_id is not None else claim.carrier_id
         carrier_contacts = []
         if effective_carrier_id:
             carrier_contacts = (
@@ -853,6 +1117,18 @@ def claim_edit(claim_id):
             claim.claim_number = claim_number
             claim.dob = dob
             claim.doi = doi
+            claim.claim_state = claim_state
+
+            claim.claimant_address1 = claimant_address1
+            claim.claimant_address2 = claimant_address2
+            claim.claimant_city = claimant_city
+            claim.claimant_state = claimant_state
+            claim.claimant_postal_code = claimant_postal_code
+            claim.claimant_phone = claimant_phone
+            claim.claimant_email = claimant_email
+
+            claim.primary_care_provider = primary_care_provider
+
             claim.carrier_id = carrier_id
             claim.employer_id = employer_id
             claim.carrier_contact_id = carrier_contact_id
@@ -930,10 +1206,24 @@ def claim_detail(claim_id):
             activity_code = (request.form.get("activity_code") or "").strip()
             service_date_raw = (request.form.get("service_date") or "").strip() or None
             service_date_parsed = _parse_date(service_date_raw)
-            description = (request.form.get("description") or "").strip() or None
+
+            # Allow description to be optional, but never NULL at the DB level.
+            raw_description = (request.form.get("description") or "").strip()
+            description = raw_description if raw_description else None
 
             qty_raw = (request.form.get("quantity") or "").strip()
             quantity = float(qty_raw) if qty_raw else None
+
+            # If description is still empty, fall back to the human label for this
+            # activity code (e.g., "Mileage (miles)" for MIL) so the DB always
+            # gets a non-NULL value.
+            if not description and activity_code:
+                label = None
+                for code, label_text in BILLABLE_ACTIVITY_CHOICES:
+                    if code == activity_code:
+                        label = label_text
+                        break
+                description = label or activity_code
 
             if not activity_code:
                 error = "Activity code is required."
@@ -983,36 +1273,17 @@ def claim_detail(claim_id):
                 db.session.commit()
                 return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
-        # ---- New report ----
+        # ---- New report: just redirect to dedicated report creation route ----
         elif form_type == "report_new":
-            report_type = (request.form.get("report_type") or "").strip()
-            dos_start = (request.form.get("dos_start") or "").strip() or None
-            dos_end = (request.form.get("dos_end") or "").strip() or None
-            status_text = (request.form.get("status_text") or "").strip() or None
-            work_status = (request.form.get("work_status") or "").strip() or None
-            plan = (request.form.get("case_management_plan") or "").strip() or None
-            next_report_due = (request.form.get("next_report_due") or "").strip() or None
+            report_type = (request.form.get("report_type") or "").strip().lower()
 
-            # Parse date fields to date objects
-            dos_start_parsed = _parse_date(dos_start)
-            dos_end_parsed = _parse_date(dos_end)
-            next_report_due_parsed = _parse_date(next_report_due)
-
-            if not report_type:
+            # Require a valid report type selection
+            if report_type not in ("initial", "progress", "closure"):
                 error = "Report type is required."
             else:
-                report = Report(
-                    claim_id=claim.id,
-                    report_type=report_type,
-                    dos_start=dos_start_parsed,
-                    dos_end=dos_end_parsed,
-                    work_status=work_status,
-                    case_management_plan=plan,
-                    next_report_due=next_report_due_parsed,
+                return redirect(
+                    url_for("main.report_new", claim_id=claim.id, report_type=report_type)
                 )
-                db.session.add(report)
-                db.session.commit()
-                return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
     return render_template(
         "claim_detail.html",
@@ -1099,30 +1370,32 @@ def report_document_upload(claim_id, report_id):
     if not file or not file.filename:
         flash("Please choose a file to upload.", "danger")
         return redirect(
-            url_for("main.report_detail", claim_id=claim.id, report_id=report.id)
+            url_for("main.report_edit", claim_id=claim.id, report_id=report.id)
         )
 
     if not _allowed_file(file.filename):
         flash("File type not allowed.", "danger")
         return redirect(
-            url_for("main.report_detail", claim_id=claim.id, report_id=report.id)
+            url_for("main.report_edit", claim_id=claim.id, report_id=report.id)
         )
 
-    # Build a safe path under the report folder
+    # Build a safe path under the report folder. We store only the filename
+    # in the DB (like claim-level documents), and always reconstruct the path
+    # from the report when downloading/deleting.
     report_folder = _get_report_folder(report)
     filename_safe = secure_filename(file.filename)
     unique_prefix = uuid.uuid4().hex[:8]
     stored_name = f"{unique_prefix}_{filename_safe}"
-    stored_path = report_folder / stored_name
+    file_path = report_folder / stored_name
 
-    file.save(stored_path)
+    file.save(file_path)
 
     doc = ReportDocument(
         report_id=report.id,
         doc_type=doc_type,
         description=description,
         original_filename=file.filename,
-        stored_path=str(stored_path),
+        stored_path=stored_name,
         document_date=document_date or date.today().isoformat(),
     )
     db.session.add(doc)
@@ -1130,36 +1403,148 @@ def report_document_upload(claim_id, report_id):
 
     flash("Report document uploaded.", "success")
     return redirect(
-        url_for("main.report_detail", claim_id=claim.id, report_id=report.id)
+        url_for("main.report_edit", claim_id=claim.id, report_id=report.id)
     )
+
+@bp.route("/claims/<int:claim_id>/reports/<int:report_id>/roll-forward/<string:field_name>", methods=["GET"])
+def report_roll_forward(claim_id, report_id, field_name):
+    """
+    Return ONLY the requested field's content from the most recent prior report
+    on this claim (excluding the current report itself).
+    Used for per-field roll-forward buttons in the report editor.
+    """
+    allowed_fields = {
+        # Shared long-text fields
+        "status_treatment_plan",
+        "work_status",
+        "employment_status",
+        "case_management_plan",
+
+        # Initial-specific fields
+        "initial_diagnosis",
+        "initial_mechanism_of_injury",
+        "initial_coexisting_conditions",
+        "initial_surgical_history",
+        "initial_medications",
+        "initial_diagnostics",
+
+        # Closure-specific fields
+        "closure_details",
+        "closure_case_management_impact",
+    }
+
+    if field_name not in allowed_fields:
+        return jsonify({"error": "Invalid field"}), 400
+
+    # Find the previous report
+    previous = (
+        Report.query
+        .filter(Report.claim_id == claim_id, Report.id != report_id)
+        .order_by(Report.created_at.desc())
+        .first()
+    )
+
+    if not previous:
+        return jsonify({"value": ""}), 200
+
+    value = getattr(previous, field_name, "") or ""
+    return jsonify({"value": value}), 200
 
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/edit", methods=["GET", "POST"])
 def report_edit(claim_id, report_id):
     """
     Edit an existing report for a claim.
 
-    For now this just manages the high-level metadata fields:
-    - report_type
+    This manages:
+    - report_type (initial/progress/closure)
     - DOS start / end
-    - current_status
-    - work_status
-    - case_management_plan
+    - treating provider
+    - shared long-text fields (status_treatment_plan, work_status, employment_status,
+      case_management_plan)
+    - Initial-specific fields (initial_* + next appointment)
+    - Closure-specific fields (closure_* fields)
     - next_report_due
     """
     claim = Claim.query.get_or_404(claim_id)
     report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
 
+    # Providers for treating-provider dropdown
+    providers = Provider.query.order_by(Provider.name).all()
+
     error = None
 
     if request.method == "POST":
-        report_type = (request.form.get("report_type") or "").strip()
-        dos_start = (request.form.get("dos_start") or "").strip() or None
-        dos_end = (request.form.get("dos_end") or "").strip() or None
+        report_type_raw = (request.form.get("report_type") or "").strip().lower()
+        # If the form doesn't send report_type (e.g., type is fixed on edit),
+        # fall back to the existing report.report_type value.
+        if report_type_raw:
+            report_type = report_type_raw
+        else:
+            report_type = (report.report_type or "").lower()
+
+        dos_start_raw = (request.form.get("dos_start") or "").strip() or None
+        dos_end_raw = (request.form.get("dos_end") or "").strip() or None
         work_status = (request.form.get("work_status") or "").strip() or None
         case_management_plan = (request.form.get("case_management_plan") or "").strip() or None
-        next_report_due = (request.form.get("next_report_due") or "").strip() or None
+        next_report_due_raw = (request.form.get("next_report_due") or "").strip() or None
 
-        if not report_type:
+        treating_provider_id_raw = (request.form.get("treating_provider_id") or "").strip() or None
+
+        status_treatment_plan = (request.form.get("status_treatment_plan") or "").strip() or None
+        employment_status = (request.form.get("employment_status") or "").strip() or None
+        primary_care_provider = (request.form.get("primary_care_provider") or "").strip() or None
+
+        # Initial-specific clinical content
+        initial_diagnosis = (request.form.get("initial_diagnosis") or "").strip() or None
+        initial_mechanism_of_injury = (
+            request.form.get("initial_mechanism_of_injury") or ""
+        ).strip() or None
+        initial_coexisting_conditions = (
+            request.form.get("initial_coexisting_conditions") or ""
+        ).strip() or None
+        initial_surgical_history = (
+            request.form.get("initial_surgical_history") or ""
+        ).strip() or None
+        initial_medications = (request.form.get("initial_medications") or "").strip() or None
+        initial_diagnostics = (request.form.get("initial_diagnostics") or "").strip() or None
+
+        # Next appointment (initial report)
+        initial_next_appt_datetime_raw = (
+            request.form.get("initial_next_appt_datetime") or ""
+        ).strip()
+        initial_next_appt_provider_name = (
+            request.form.get("initial_next_appt_provider_name") or ""
+        ).strip() or None
+
+        # Closure-specific fields
+        closure_reason = (request.form.get("closure_reason") or "").strip() or None
+        closure_details = (request.form.get("closure_details") or "").strip() or None
+        closure_case_management_impact = (
+            request.form.get("closure_case_management_impact") or ""
+        ).strip() or None
+
+        # Barriers: list of selected BarrierOption IDs
+        barrier_ids_raw = request.form.getlist("barrier_ids")
+        barrier_ids = []
+        for raw_id in barrier_ids_raw:
+            try:
+                barrier_ids.append(int(raw_id))
+            except (TypeError, ValueError):
+                continue
+
+        dos_start = _parse_date(dos_start_raw) if dos_start_raw else None
+        dos_end = _parse_date(dos_end_raw) if dos_end_raw else None
+        next_report_due = _parse_date(next_report_due_raw) if next_report_due_raw else None
+
+        treating_provider_id = None
+        if treating_provider_id_raw:
+            try:
+                treating_provider_id = int(treating_provider_id_raw)
+            except ValueError:
+                treating_provider_id = None
+
+        valid_types = {"initial", "progress", "closure"}
+        if not report_type or report_type not in valid_types:
             error = "Report type is required."
         else:
             report.report_type = report_type
@@ -1169,38 +1554,58 @@ def report_edit(claim_id, report_id):
             report.case_management_plan = case_management_plan
             report.next_report_due = next_report_due
 
-            # Save selected barriers as JSON list of IDs
-            barrier_ids_raw = request.form.getlist("barriers")
-            barrier_ids = []
-            for b in barrier_ids_raw:
-                try:
-                    barrier_ids.append(int(b))
-                except (TypeError, ValueError):
-                    continue
+            report.treating_provider_id = treating_provider_id
+            report.status_treatment_plan = status_treatment_plan
+            report.employment_status = employment_status
 
-            report.barriers_json = json.dumps(barrier_ids or [])
+            # Persist initial-style clinical fields for all report types so that
+            # roll-forward text is never lost, even on progress/closure reports.
+            report.initial_diagnosis = initial_diagnosis
+            report.initial_mechanism_of_injury = initial_mechanism_of_injury
+            report.initial_coexisting_conditions = initial_coexisting_conditions
+            report.initial_surgical_history = initial_surgical_history
+            report.initial_medications = initial_medications
+            report.initial_diagnostics = initial_diagnostics
+
+            # Next appointment (stored in the same fields regardless of type,
+            # but typically only used for initial reports).
+            if initial_next_appt_datetime_raw:
+                try:
+                    report.initial_next_appt_datetime = datetime.strptime(
+                        initial_next_appt_datetime_raw, "%Y-%m-%dT%H:%M"
+                    )
+                except ValueError:
+                    report.initial_next_appt_datetime = None
+            else:
+                report.initial_next_appt_datetime = None
+
+            report.initial_next_appt_provider_name = initial_next_appt_provider_name
+
+            # Closure-specific fields
+            report.closure_reason = closure_reason
+            report.closure_details = closure_details
+            report.closure_case_management_impact = closure_case_management_impact
+
+            # Persist selected barriers (as JSON list of IDs)
+            if barrier_ids:
+                report.barriers_json = json.dumps(barrier_ids)
+            else:
+                report.barriers_json = None
+
+            # If this is an initial report, update the claim's primary care provider
+            if report_type == "initial":
+                claim.primary_care_provider = primary_care_provider
 
             db.session.commit()
-            return redirect(url_for("main.claim_detail", claim_id=claim.id))
+            return redirect(url_for("main.report_edit", claim_id=claim.id, report_id=report.id))
 
-    # Load active barrier options and group by category for the edit form
-    options = (
-        BarrierOption.query
-        .filter_by(is_active=True)
-        .order_by(BarrierOption.category, BarrierOption.sort_order, BarrierOption.label)
-        .all()
-    )
-    barriers_by_category = defaultdict(list)
-    for opt in options:
-        barriers_by_category[opt.category].append(opt)
-
-    # Parse selected barriers from report.barriers_json
+    # Load barrier options and decode any selections on this report
+    barriers_by_category = _get_barrier_options_grouped()
     selected_barrier_ids = set()
     if report.barriers_json:
         try:
-            loaded = json.loads(report.barriers_json)
-            if isinstance(loaded, list):
-                selected_barrier_ids = {int(v) for v in loaded}
+            data = json.loads(report.barriers_json)
+            selected_barrier_ids = {int(x) for x in data}
         except (TypeError, ValueError):
             selected_barrier_ids = set()
 
@@ -1212,50 +1617,218 @@ def report_edit(claim_id, report_id):
         error=error,
         barriers_by_category=barriers_by_category,
         selected_barrier_ids=selected_barrier_ids,
+        providers=providers,
     )
 
+
+# ---- Download route for report-level documents ----
 @bp.route("/reports/documents/<int:report_document_id>/download")
 def report_document_download(report_document_id):
-    """Download a stored report document."""
+    """
+    Download a stored report document.
+
+    We treat ReportDocument.stored_path as just the filename and always
+    reconstruct the full path from the report's folder (like claim-level docs).
+    """
+    doc = ReportDocument.query.get_or_404(report_document_id)
+    report = doc.report
+    if not report or not report.claim:
+        flash("Document is not linked to a valid report/claim.", "danger")
+        return redirect(url_for("main.claims_list"))
+
+    if not getattr(doc, "stored_path", None):
+        flash("Document record is missing a stored filename.", "danger")
+        return redirect(
+            url_for(
+                "main.report_edit",
+                claim_id=report.claim.id,
+                report_id=report.id,
+            )
+        )
+
+    report_folder = _get_report_folder(report)
+    file_path = report_folder / doc.stored_path
+
+    if not file_path.exists():
+        flash("File not found on disk.", "danger")
+        return redirect(
+            url_for(
+                "main.report_edit",
+                claim_id=report.claim.id,
+                report_id=report.id,
+            )
+        )
+
+    # Use send_file with the full absolute path so we’re not relying on
+    # directory/path joining logic inside send_from_directory.
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=doc.original_filename #or doc.stored_path,
+    )
+
+
+
+# ---- Delete route for report-level documents ----
+@bp.route("/reports/documents/<int:report_document_id>/delete", methods=["POST"])
+def report_document_delete(report_document_id):
+    """
+    Delete a report-level document from disk and the database, then
+    return to the corresponding report edit screen.
+    """
     doc = ReportDocument.query.get_or_404(report_document_id)
 
-    if not doc.stored_path or not os.path.exists(doc.stored_path):
-        flash("File not found on disk.", "danger")
-        # Gracefully go back to the report if we can
-        if doc.report and doc.report.claim:
-            return redirect(
-                url_for(
-                    "main.report_detail",
-                    claim_id=doc.report.claim.id,
-                    report_id=doc.report.id,
-                )
-            )
-        # Fallback: home
-        return redirect(url_for("main.index"))
+    # Capture claim/report IDs for redirect before deleting
+    claim_id = doc.report.claim_id if doc.report else None
+    report_id = doc.report.id if doc.report else None
 
-    directory, filename = os.path.split(doc.stored_path)
-    download_name = doc.original_filename or filename
+    # Remove the file from disk if we have a stored_path
+    if getattr(doc, "stored_path", None) and doc.report and doc.report.claim:
+        report_folder = _get_report_folder(doc.report)
+        file_path = report_folder / doc.stored_path
+        try:
+            os.remove(file_path)
+        except FileNotFoundError:
+            # If the file is already gone, just proceed with DB delete
+            pass
 
-    return send_from_directory(
-        directory,
-        filename,
-        as_attachment=True,
-        download_name=download_name,
+    db.session.delete(doc)
+    db.session.commit()
+    flash("Report document deleted.", "success")
+
+    # Prefer to send the user back to the report edit screen
+    if claim_id and report_id:
+        return redirect(
+            url_for("main.report_edit", claim_id=claim_id, report_id=report_id)
+        )
+
+    # Fallback: return to claims list if for some reason we don't have IDs
+    return redirect(url_for("main.claims_list"))
+
+@bp.route("/reports/documents/<int:report_document_id>/open-location", methods=["POST"])
+def report_document_open_location(report_document_id):
+    """
+    Open the folder containing this report-level document in the OS file manager.
+    """
+    doc = ReportDocument.query.get_or_404(report_document_id)
+    report = doc.report
+
+    if not report or not report.claim:
+        flash("Document is not linked to a valid report/claim.", "danger")
+        return redirect(url_for("main.claims_list"))
+
+    folder = _get_report_folder(report)
+    _open_in_file_manager(folder)
+
+    return redirect(
+        url_for("main.report_edit", claim_id=report.claim.id, report_id=report.id)
     )
+
+# ---- ICS file for report's next appointment ----
+@bp.route("/claims/<int:claim_id>/reports/<int:report_id>/next-appointment.ics")
+def report_next_appointment_ics(claim_id, report_id):
+    """
+    Generate a simple ICS calendar event for the report's next appointment.
+
+    Uses:
+    - report.initial_next_appt_datetime for DTSTART
+    - report.treating_provider's address (if available) for LOCATION
+    """
+    claim = Claim.query.get_or_404(claim_id)
+    report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
+
+    # Require a next appointment datetime
+    if not report.initial_next_appt_datetime:
+        flash("This report does not have a next appointment date/time set.", "warning")
+        return redirect(url_for("main.report_edit", claim_id=claim.id, report_id=report.id))
+
+    dt = report.initial_next_appt_datetime
+
+    # Build a basic LOCATION string from the treating provider, if available
+    location_parts = []
+    if report.treating_provider:
+        p = report.treating_provider
+
+        # Name / practice name
+        if getattr(p, "name", None):
+            location_parts.append(p.name)
+
+        # Street lines: prefer address1/address2, but fall back to a single address field
+        addr1 = getattr(p, "address1", None) or getattr(p, "address", None)
+        addr2 = getattr(p, "address2", None)
+
+        if addr1:
+            location_parts.append(addr1)
+        if addr2:
+            location_parts.append(addr2)
+
+        # City / state / postal code (support both postal_code and zip if present)
+        city = getattr(p, "city", None)
+        state = getattr(p, "state", None)
+        postal = getattr(p, "postal_code", None) or getattr(p, "zip", None)
+
+        city_state_zip = ", ".join(part for part in [city, state, postal] if part)
+        if city_state_zip:
+            location_parts.append(city_state_zip)
+
+    location = ", ".join(location_parts) if location_parts else "TBD"
+
+    # Summary and description
+    summary = f"Next appointment – {claim.claimant_name or 'Claimant'}"
+    description_lines = [
+        f"Claim: {claim.claim_number or ''}",
+        f"Claimant: {claim.claimant_name or ''}",
+    ]
+    if report.initial_next_appt_provider_name:
+        description_lines.append(f"Provider: {report.initial_next_appt_provider_name}")
+    description = "\\n".join(description_lines)
+
+    # ICS timestamps
+    dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    dtstart = dt.strftime("%Y%m%dT%H%M%S")
+    uid = f"{report.id}-{claim.id}@impact-medical-local"
+
+    ics_lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Impact Medical CMS//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "BEGIN:VEVENT",
+        f"UID:{uid}",
+        f"DTSTAMP:{dtstamp}",
+        f"DTSTART:{dtstart}",
+        f"SUMMARY:{summary}",
+        f"DESCRIPTION:{description}",
+        f"LOCATION:{location}",
+        "END:VEVENT",
+        "END:VCALENDAR",
+    ]
+    ics_content = "\r\n".join(ics_lines) + "\r\n"
+
+    response = make_response(ics_content)
+    response.headers["Content-Type"] = "text/calendar; charset=utf-8"
+    filename = f"next_appointment_claim{claim.id}_report{report.id}.ics"
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return response
 
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/delete", methods=["GET", "POST"])
 def report_delete(claim_id, report_id):
+    """
+    Delete a report and return to the claim detail page.
+
+    For now we skip a separate confirmation template and delete immediately
+    when this endpoint is hit via GET or POST. The UI should still make it
+    clear that this is a destructive action.
+    """
     claim = Claim.query.get_or_404(claim_id)
-    report = Report.query.get_or_404(report_id)
+    report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
 
-    if request.method == "POST":
-        db.session.delete(report)
-        db.session.commit()
-        flash("Report deleted successfully.", "success")
-        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+    db.session.delete(report)
+    db.session.commit()
+    flash("Report deleted successfully.", "success")
 
-    # GET request – show confirmation page
-    return render_template("report_delete_confirmation.html", claim=claim, report=report)
+    return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
 @bp.route("/claims/<int:claim_id>/billable/<int:item_id>/edit", methods=["GET", "POST"])
 def billable_edit(claim_id, item_id):
@@ -1268,10 +1841,22 @@ def billable_edit(claim_id, item_id):
         activity_code = (request.form.get("activity_code") or "").strip()
         service_date_raw = (request.form.get("service_date") or "").strip() or None
         service_date_parsed = _parse_date(service_date_raw)
-        description = (request.form.get("description") or "").strip() or None
+
+        raw_description = (request.form.get("description") or "").strip()
+        description = raw_description if raw_description else None
 
         qty_raw = (request.form.get("quantity") or "").strip()
         quantity = float(qty_raw) if qty_raw else None
+
+        # Ensure description is never NULL at the DB level, even if the user
+        # leaves it blank when editing.
+        if not description and activity_code:
+            label = None
+            for code, label_text in BILLABLE_ACTIVITY_CHOICES:
+                if code == activity_code:
+                    label = label_text
+                    break
+            description = label or activity_code
 
         if not activity_code:
             error = "Activity code is required."
@@ -1340,6 +1925,20 @@ def document_delete(claim_id, doc_id):
     db.session.commit()
 
     flash("Document deleted.", "success")
+    return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+@bp.route("/claims/<int:claim_id>/documents/<int:doc_id>/open-location", methods=["POST"])
+def document_open_location(claim_id, doc_id):
+    """
+    Open the folder containing this claim-level document in the OS file manager.
+    """
+    claim = Claim.query.get_or_404(claim_id)
+    # Ensure the document exists and belongs to this claim
+    ClaimDocument.query.filter_by(id=doc_id, claim_id=claim.id).first_or_404()
+
+    folder = _get_claim_folder(claim)
+    _open_in_file_manager(folder)
+
     return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
 @bp.route("/carriers")
@@ -1744,12 +2343,14 @@ def carrier_detail(carrier_id):
                 .first()
             )
 
+    contact_roles = _get_contact_roles()
     return render_template(
         "carrier_detail.html",
         active_page="carriers",
         carrier=carrier,
         contacts=contacts,
         edit_contact=edit_contact,
+        contact_roles=contact_roles,
     )
 
 
@@ -1779,12 +2380,14 @@ def employer_detail(employer_id):
                 .first()
             )
 
+    contact_roles = _get_contact_roles()
     return render_template(
         "employer_detail.html",
         active_page="employers",
         employer=employer,
         contacts=contacts,
         edit_contact=edit_contact,
+        contact_roles=contact_roles,
     )
 
 
@@ -1814,12 +2417,14 @@ def provider_detail(provider_id):
                 .first()
             )
 
+    contact_roles = _get_contact_roles()
     return render_template(
         "provider_detail.html",
         active_page="providers",
         provider=provider,
         contacts=contacts,
         edit_contact=edit_contact,
+        contact_roles=contact_roles,
     )
 
 # ---------- Contacts (generic for carrier / employer / provider) ----------
@@ -1845,6 +2450,7 @@ def contact_new(parent_type, parent_id):
     name = (request.form.get("name") or "").strip()
     role = (request.form.get("role") or "").strip() or None
     phone = (request.form.get("phone") or "").strip() or None
+    fax = (request.form.get("fax") or "").strip() or None
     email = (request.form.get("email") or "").strip() or None
     notes = (request.form.get("notes") or "").strip() or None
 
@@ -1867,6 +2473,7 @@ def contact_new(parent_type, parent_id):
     contact.name = name
     contact.role = role
     contact.phone = phone
+    contact.fax = fax
     contact.email = email
     contact.notes = notes
 
@@ -1905,6 +2512,7 @@ def contact_update(contact_id, parent_type, parent_id):
     name = (request.form.get("name") or "").strip()
     role = (request.form.get("role") or "").strip() or None
     phone = (request.form.get("phone") or "").strip() or None
+    fax = (request.form.get("fax") or "").strip() or None
     email = (request.form.get("email") or "").strip() or None
     notes = (request.form.get("notes") or "").strip() or None
 
@@ -1921,6 +2529,7 @@ def contact_update(contact_id, parent_type, parent_id):
     contact.name = name
     contact.role = role
     contact.phone = phone
+    contact.fax = fax
     contact.email = email
     contact.notes = notes
 
@@ -1996,14 +2605,35 @@ def settings_view():
 
         settings.documents_root = (request.form.get("documents_root") or "").strip() or None
 
+        # Contact roles (editable list, one per line)
+        roles_text = (request.form.get("contact_roles") or "").strip()
+        if roles_text:
+            roles_list = [
+                line.strip()
+                for line in roles_text.splitlines()
+                if line.strip()
+            ]
+        else:
+            roles_list = []
+
+        if roles_list:
+            settings.contact_roles_json = json.dumps(roles_list)
+        else:
+            # If nothing provided, fall back to defaults
+            settings.contact_roles_json = json.dumps(CONTACT_ROLE_DEFAULTS)
+
         db.session.commit()
         return redirect(url_for("main.settings_view"))
 
+    contact_roles = _get_contact_roles()
+    contact_roles_text = "\n".join(contact_roles)
     return render_template(
         "settings.html",
         active_page="settings",
         settings=settings,
         error=error,
+        contact_roles=contact_roles,
+        contact_roles_text=contact_roles_text,
     )
 
 
