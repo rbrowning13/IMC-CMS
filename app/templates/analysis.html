@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <h2 class="mb-4">Analysis Dashboard</h2>
+
+  <!-- Top summary cards: claims snapshot -->
+  <div class="row mb-4">
+    <div class="col-md-4 mb-3">
+      <div class="card stat-card text-center">
+        <div class="card-body">
+          <div class="stat-label">Active Claims</div>
+          <div class="stat-value">{{ active_claims_count }}</div>
+          <div class="small text-muted mt-2">
+            Total claims: {{ total_claims }}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4 mb-3">
+      <div class="card stat-card text-center">
+        <div class="card-body">
+          <div class="stat-label">Avg Open Claim Age</div>
+          <div class="stat-value">
+            {% if avg_open_claim_age_days is not none %}
+              {{ avg_open_claim_age_days|round(1) }} days
+            {% else %}
+              &mdash;
+            {% endif %}
+          </div>
+          <div class="small text-muted mt-2">
+            Based on open claims only
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4 mb-3">
+      <div class="card stat-card text-center">
+        <div class="card-body">
+          <div class="stat-label">Stale Claims (&gt;60 days)</div>
+          <div class="stat-value">{{ stale_claims_count }}</div>
+          <div class="small text-muted mt-2">
+            No reports, billables, invoices, or docs in 60+ days
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Workload + AR summary -->
+  <div class="row mb-4">
+    <div class="col-md-6 mb-3">
+      <div class="card stat-card h-100">
+        <div class="card-body">
+          <div class="stat-label mb-2">Hours Worked (Last 30 Days)</div>
+          <div class="stat-value mb-2">
+            {{ "%.1f"|format(hours_last_30_days or 0) }}
+          </div>
+          {% if hours_target_min_30 and hours_target_max_30 %}
+            {% if hours_last_30_days < hours_target_min_30 %}
+              {% set hours_status = "Below target" %}
+            {% elif hours_last_30_days > hours_target_max_30 %}
+              {% set hours_status = "Above target" %}
+            {% else %}
+              {% set hours_status = "Within target" %}
+            {% endif %}
+
+            <div class="mb-1">
+              {% if hours_status == "Below target" %}
+                <span class="badge bg-danger">Below target</span>
+              {% elif hours_status == "Above target" %}
+                <span class="badge bg-warning text-dark">Above target</span>
+              {% else %}
+                <span class="badge bg-success">Within target</span>
+              {% endif %}
+            </div>
+            <div class="small text-muted">
+              Target range for 30 days:
+              {{ "%.1f"|format(hours_target_min_30) }}&ndash;{{ "%.1f"|format(hours_target_max_30) }} hrs
+            </div>
+          {% else %}
+            <div class="small text-muted">
+              No weekly hour targets configured in Settings.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6 mb-3">
+      <div class="card stat-card h-100">
+        <div class="card-body">
+          <div class="stat-label mb-2">Outstanding Accounts Receivable</div>
+          <div class="stat-value mb-2">
+            ${{ "%.2f"|format(total_outstanding_ar or 0) }}
+          </div>
+          <div class="small text-muted">
+            Open invoices: {{ open_invoices }}<br>
+            Total invoices: {{ total_invoices }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Receivables by carrier table -->
+  <h4 class="mt-4 mb-3">Outstanding A/R by Carrier</h4>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered">
+      <thead>
+        <tr>
+          <th>Carrier</th>
+          <th class="text-end">Total Outstanding</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in ar_by_carrier %}
+          <tr>
+            <td>{{ row.carrier_name }}</td>
+            <td class="text-end">
+              ${{ "%.2f"|format(row.total_outstanding or 0) }}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="2" class="text-center text-muted">No open invoices.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

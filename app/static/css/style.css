@@ -6,3 +6,83 @@ body {
 .btn-primary {
   /* Bootstrap primary override if desired */
 }
+
+/* Accent‑driven button styling */
+:root {
+  --accent-color: #0d6efd; /* fallback, replaced dynamically by settings */
+}
+
+/* Make all buttons pill-shaped */
+.btn {
+  border-radius: 999px !important;
+}
+
+/* Primary button = white fill + accent border/text */
+.btn-primary,
+.btn-primary:visited {
+  background-color: #ffffff !important;
+  color: var(--accent-color) !important;
+  border: 2px solid var(--accent-color) !important;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  background-color: var(--accent-color) !important;
+  color: #ffffff !important;
+  border: 2px solid var(--accent-color) !important;
+}
+
+/* Outline primary matches same visual style */
+.btn-outline-primary {
+  background-color: #ffffff !important;
+  color: var(--accent-color) !important;
+  border: 2px solid var(--accent-color) !important;
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus {
+  background-color: var(--accent-color) !important;
+  color: #ffffff !important;
+  border: 2px solid var(--accent-color) !important;
+}
+
+/* Print layout tuning for report and invoice previews */
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+
+  /* Hide navigation, alerts, and buttons when printing/creating PDF */
+  nav.navbar,
+  .navbar,
+  .navbar * ,
+  .alert,
+  .no-print,
+  .btn {
+    display: none !important;
+  }
+
+  /* Main printable containers */
+  .report-print-page,
+  .invoice-print-page {
+    margin: 0;
+    padding: 0.75in 0.75in;
+    width: 100%;
+  }
+
+  /* Avoid awkward page breaks around headings */
+  .report-print-page h1,
+  .report-print-page h2,
+  .report-print-page h3,
+  .invoice-print-page h1,
+  .invoice-print-page h2,
+  .invoice-print-page h3 {
+    page-break-after: avoid;
+  }
+
+  /* Try to keep section blocks together */
+  .report-print-page .section,
+  .invoice-print-page .section {
+    page-break-inside: avoid;
+  }
+}

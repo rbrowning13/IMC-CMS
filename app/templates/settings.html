@@ -12,7 +12,7 @@
     </div>
   {% endif %}
 
-  <form method="post" class="mb-4">
+  <form method="post" enctype="multipart/form-data" class="mb-4">
     <!-- Business identity -->
     <div class="card shadow-sm mb-3">
       <div class="card-header">
@@ -159,6 +159,15 @@
         <div class="mb-2">
           <label class="form-label form-label-sm">Invoice Footer Text</label>
           <textarea name="invoice_footer_text" rows="2" class="form-control form-control-sm">{{ settings.invoice_footer_text or '' }}</textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Business Logo (PNG/JPG)</label>
+          <input type="file" name="logo_file" class="form-control form-control-sm">
+          {% if settings.logo_path %}
+            <div class="mt-2">
+              <img src="{{ url_for('static', filename=settings.logo_path) }}" alt="Business Logo" style="max-height: 60px;">
+            </div>
+          {% endif %}
         </div>
       </div>
     </div>

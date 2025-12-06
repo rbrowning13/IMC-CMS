@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ report.report_type|capitalize }} Report – {{ claim.claimant_name }}</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 11pt;
+      margin: 1in;
+    }
+    h1, h2, h3, h4, h5 {
+      margin: 0 0 0.25rem 0;
+    }
+    p {
+      margin: 0 0 0.5rem 0;
+    }
+    hr {
+      border: none;
+      border-top: 2px solid #ccc;
+      margin: 0.75rem 0;
+    }
+    .accent-line {
+      border-top-width: 3px;
+    }
+    .header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo-cell {
+      flex: 0 0 auto;
+      text-align: center;
+    }
+    .logo-cell img {
+      max-height: 80px;
+      width: auto;
+    }
+    .title-cell {
+      flex: 1 1 auto;
+      text-align: center;
+    }
+    .spacer-cell {
+      flex: 0 0 80px;
+    }
+    .two-col {
+      display: flex;
+      gap: 1.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .two-col .col {
+      flex: 1 1 0;
+    }
+    ul {
+      margin: 0 0 0.5rem 1.1rem;
+    }
+    .muted {
+      color: #777;
+      font-size: 9pt;
+    }
+  </style>
+</head>
+<body>
+
+{% set accent = settings.accent_color or '#0d6efd' %}
+
+<div class="header-row">
+  <div class="logo-cell">
+    {% if settings.logo_path %}
+      <img src="{{ url_for('static', filename=settings.logo_path) }}"
+           alt="{{ settings.business_name or 'Logo' }}">
+    {% endif %}
+  </div>
+  <div class="title-cell">
+    <h3>{{ report.report_type|capitalize }} Report</h3>
+  </div>
+  <div class="spacer-cell"></div>
+</div>
+
+<hr class="accent-line" style="border-color: {{ accent }};">
+
+<h4>{{ claim.claimant_name }}</h4>
+
+<div class="two-col">
+  <div class="col">
+    <p>
+      <strong>Claim #:</strong> {{ claim.claim_number }}<br>
+      <strong>Date of Injury:</strong> {{ claim.date_of_injury|format_date }}<br>
+      <strong>Claim State:</strong> {{ claim.claim_state or '—' }}<br>
+      {% if claim.carrier %}
+        <strong>Carrier:</strong> {{ claim.carrier.name }}<br>
+      {% endif %}
+      {% if claim.employer %}
+        <strong>Employer:</strong> {{ claim.employer.name }}<br>
+      {% endif %}
+      <strong>DOS:</strong> {{ report.dos_start|format_date }} – {{ report.dos_end|format_date }}
+    </p>
+  </div>
+  <div class="col">
+    <p>
+      {% if report.treating_provider %}
+        <strong>Treating Provider:</strong> {{ report.treating_provider.name }}<br>
+      {% endif %}
+      {% if claim.primary_care_provider %}
+        <strong>Primary Care Provider:</strong> {{ claim.primary_care_provider }}<br>
+      {% endif %}
+      {% if report.initial_next_appt_datetime %}
+        <strong>Next Appointment:</strong>
+        {{ report.initial_next_appt_datetime|format_datetime }}
+        {% if report.initial_next_appt_provider_name %}
+          &nbsp;with {{ report.initial_next_appt_provider_name }}
+        {% endif %}
+        <br>
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+<hr>
+
+{# Status / Treatment Plan #}
+{% if report.status_treatment_plan %}
+  <h5>Status / Treatment Plan</h5>
+  <p>{{ report.status_treatment_plan|nl2br }}</p>
+  <hr>
+{% endif %}
+
+{# Work Status #}
+{% if report.work_status %}
+  <h5>Work Status</h5>
+  <p>{{ report.work_status|nl2br }}</p>
+  <hr>
+{% endif %}
+
+{# Case Management Plan #}
+{% if report.case_management_plan %}
+  <h5>Case Management Plan</h5>
+  <p>{{ report.case_management_plan|nl2br }}</p>
+  <hr>
+{% endif %}
+
+{# Barriers #}
+{% if barriers and barriers|length > 0 %}
+  <h5>Barriers to Recovery</h5>
+  <ul>
+    {% for b in barriers %}
+      <li>{{ b.label }}</li>
+    {% endfor %}
+  </ul>
+  <hr>
+{% endif %}
+
+{# INITIAL-specific fields #}
+{% if report.report_type == 'initial' %}
+  {% if report.initial_diagnosis %}
+    <h5>Diagnosis</h5>
+    <p>{{ report.initial_diagnosis|nl2br }}</p>
+    <hr>
+  {% endif %}
+
+  {% if report.initial_mechanism_of_injury %}
+    <h5>Mechanism of Injury</h5>
+    <p>{{ report.initial_mechanism_of_injury|nl2br }}</p>
+    <hr>
+  {% endif %}
+
+  {% if report.initial_coexisting_conditions %}
+    <h5>Co-existing Conditions</h5>
+    <p>{{ report.initial_coexisting_conditions|nl2br }}</p>
+    <hr>
+  {% endif %}
+
+  {% if report.initial_surgical_history %}
+    <h5>Surgical History</h5>
+    <p>{{ report.initial_surgical_history|nl2br }}</p>
+    <hr>
+  {% endif %}
+
+  {% if report.initial_medications %}
+    <h5>Medications</h5>
+    <p>{{ report.initial_medications|nl2br }}</p>
+    <hr>
+  {% endif %}
+
+  {% if report.initial_diagnostics %}
+    <h5>Diagnostics</h5>
+    <p>{{ report.initial_diagnostics|nl2br }}</p>
+    <hr>
+  {% endif %}
+{% endif %}
+
+{# CLOSURE-specific fields #}
+{% if report.report_type == 'closure' %}
+  {% if report.closure_reason %}
+    <h5>Closure Reason</h5>
+    <p>{{ report.closure_reason }}</p>
+    <hr>
+  {% endif %}
+
+  {% if report.closure_details %}
+    <h5>Closure Details</h5>
+    <p>{{ report.closure_details|nl2br }}</p>
+    <hr>
+  {% endif %}
+
+  {% if report.closure_case_management_impact %}
+    <h5>Case Management Impact</h5>
+    <p>{{ report.closure_case_management_impact|nl2br }}</p>
+    <hr>
+  {% endif %}
+{% endif %}
+
+<p class="muted">Generated on {{ report.updated_at|format_datetime }}</p>
+
+</body>
+</html>

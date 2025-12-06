@@ -3,13 +3,13 @@ import uuid
 import sys
 import subprocess
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime, timedelta
 import json
 from collections import defaultdict
-from datetime import datetime
+import io
+
+
 from sqlalchemy.exc import IntegrityError
-from .models import Carrier, Claim, Employer, Contact
-from flask import send_from_directory
 
 from flask import (
     Blueprint,
@@ -27,6 +27,12 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 from markupsafe import Markup, escape  # <-- ADD THIS LINE
+
+# Optional WeasyPrint import for PDF generation
+try:
+    from weasyprint import HTML
+except ImportError:
+    HTML = None
 
 from .extensions import db
 from .models import (
@@ -490,6 +496,52 @@ def _get_barrier_options_grouped():
 def claims_list():
     claims = Claim.query.order_by(Claim.id.desc()).all()
 
+    # --- Dormant status calculation ---
+    dormant_info = {}
+    dormant_threshold_days = _ensure_settings().dormant_claim_days or 0
+
+    for c in claims:
+        # Determine last activity date: latest of report, billable, invoice, document
+        last_date = None
+
+        # Reports
+        r = Report.query.filter_by(claim_id=c.id).order_by(Report.created_at.desc()).first()
+        if r and r.created_at:
+            last_date = r.created_at.date()
+
+        # Billables
+        b = BillableItem.query.filter_by(claim_id=c.id).order_by(BillableItem.created_at.desc()).first()
+        if b and b.created_at:
+            d = b.created_at.date()
+            if not last_date or d > last_date:
+                last_date = d
+
+        # Invoices
+        inv = Invoice.query.filter_by(claim_id=c.id).order_by(Invoice.id.desc()).first()
+        if inv and inv.invoice_date:
+            d = inv.invoice_date
+            if not last_date or d > last_date:
+                last_date = d
+
+        # Documents
+        doc = ClaimDocument.query.filter_by(claim_id=c.id).order_by(ClaimDocument.uploaded_at.desc()).first()
+        if doc and doc.uploaded_at:
+            d = doc.uploaded_at.date()
+            if not last_date or d > last_date:
+                last_date = d
+
+        # Evaluate dormancy
+        if last_date:
+            delta = (date.today() - last_date).days
+            is_dormant = dormant_threshold_days > 0 and delta >= dormant_threshold_days
+        else:
+            is_dormant = False
+
+        dormant_info[c.id] = {
+            "is_dormant": is_dormant,
+            "last_activity": last_date,
+        }
+
     # Build billing summary per-claim:
     # summary[claim_id] = {"total": X, "open": Y, "closed": Z}
     billing_summary = {}
@@ -528,7 +580,9 @@ def claims_list():
         active_page="claims",
         claims=claims,
         billing_summary=billing_summary,
+        dormant_info=dormant_info,
     )
+
 
 
 @bp.route("/billing")
@@ -538,6 +592,319 @@ def billing_list():
         "billing_list.html",
         active_page="billing",
         invoices=invoices,
+    )
+
+
+# ---- Reporting / Analytics Dashboard ----
+@bp.route("/analysis")
+def analysis_dashboard():
+    """
+    High-level reporting / analytics landing page.
+
+    Focuses on overall workload and business health metrics.
+    """
+    settings = _ensure_settings()
+    today = date.today()
+
+    # ----- Active claims -----
+    # Treat "active" as not explicitly closed if an is_closed flag exists,
+    # otherwise include all claims.
+    if hasattr(Claim, "is_closed"):
+        active_claims_query = Claim.query.filter(
+            (Claim.is_closed.is_(False)) | (Claim.is_closed.is_(None))
+        )
+    else:
+        active_claims_query = Claim.query
+
+    active_claims = active_claims_query.all()
+    active_claims_count = len(active_claims)
+
+    # Average age (in days) of open/active claims, based on DOI or created_at.
+    ages = []
+    for c in active_claims:
+        ref = c.doi or getattr(c, "created_at", None)
+        ref_date = None
+        if isinstance(ref, datetime):
+            ref_date = ref.date()
+        elif isinstance(ref, date):
+            ref_date = ref
+
+        if ref_date:
+            ages.append((today - ref_date).days)
+
+    avg_open_claim_age_days = int(sum(ages) / len(ages)) if ages else 0
+
+    # ----- Stale claims (no recent activity) -----
+    # Use last report / billable / invoice / document date similar to claims_list.
+    stale_threshold_days = 60
+    stale_claims_count = 0
+
+    for c in active_claims:
+        last_date = None
+
+        r = (
+            Report.query.filter_by(claim_id=c.id)
+            .order_by(Report.created_at.desc())
+            .first()
+        )
+        if r and r.created_at:
+            last_date = r.created_at.date()
+
+        b = (
+            BillableItem.query.filter_by(claim_id=c.id)
+            .order_by(BillableItem.created_at.desc())
+            .first()
+        )
+        if b and b.created_at:
+            d = b.created_at.date()
+            if not last_date or d > last_date:
+                last_date = d
+
+        inv = (
+            Invoice.query.filter_by(claim_id=c.id)
+            .order_by(Invoice.invoice_date.desc().nullslast(), Invoice.id.desc())
+            .first()
+        )
+        if inv and inv.invoice_date:
+            d = inv.invoice_date
+            if not last_date or d > last_date:
+                last_date = d
+
+        doc = (
+            ClaimDocument.query.filter_by(claim_id=c.id)
+            .order_by(ClaimDocument.uploaded_at.desc())
+            .first()
+        )
+        if doc and doc.uploaded_at:
+            d = doc.uploaded_at.date()
+            if not last_date or d > last_date:
+                last_date = d
+
+        if last_date:
+            delta_days = (today - last_date).days
+            if delta_days >= stale_threshold_days:
+                stale_claims_count += 1
+
+    # ----- Hours worked in last 30 days -----
+    cutoff_date = today - timedelta(days=30)
+    hours_last_30_days = 0.0
+
+    for item in BillableItem.query.all():
+        if not item.quantity:
+            continue
+
+        code = (item.activity_code or "").upper()
+        # Only treat "normal" activity codes as hours, not mileage/expenses/no-bill.
+        if code in ("MIL", "EXP", "NO BILL"):
+            continue
+
+        activity_date = None
+        if getattr(item, "date_of_service", None):
+            activity_date = item.date_of_service
+        elif getattr(item, "created_at", None):
+            if isinstance(item.created_at, datetime):
+                activity_date = item.created_at.date()
+
+        if isinstance(activity_date, datetime):
+            activity_date = activity_date.date()
+
+        if isinstance(activity_date, date) and activity_date >= cutoff_date:
+            hours_last_30_days += float(item.quantity)
+
+    # Targets for the same 30-day period, based on weekly targets in Settings.
+    weekly_min = settings.target_min_hours_per_week or 0.0
+    weekly_max = settings.target_max_hours_per_week or 0.0
+    factor_30_days = 30.0 / 7.0
+
+    hours_target_min_30 = weekly_min * factor_30_days
+    hours_target_max_30 = weekly_max * factor_30_days
+
+    # ----- Invoices / AR -----
+    total_claims = Claim.query.count()
+    total_invoices = Invoice.query.count()
+
+    invoices = Invoice.query.all()
+
+    # Anything not Paid/Void is considered "open"
+    open_invoices = 0
+    total_outstanding_ar = 0.0
+    ar_by_carrier = {}
+
+    for inv in invoices:
+        status = inv.status or "Draft"
+        amount = float(inv.total_amount or 0.0)
+
+        is_open = status not in ("Paid", "Void")
+        if is_open:
+            open_invoices += 1
+            total_outstanding_ar += amount
+
+        # Aggregate AR by carrier for open invoices
+        if not is_open:
+            continue
+
+        if inv.claim and inv.claim.carrier:
+            carrier_name = inv.claim.carrier.name
+        else:
+            carrier_name = "Unassigned"
+
+        ar_by_carrier[carrier_name] = ar_by_carrier.get(carrier_name, 0.0) + amount
+
+    return render_template(
+        "analysis.html",
+        active_page="analysis",
+        settings=settings,
+        # High-level metrics
+        active_claims_count=active_claims_count,
+        avg_open_claim_age_days=avg_open_claim_age_days,
+        stale_claims_count=stale_claims_count,
+        hours_last_30_days=hours_last_30_days,
+        hours_target_min_30=hours_target_min_30,
+        hours_target_max_30=hours_target_max_30,
+        total_outstanding_ar=total_outstanding_ar,
+        # Existing counts for reference
+        total_claims=total_claims,
+        total_invoices=total_invoices,
+        open_invoices=open_invoices,
+        ar_by_carrier=ar_by_carrier,
+    )
+
+
+# ---- Reporting dashboard for downloadable/exportable reports ----
+@bp.route("/reporting")
+def reporting_dashboard():
+    """
+    High-level reporting dashboard for downloadable / exportable reports.
+
+    Focus here is on classic "report" style outputs:
+    - Aging by bucket (0–30, 31–60, 61–90, 90+ days)
+    - Outstanding AR by carrier
+    - Detailed open-invoice list that can later be exported.
+
+    Supports optional drill-down filters via query params:
+    - ?carrier=<carrier name>
+    - ?bucket=0-30|31-60|61-90|90+
+    """
+    settings = _ensure_settings()
+    today = date.today()
+
+    # Optional filters for drill-down views
+    carrier_filter = (request.args.get("carrier") or "").strip() or None
+    bucket_filter = (request.args.get("bucket") or "").strip() or None
+
+    # Basic counts
+    total_claims = Claim.query.count()
+    total_invoices = Invoice.query.count()
+
+    invoices = Invoice.query.all()
+
+    # Aging buckets (dollar amounts)
+    aging_buckets = {
+        "0-30": 0.0,
+        "31-60": 0.0,
+        "61-90": 0.0,
+        "90+": 0.0,
+    }
+
+    # Per-carrier AR totals (open invoices only)
+    ar_by_carrier = {}
+
+    # Detailed open-invoice rows for the table / export
+    open_invoice_rows = []
+
+    for inv in invoices:
+        status = inv.status or "Draft"
+        amount = float(inv.total_amount or 0.0)
+
+        # Only treat non-Paid / non-Void as open AR
+        is_open = status not in ("Paid", "Void")
+        if not is_open:
+            continue
+
+        # ---- Determine effective invoice date for aging ----
+        effective_date = None
+        if inv.invoice_date:
+            # Normal path: explicit invoice_date
+            effective_date = inv.invoice_date
+        else:
+            # Fall back to created_at if present
+            created_at = getattr(inv, "created_at", None)
+            if isinstance(created_at, datetime):
+                effective_date = created_at.date()
+            elif isinstance(created_at, date):
+                effective_date = created_at
+
+        # Compute age in days and bucket if we have any usable date
+        age_days = None
+        bucket_label = None
+        if effective_date:
+            age_days = (today - effective_date).days
+
+            if age_days <= 30:
+                bucket_label = "0-30"
+            elif age_days <= 60:
+                bucket_label = "31-60"
+            elif age_days <= 90:
+                bucket_label = "61-90"
+            else:
+                bucket_label = "90+"
+
+            # Bucket the amount by age for the summary row
+            aging_buckets[bucket_label] += amount
+
+        # Carrier for grouping
+        if inv.claim and inv.claim.carrier:
+            carrier_name = inv.claim.carrier.name
+        else:
+            carrier_name = "Unassigned"
+
+        ar_by_carrier[carrier_name] = ar_by_carrier.get(carrier_name, 0.0) + amount
+
+        # Build a row for the open-invoice detail list
+        open_invoice_rows.append(
+            {
+                "invoice": inv,
+                "claim": inv.claim,
+                "carrier_name": carrier_name,
+                "age_days": age_days,
+                "bucket": bucket_label,
+                "amount": amount,
+            }
+        )
+
+    # Apply drill-down filters, if any
+    if carrier_filter or bucket_filter:
+        filtered_rows = []
+        for row in open_invoice_rows:
+            if carrier_filter and row["carrier_name"] != carrier_filter:
+                continue
+            if bucket_filter and row.get("bucket") != bucket_filter:
+                continue
+            filtered_rows.append(row)
+    else:
+        filtered_rows = open_invoice_rows
+
+    # Simple counts / totals (based on filtered rows)
+    open_invoices_count = len(filtered_rows)
+    total_open_amount = sum(row["amount"] for row in filtered_rows)
+
+    return render_template(
+        "reporting_dashboard.html",
+        active_page="reporting",
+        settings=settings,
+        total_claims=total_claims,
+        total_invoices=total_invoices,
+        # count of currently visible (filtered) open invoices
+        open_invoices=open_invoices_count,
+        # detailed data for the table / export (already filtered)
+        open_invoice_rows=filtered_rows,
+        # total A/R for the current view
+        total_open_amount=total_open_amount,
+        # unfiltered summary groupings
+        aging_buckets=aging_buckets,
+        ar_by_carrier=ar_by_carrier,
+        carrier_filter=carrier_filter,
+        bucket_filter=bucket_filter,
     )
 
 
@@ -667,9 +1034,10 @@ def invoice_detail(invoice_id):
 @bp.route("/billing/<int:invoice_id>/print")
 def invoice_print(invoice_id):
     """
-    Print-friendly view of a single invoice.
-    Uses the same stored totals on the Invoice record so that
-    what you see on screen and what you print always match.
+    Render a print-friendly invoice preview.
+
+    Gina can use the browser's Print dialog (including "Save as PDF") instead of
+    the app generating PDFs directly.
     """
     invoice = Invoice.query.get_or_404(invoice_id)
     claim = invoice.claim
@@ -1255,9 +1623,22 @@ def claim_detail(claim_id):
                 error = "File type not allowed."
             else:
                 claim_folder = _get_claim_folder(claim)
-                filename_safe = secure_filename(file.filename)
-                unique_prefix = uuid.uuid4().hex[:8]
-                stored_name = f"{unique_prefix}_{filename_safe}"
+
+                # Build a readable, claim-specific stored filename and ensure uniqueness
+                original_safe = secure_filename(file.filename)
+                claim_number_part = _safe_segment(claim.claim_number) if claim.claim_number else f"claim_{claim.id}"
+
+                base_name, ext = os.path.splitext(original_safe)
+                base_name = _safe_segment(base_name) or "document"
+                ext = ext or ""
+
+                candidate = f"{claim_number_part}_{base_name}{ext}"
+                stored_name = candidate
+                counter = 1
+                while (claim_folder / stored_name).exists():
+                    stored_name = f"{claim_number_part}_{base_name}_{counter}{ext}"
+                    counter += 1
+
                 file_path = claim_folder / stored_name
                 file.save(file_path)
 
@@ -1379,15 +1760,25 @@ def report_document_upload(claim_id, report_id):
             url_for("main.report_edit", claim_id=claim.id, report_id=report.id)
         )
 
-    # Build a safe path under the report folder. We store only the filename
-    # in the DB (like claim-level documents), and always reconstruct the path
-    # from the report when downloading/deleting.
+    # Build a readable, claim/report-specific stored filename and ensure uniqueness
     report_folder = _get_report_folder(report)
-    filename_safe = secure_filename(file.filename)
-    unique_prefix = uuid.uuid4().hex[:8]
-    stored_name = f"{unique_prefix}_{filename_safe}"
-    file_path = report_folder / stored_name
 
+    original_safe = secure_filename(file.filename)
+    claim_number_part = _safe_segment(report.claim.claim_number) if report.claim and report.claim.claim_number else f"claim_{report.claim_id}"
+    report_part = f"report_{report.id}"
+
+    base_name, ext = os.path.splitext(original_safe)
+    base_name = _safe_segment(base_name) or "document"
+    ext = ext or ""
+
+    candidate = f"{claim_number_part}_{report_part}_{base_name}{ext}"
+    stored_name = candidate
+    counter = 1
+    while (report_folder / stored_name).exists():
+        stored_name = f"{claim_number_part}_{report_part}_{base_name}_{counter}{ext}"
+        counter += 1
+
+    file_path = report_folder / stored_name
     file.save(file_path)
 
     doc = ReportDocument(
@@ -1725,6 +2116,7 @@ def report_document_open_location(report_document_id):
     )
 
 # ---- ICS file for report's next appointment ----
+
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/next-appointment.ics")
 def report_next_appointment_ics(claim_id, report_id):
     """
@@ -1811,6 +2203,100 @@ def report_next_appointment_ics(claim_id, report_id):
     filename = f"next_appointment_claim{claim.id}_report{report.id}.ics"
     response.headers["Content-Disposition"] = f"attachment; filename={filename}"
     return response
+
+
+
+
+@bp.route("/claims/<int:claim_id>/reports/<int:report_id>/print")
+def report_print(claim_id, report_id):
+    """
+    Render a print-friendly report preview.
+
+    Gina can use the browser's Print dialog (including "Save as PDF") instead of
+    the app generating PDFs directly.
+    """
+    claim = Claim.query.get_or_404(claim_id)
+    report = (
+        Report.query.filter_by(id=report_id, claim_id=claim.id)
+        .first_or_404()
+    )
+    settings = _ensure_settings()
+
+    # Build barriers list from report.barriers_json (list of BarrierOption IDs)
+    selected_ids = []
+    if report.barriers_json:
+        try:
+            selected_ids = json.loads(report.barriers_json)
+        except Exception:
+            selected_ids = []
+
+    barriers = []
+    if selected_ids:
+        barriers = (
+            BarrierOption.query
+            .filter(BarrierOption.id.in_(selected_ids))
+            .order_by(BarrierOption.sort_order, BarrierOption.label)
+            .all()
+        )
+
+    return render_template(
+        "report_print.html",
+        active_page="claims",
+        claim=claim,
+        report=report,
+        settings=settings,
+        barriers=barriers,
+    )
+
+
+# ---- PDF generation for a single report using WeasyPrint ----
+@bp.route("/claims/<int:claim_id>/reports/<int:report_id>/pdf")
+def report_pdf(claim_id, report_id):
+    """
+    Generate a PDF of the report using the same template as report_print.
+    """
+    claim = Claim.query.get_or_404(claim_id)
+    report = (
+        Report.query.filter_by(id=report_id, claim_id=claim.id)
+        .first_or_404()
+    )
+
+    # Include any report-level documents in case they are referenced in the print view
+    documents = (
+        ReportDocument.query
+        .filter_by(report_id=report.id)
+        .order_by(ReportDocument.id.desc())
+        .all()
+    )
+
+    settings = _ensure_settings()
+
+    # If WeasyPrint is not available, fall back to the HTML print view
+    if HTML is None:
+        flash("PDF generation is not available (WeasyPrint is not installed).", "danger")
+        return redirect(
+            url_for("main.report_print", claim_id=claim.id, report_id=report.id)
+        )
+
+    # Render the HTML for this report
+    html = render_template(
+        "report_print.html",
+        active_page="claims",
+        claim=claim,
+        report=report,
+        settings=settings,
+        documents=documents,
+    )
+
+    # Generate PDF bytes in memory
+    pdf_bytes = HTML(string=html, base_url=current_app.root_path).write_pdf()
+
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"report_claim{claim.id}_report{report.id}.pdf",
+    )
 
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/delete", methods=["GET", "POST"])
 def report_delete(claim_id, report_id):
@@ -2576,6 +3062,7 @@ def settings_view():
     error = None
 
     if request.method == "POST":
+        # --- Basic business info ---
         settings.business_name = (request.form.get("business_name") or "").strip() or None
         settings.address1 = (request.form.get("address1") or "").strip() or None
         settings.address2 = (request.form.get("address2") or "").strip() or None
@@ -2585,27 +3072,54 @@ def settings_view():
         settings.phone = (request.form.get("phone") or "").strip() or None
         settings.email = (request.form.get("email") or "").strip() or None
 
-        settings.hourly_rate = float(request.form.get("hourly_rate") or 0) or None
-        settings.telephonic_rate = float(request.form.get("telephonic_rate") or 0) or None
-        settings.mileage_rate = float(request.form.get("mileage_rate") or 0) or None
+        # --- Rates ---
+        try:
+            settings.hourly_rate = float(request.form.get("hourly_rate") or 0) or None
+        except ValueError:
+            settings.hourly_rate = None
 
+        try:
+            settings.telephonic_rate = float(request.form.get("telephonic_rate") or 0) or None
+        except ValueError:
+            settings.telephonic_rate = None
+
+        try:
+            settings.mileage_rate = float(request.form.get("mileage_rate") or 0) or None
+        except ValueError:
+            settings.mileage_rate = None
+
+        # --- Payment terms / footer text ---
         settings.payment_terms_default = (request.form.get("payment_terms_default") or "").strip() or None
-
-        settings.dormant_claim_days = int(request.form.get("dormant_claim_days") or 0) or None
-        settings.target_min_hours_per_week = float(
-            request.form.get("target_min_hours_per_week") or 0
-        ) or None
-        settings.target_max_hours_per_week = float(
-            request.form.get("target_max_hours_per_week") or 0
-        ) or None
-
-        settings.accent_color = (request.form.get("accent_color") or "").strip() or None
         settings.report_footer_text = (request.form.get("report_footer_text") or "").strip() or None
         settings.invoice_footer_text = (request.form.get("invoice_footer_text") or "").strip() or None
 
+        # --- Workload targets / dormant days ---
+        try:
+            settings.dormant_claim_days = int(request.form.get("dormant_claim_days") or 0) or None
+        except ValueError:
+            settings.dormant_claim_days = None
+
+        try:
+            settings.target_min_hours_per_week = float(
+                request.form.get("target_min_hours_per_week") or 0
+            ) or None
+        except ValueError:
+            settings.target_min_hours_per_week = None
+
+        try:
+            settings.target_max_hours_per_week = float(
+                request.form.get("target_max_hours_per_week") or 0
+            ) or None
+        except ValueError:
+            settings.target_max_hours_per_week = None
+
+        # --- Accent color ---
+        settings.accent_color = (request.form.get("accent_color") or "").strip() or None
+
+        # --- Documents root path ---
         settings.documents_root = (request.form.get("documents_root") or "").strip() or None
 
-        # Contact roles (editable list, one per line)
+        # --- Contact roles (editable list, one per line) ---
         roles_text = (request.form.get("contact_roles") or "").strip()
         if roles_text:
             roles_list = [
@@ -2622,11 +3136,32 @@ def settings_view():
             # If nothing provided, fall back to defaults
             settings.contact_roles_json = json.dumps(CONTACT_ROLE_DEFAULTS)
 
+        # --- Logo file upload handling ---
+        logo_file = request.files.get("logo_file")
+        if logo_file and logo_file.filename:
+            safe_name = secure_filename(logo_file.filename)
+            unique_prefix = uuid.uuid4().hex[:8]
+            stored_name = f"{unique_prefix}_{safe_name}"
+
+            static_root = Path(current_app.root_path) / "static"
+            logos_folder = static_root / "logos"
+            logos_folder.mkdir(parents=True, exist_ok=True)
+
+            file_path = logos_folder / stored_name
+            logo_file.save(file_path)
+
+            # Store relative path; used with url_for('static', filename=settings.logo_path)
+            settings.logo_path = f"logos/{stored_name}"
+        # IMPORTANT: do NOT clear settings.logo_path if no file is uploaded
+
         db.session.commit()
+        flash("Settings saved.", "success")
         return redirect(url_for("main.settings_view"))
 
+    # GET: build the roles text from stored JSON or defaults
     contact_roles = _get_contact_roles()
     contact_roles_text = "\n".join(contact_roles)
+
     return render_template(
         "settings.html",
         active_page="settings",
@@ -2635,5 +3170,3 @@ def settings_view():
         contact_roles=contact_roles,
         contact_roles_text=contact_roles_text,
     )
-
-

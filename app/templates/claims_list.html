@@ -33,6 +33,7 @@
                 <th>Claimant</th>
                 <th>Carrier</th>
                 <th>Employer</th>
+                <th class="text-center">Status</th>
                 <th class="text-center">Billing</th>
               </tr>
             </thead>
@@ -40,8 +41,9 @@
 
               {% for claim in claims %}
                 {% set summary = billing_summary.get(claim.id) if billing_summary else None %}
+                {% set dormancy = dormant_info.get(claim.id) if dormant_info else None %}
 
-                <tr>
+                <tr{% if dormancy and dormancy["is_dormant"] %} class="table-warning"{% endif %}>
                   <td>
                     <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
                       {{ claim.claim_number }}
@@ -67,6 +69,28 @@
                       {{ claim.employer.name }}
                     {% else %}
                       <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+
+                  <td class="text-center">
+                    {% if dormancy %}
+                      {% if dormancy["is_dormant"] %}
+                        <span class="badge bg-warning text-dark">Dormant</span>
+                        {% if dormancy["last_activity"] %}
+                          <div class="small text-muted">
+                            Last activity {{ dormancy["last_activity"]|format_date }}
+                          </div>
+                        {% endif %}
+                      {% else %}
+                        <span class="badge bg-success">Active</span>
+                        {% if dormancy["last_activity"] %}
+                          <div class="small text-muted">
+                            Last activity {{ dormancy["last_activity"]|format_date }}
+                          </div>
+                        {% endif %}
+                      {% endif %}
+                    {% else %}
+                      <span class="badge bg-secondary">Unknown</span>
                     {% endif %}
                   </td>
 

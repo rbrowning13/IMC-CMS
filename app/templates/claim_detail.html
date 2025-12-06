@@ -519,7 +519,7 @@
                         <th>Type</th>
                         <th>Description</th>
                         <th>File</th>
-                        <th></th>
+                        <th class="text-end">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -538,7 +538,17 @@
                             {% endif %}
                           </td>
                           <td>
-                            {{ d.original_filename or d.filename_original or "—" }}
+                            {%- set raw_name = d.original_filename or d.filename_original or "" -%}
+                            {%- if raw_name %}
+                              {%- set parts = raw_name.split("_", 1) -%}
+                              {%- if parts|length == 2 and parts[0]|length == 8 -%}
+                                {{ parts[1] }}
+                              {%- else -%}
+                                {{ raw_name }}
+                              {%- endif -%}
+                            {%- else -%}
+                              —
+                            {%- endif -%}
                           </td>
 <td class="text-end">
   <a href="{{ url_for('main.document_download', claim_id=claim.id, doc_id=d.id) }}"
@@ -621,7 +631,7 @@
                   </div>
                 </div>
                 <p class="text-muted mt-2 mb-0 small">
-                  Allowed: pdf, doc, docx, rtf, txt, jpg, jpeg, png, mp4, mov, avi.
+                  Allowed: pdf, doc, docx, rtf, txt, jpg, jpeg, png, mp4, mov, avi. Files are stored under your configured Documents Root on this computer. Use <strong>Open Location</strong> to open the containing folder in Finder/Explorer without making a copy.
                 </p>
               </form>
             </div>

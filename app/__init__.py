@@ -1,6 +1,7 @@
 import json
 import datetime
 from flask import Flask
+from markupsafe import Markup, escape
 
 CONTACT_ROLE_DEFAULTS = [
     "Adjuster",
@@ -28,6 +29,28 @@ def format_date(value, fmt="%m/%d/%Y"):
             return str(value)
     # Fallback: just convert to string
     return str(value)
+
+def format_datetime(value, fmt="%m/%d/%Y %I:%M%p"):
+    """Jinja filter to render datetimes as MM/DD/YYYY HH:MM(AM/PM)."""
+    if not value:
+        return ""
+    if hasattr(value, "strftime"):
+        try:
+            return value.strftime(fmt)
+        except Exception:
+            return str(value)
+    return str(value)
+
+def nl2br(value):
+    """
+    Convert newlines to <br> tags, escaping HTML first.
+    Used in report_print.html to render multi-line text nicely.
+    """
+    if value is None:
+        return ""
+    # Ensure it's a string, escape it, then replace newlines with <br>
+    text = escape(str(value))
+    return Markup("<br>".join(text.splitlines()))
 
 # Import the shared SQLAlchemy instance
 from .extensions import db
@@ -270,6 +293,8 @@ def create_app():
 
     # Register Jinja filters
     app.jinja_env.filters["format_date"] = format_date
+    app.jinja_env.filters["format_datetime"] = format_datetime
+    app.jinja_env.filters["nl2br"] = nl2br
 
     # Basic configuration
     app.config["SECRET_KEY"] = app.config.get("SECRET_KEY") or "dev-secret-key-change-me"
@@ -283,6 +308,15 @@ def create_app():
     # Register blueprints
     from .routes import bp as main_bp
     app.register_blueprint(main_bp)
+
+    @app.context_processor
+    def inject_settings():
+        from .models import Settings
+        try:
+            settings = Settings.query.first()
+        except Exception:
+            settings = None
+        return {"settings": settings}
 
     # Create tables and ensure a Settings row exists
     with app.app_context():

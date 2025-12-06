@@ -17,8 +17,12 @@
       </div>
       <div class="d-flex gap-2">
         <a href="{{ url_for('main.invoice_print', invoice_id=invoice.id) }}"
+           class="btn btn-sm btn-outline-secondary">
+          Preview / Print
+        </a>
+        <a href="{{ url_for('main.invoice_print', invoice_id=invoice.id, download=1) }}"
            class="btn btn-sm btn-outline-primary">
-          Print Invoice
+          Download PDF
         </a>
       </div>
     </div>
@@ -186,7 +190,6 @@
                   <th style="width: 6rem;">Code</th>
                   <th>Description</th>
                   <th class="text-end" style="width: 8rem;">Quantity</th>
-                  <th class="text-end" style="width: 10rem;">From Claim</th>
                   <th class="text-end" style="width: 7rem;">Actions</th>
                 </tr>
               </thead>
@@ -200,16 +203,6 @@
                     <td class="text-end">
                       {% if item.quantity is not none %}
                         {{ "%.2f"|format(item.quantity) }}
-                      {% else %}
-                        —
-                      {% endif %}
-                    </td>
-                    <td class="text-end">
-                      {% if item.claim_id %}
-                        <a href="{{ url_for('main.claim_detail', claim_id=item.claim_id) }}"
-                           class="link-secondary">
-                          Claim {{ item.claim.claim_number if item.claim and item.claim.claim_number else item.claim_id }}
-                        </a>
                       {% else %}
                         —
                       {% endif %}
@@ -233,7 +226,7 @@
                 {% endfor %}
               {% else %}
                 <tr>
-                  <td colspan="6" class="text-center text-muted py-3">
+                  <td colspan="5" class="text-center text-muted py-3">
                     No items on this invoice.
                   </td>
                 </tr>

@@ -1,0 +1,25 @@
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <!-- title / subtitle -->
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('main.claim_detail', claim_id=invoice.claim_id) }}" class="btn btn-outline-secondary btn-sm">
+      Cancel
+    </a>
+    <a href="{{ url_for('main.claim_detail', claim_id=invoice.claim_id) }}" class="btn btn-outline-secondary btn-sm">
+      Back to Claim
+    </a>
+    <a href="{{ url_for('main.invoice_print', invoice_id=invoice.id) }}"
+       class="btn btn-outline-secondary btn-sm"
+       target="_blank"
+       rel="noopener">
+      Preview / Print
+    </a>
+    <a href="{{ url_for('main.invoice_print', invoice_id=invoice.id, download=1) }}"
+       class="btn btn-outline-primary btn-sm"
+       target="_blank"
+       rel="noopener">
+      Download PDF
+    </a>
+  </div>
+</div>

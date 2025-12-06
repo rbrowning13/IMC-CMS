@@ -4,37 +4,53 @@
 {% block content %}
 <div class="container mt-3" id="invoice-print-root">
   <div class="d-print-none mb-3">
-    <a href="{{ url_for('main.invoice_detail', invoice_id=invoice.id) }}"
-       class="btn btn-sm btn-outline-secondary">
-      &larr; Back to Invoice
-    </a>
-    <button class="btn btn-sm btn-primary ms-2" onclick="window.print()">
-      Print
-    </button>
+    <div class="d-flex justify-content-end gap-2">
+      <a href="{{ url_for('main.invoice_detail', invoice_id=invoice.id) }}"
+         class="btn btn-sm btn-outline-secondary">
+        &larr; Back to Invoice
+      </a>
+      <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
+         class="btn btn-sm btn-outline-secondary">
+        &larr; Back to Claim
+      </a>
+      <button class="btn btn-sm btn-primary" onclick="window.print()">
+        Print
+      </button>
+    </div>
   </div>
 
   <div class="card shadow-sm">
     <div class="card-body">
-      <div class="row">
-        <!-- Business info -->
+      <div class="mb-3" style="height: 4px; background-color: {{ settings.accent_color or '#0d6efd' }};"></div>
+      <div class="row pb-2 mb-2 align-items-center">
+        <!-- Business info with optional logo -->
         <div class="col-md-6">
-          <h1 class="h4 mb-1">
-            {{ settings.business_name or "Impact Medical Consulting, PLLC" }}
-          </h1>
-          <p class="mb-0 small">
-            {% if settings.address1 %}{{ settings.address1 }}<br>{% endif %}
-            {% if settings.address2 %}{{ settings.address2 }}<br>{% endif %}
-            {% if settings.city or settings.state or settings.postal_code %}
-              {{ settings.city or "" }}{% if settings.city and settings.state %}, {% endif %}
-              {{ settings.state or "" }} {{ settings.postal_code or "" }}<br>
+          <div class="text-center mb-2">
+            {% if settings.logo_path %}
+              {% if settings.logo_path.startswith('/') %}
+                <img src="{{ settings.logo_path }}" alt="{{ settings.business_name or 'Logo' }}" style="max-height: 70px;">
+              {% else %}
+                <img src="{{ url_for('static', filename=settings.logo_path) }}" alt="{{ settings.business_name or 'Logo' }}" style="max-height: 70px;">
+              {% endif %}
             {% endif %}
-            {% if settings.phone %}
-              Phone: {{ settings.phone }}<br>
-            {% endif %}
-            {% if settings.email %}
-              Email: {{ settings.email }}<br>
-            {% endif %}
-          </p>
+          </div>
+
+          <div class="text-center">
+            <p class="mb-0 small">
+              {% if settings.address1 %}{{ settings.address1 }}<br>{% endif %}
+              {% if settings.address2 %}{{ settings.address2 }}<br>{% endif %}
+              {% if settings.city or settings.state or settings.postal_code %}
+                {{ settings.city or "" }}{% if settings.city and settings.state %}, {% endif %}
+                {{ settings.state or "" }} {{ settings.postal_code or "" }}<br>
+              {% endif %}
+              {% if settings.phone %}
+                Phone: {{ settings.phone }}<br>
+              {% endif %}
+              {% if settings.email %}
+                Email: {{ settings.email }}<br>
+              {% endif %}
+            </p>
+          </div>
         </div>
 
         <!-- Invoice meta -->
@@ -42,7 +58,8 @@
           <h2 class="h4">Invoice</h2>
           <p class="mb-0 small">
             <strong>Invoice #:</strong> {{ invoice.invoice_number or "Draft" }}<br>
-            <strong>Date:</strong> {{ invoice.invoice_date or "—" }}<br>
+            <strong>Date:</strong>
+            {{ invoice.invoice_date|format_date if invoice.invoice_date else "—" }}<br>
             <strong>Status:</strong> {{ invoice.status or "Draft" }}<br>
             <strong>Claim #:</strong>
               {{ claim.claim_number or "—" }}<br>
@@ -84,11 +101,11 @@
           <h3 class="h6">Dates of Service</h3>
           <p class="small mb-0">
             {% if invoice.dos_start and invoice.dos_end %}
-              {{ invoice.dos_start }} – {{ invoice.dos_end }}
+              {{ invoice.dos_start|format_date }} – {{ invoice.dos_end|format_date }}
             {% elif invoice.dos_start %}
-              From {{ invoice.dos_start }}
+              From {{ invoice.dos_start|format_date }}
             {% elif invoice.dos_end %}
-              Through {{ invoice.dos_end }}
+              Through {{ invoice.dos_end|format_date }}
             {% else %}
               Not specified
             {% endif %}
@@ -99,7 +116,7 @@
       <!-- Line items table -->
       <div class="table-responsive">
         <table class="table table-sm table-bordered align-middle mb-3">
-          <thead class="table-light">
+          <thead style="background-color: {{ settings.accent_color or '#0d6efd' }}; color: #ffffff;">
             <tr>
               <th style="width: 9rem;">Service Date</th>
               <th style="width: 6rem;">Code</th>
@@ -111,7 +128,13 @@
           {% if items %}
             {% for item in items %}
               <tr>
-                <td>{{ item.service_date or "—" }}</td>
+                <td>
+                  {% if item.service_date %}
+                    {{ item.service_date|format_date }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
                 <td>{{ item.activity_code or "" }}</td>
                 <td>{{ item.description or "" }}</td>
                 <td class="text-end">

@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4" style="max-width: 900px;">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Report Preview / Print Layout</h2>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('main.report_edit', claim_id=claim.id, report_id=report.id) }}"
+         class="btn btn-outline-primary btn-sm">
+        Back to Report
+      </a>
+      <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
+         class="btn btn-outline-primary btn-sm">
+        Back to Claim
+      </a>
+      <button type="button"
+              class="btn btn-outline-primary btn-sm"
+              onclick="window.print()">
+        Print
+      </button>
+      <a href="{{ url_for('main.report_print', claim_id=claim.id, report_id=report.id, download=1) }}"
+         class="btn btn-outline-primary btn-sm"
+         
+         rel="noopener">
+        Download PDF
+      </a>
+    </div>
+  </div>
+
+  <div class="card p-4">
+
+    {# Accent color helper #}
+    {% set accent = settings.accent_color or '#0d6efd' %}
+
+    {# Letterhead-style header with logo + business info #}
+    <div class="d-flex align-items-center justify-content-between mb-3" style="width: 100%;">
+      <div class="me-3 text-center" style="flex: 0 0 auto;">
+        {% if settings.logo_path %}
+          <img
+            src="{{ url_for('static', filename=settings.logo_path) }}"
+            alt="{{ settings.business_name or 'Logo' }}"
+            style="max-height: 80px; width: auto; display: block; margin: 0 auto;"
+          >
+        {% endif %}
+      </div>
+
+      <div style="flex: 1 1 auto; text-align: center;">
+        <h3 class="mb-0">{{ report.report_type|capitalize }} Report</h3>
+      </div>
+
+      <div style="flex: 0 0 80px;"></div>  {# Spacer to mimic logo width on right side #}
+    </div>
+
+    <hr style="border-top: 3px solid {{ accent }};">
+
+    {# Claim / report header #}
+    <h4 class="mb-2">{{ claim.claimant_name }}</h4>
+
+    <div class="row mb-3">
+      <div class="col-sm-6">
+        <p class="mb-1">
+          <strong>Claim #:</strong> {{ claim.claim_number }}<br>
+          <strong>Date of Birth:</strong> {{ claim.dob|format_date }}<br>
+          <strong>Date of Injury:</strong> {{ claim.date_of_injury|format_date }}<br>
+          <strong>Referral Date:</strong> {{ report.referral_date|format_date }}<br>
+          <strong>Claim State:</strong> {{ claim.claim_state or '—' }}<br>
+          {% if claim.carrier %}
+            <strong>Carrier:</strong> {{ claim.carrier.name }}<br>
+          {% endif %}
+          {% if claim.employer %}
+            <strong>Employer:</strong> {{ claim.employer.name }}<br>
+          {% endif %}
+          <strong>DOS:</strong> {{ report.dos_start|format_date }} – {{ report.dos_end|format_date }}
+        </p>
+      </div>
+      <div class="col-sm-6">
+        <p class="mb-1">
+          {% if report.treating_provider %}
+            <strong>Treating Provider:</strong> {{ report.treating_provider.name }}<br>
+          {% endif %}
+          {% if claim.primary_care_provider %}
+            <strong>Primary Care Provider:</strong> {{ claim.primary_care_provider }}<br>
+          {% endif %}
+          {% if report.initial_next_appt_datetime %}
+            <strong>Next Appointment:</strong>
+            {{ report.initial_next_appt_datetime|format_datetime }}
+            {% if report.initial_next_appt_provider_name %}
+              &nbsp;with {{ report.initial_next_appt_provider_name }}
+            {% endif %}
+            <br>
+          {% endif %}
+        </p>
+      </div>
+    </div>
+
+    <hr>
+    <div class="mt-4">
+
+    {# Status / Treatment Plan #}
+    <h5>Status / Treatment Plan</h5>
+    <p>
+      {% if report.status_treatment_plan %}
+        {{ report.status_treatment_plan|nl2br }}
+      {% else %}
+        <span class="text-muted">N/A</span>
+      {% endif %}
+    </p>
+    <hr>
+
+    {# Work Status #}
+    <h5>Work Status</h5>
+    <p>
+      {% if report.work_status %}
+        {{ report.work_status|nl2br }}
+      {% else %}
+        <span class="text-muted">N/A</span>
+      {% endif %}
+    </p>
+    <hr>
+
+    {# Employment Status #}
+    <h5>Employment Status</h5>
+    <p>
+      {% if report.employment_status %}
+        {{ report.employment_status }}
+      {% else %}
+        <span class="text-muted">N/A</span>
+      {% endif %}
+    </p>
+    <hr>
+
+    {# Case Management Plan #}
+    <h5>Case Management Plan</h5>
+    <p>
+      {% if report.case_management_plan %}
+        {{ report.case_management_plan|nl2br }}
+      {% else %}
+        <span class="text-muted">N/A</span>
+      {% endif %}
+    </p>
+    <hr>
+
+    {# Barriers #}
+    <h5>Barriers to Recovery</h5>
+    {% if barriers and barriers|length > 0 %}
+      <ul>
+        {% for b in barriers %}
+          <li>{{ b.label }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-muted">N/A – No significant barriers identified.</p>
+    {% endif %}
+    <hr>
+
+    {# INITIAL-specific fields #}
+    {% if report.report_type == 'initial' %}
+      <h5>Diagnosis</h5>
+      <p>
+        {% if report.initial_diagnosis %}
+          {{ report.initial_diagnosis|nl2br }}
+        {% else %}
+          <span class="text-muted">N/A</span>
+        {% endif %}
+      </p>
+      <hr>
+
+      <h5>Mechanism of Injury</h5>
+      <p>
+        {% if report.initial_mechanism_of_injury %}
+          {{ report.initial_mechanism_of_injury|nl2br }}
+        {% else %}
+          <span class="text-muted">N/A</span>
+        {% endif %}
+      </p>
+      <hr>
+
+      <h5>Co‑existing Conditions</h5>
+      <p>
+        {% if report.initial_coexisting_conditions %}
+          {{ report.initial_coexisting_conditions|nl2br }}
+        {% else %}
+          <span class="text-muted">N/A</span>
+        {% endif %}
+      </p>
+      <hr>
+
+      <h5>Surgical History</h5>
+      <p>
+        {% if report.initial_surgical_history %}
+          {{ report.initial_surgical_history|nl2br }}
+        {% else %}
+          <span class="text-muted">N/A</span>
+        {% endif %}
+      </p>
+      <hr>
+
+      <h5>Medications</h5>
+      <p>
+        {% if report.initial_medications %}
+          {{ report.initial_medications|nl2br }}
+        {% else %}
+          <span class="text-muted">N/A</span>
+        {% endif %}
+      </p>
+      <hr>
+
+      <h5>Diagnostics</h5>
+      <p>
+        {% if report.initial_diagnostics %}
+          {{ report.initial_diagnostics|nl2br }}
+        {% else %}
+          <span class="text-muted">N/A</span>
+        {% endif %}
+      </p>
+      <hr>
+    {% endif %}
+
+    {# CLOSURE-specific fields #}
+    {% if report.report_type == 'closure' %}
+      <h5>Closure Reason</h5>
+      <p>
+        {% if report.closure_reason %}
+          {{ report.closure_reason }}
+        {% else %}
+          <span class="text-muted">N/A</span>
+        {% endif %}
+      </p>
+      <hr>
+
+      <h5>Closure Details</h5>
+      <p>
+        {% if report.closure_details %}
+          {{ report.closure_details|nl2br }}
+        {% else %}
+          <span class="text-muted">N/A</span>
+        {% endif %}
+      </p>
+      <hr>
+
+      <h5>Case Management Impact</h5>
+      <p>
+        {% if report.closure_case_management_impact %}
+          {{ report.closure_case_management_impact|nl2br }}
+        {% else %}
+          <span class="text-muted">N/A</span>
+        {% endif %}
+      </p>
+      <hr>
+    {% endif %}
+
+    </div>
+    <p class="text-muted mt-4">Generated on {{ report.updated_at|format_datetime }}</p>
+
+  </div>
+
+</div>
+{% endblock %}

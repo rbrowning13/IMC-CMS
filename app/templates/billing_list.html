@@ -28,6 +28,7 @@
               <tr>
                 <th>Invoice #</th>
                 <th>Claim</th>
+                <th>Carrier</th>
                 <th>Status</th>
                 <th>Invoice Date</th>
                 <th class="text-end">Total</th>
@@ -46,6 +47,13 @@
                       <a href="{{ url_for('main.claim_detail', claim_id=invoice.claim.id) }}">
                         {{ invoice.claim.claim_number }} · {{ invoice.claim.claimant_name }}
                       </a>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if invoice.claim and invoice.claim.carrier %}
+                      {{ invoice.claim.carrier.name }}
                     {% else %}
                       <span class="text-muted">—</span>
                     {% endif %}

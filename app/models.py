@@ -473,6 +473,8 @@ class Settings(db.Model):
     target_min_hours_per_week = db.Column(db.Float)
     target_max_hours_per_week = db.Column(db.Float)
 
+    # Branding / appearance
+    logo_path = db.Column(db.String(255))  # relative to static/, e.g. "logos/abcd_logo.png"
     accent_color = db.Column(db.String(20))
     report_footer_text = db.Column(db.Text)
     invoice_footer_text = db.Column(db.Text)

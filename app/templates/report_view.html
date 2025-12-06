@@ -1,0 +1,6 @@
+<div style="display:flex; gap:10px; justify-content:flex-end;">
+    <a href="{{ url_for('main.report_edit', report_id=report.id) }}" class="btn btn-outline-accent">Back to Report</a>
+    <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-accent">Back to Claim</a>
+    <button onclick="window.print()" class="btn btn-outline-accent">Print</button>
+    <a href="{{ url_for('main.report_print', report_id=report.id) }}" class="btn btn-outline-accent">Download PDF</a>
+</div>

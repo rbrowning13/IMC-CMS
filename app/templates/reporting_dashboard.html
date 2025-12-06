@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="mb-0">Reporting Dashboard</h2>
+        {% if carrier_filter or bucket_filter %}
+        <div class="small text-muted">
+            Viewing:
+            {% if carrier_filter %}
+                Carrier: <strong>{{ carrier_filter }}</strong>
+            {% endif %}
+            {% if carrier_filter and bucket_filter %}
+                &middot;
+            {% endif %}
+            {% if bucket_filter %}
+                Aging: <strong>{{ bucket_filter }}</strong>
+            {% endif %}
+            <a href="{{ url_for('main.reporting_dashboard') }}" class="btn btn-link btn-sm ms-2">Clear filters</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Summary cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card p-3 text-center">
+                <h5>Total Claims</h5>
+                <p class="display-6">{{ total_claims }}</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3 text-center">
+                <h5>Total Invoices</h5>
+                <p class="display-6">{{ total_invoices }}</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3 text-center">
+                <h5>Open Invoices</h5>
+                <p class="display-6">{{ open_invoices }}</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3 text-center">
+                <h5>Total A/R</h5>
+                <p class="display-6">
+                    ${{ "%.2f"|format(total_open_amount or 0) }}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aging buckets with drill‑down -->
+    <h4 class="mt-4">Accounts Receivable Aging</h4>
+    <table class="table table-bordered mt-3">
+        <thead>
+            <tr>
+                <th>Aging Bucket</th>
+                <th>Total Outstanding</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for bucket, amount in aging_buckets.items() %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('main.reporting_dashboard', bucket=bucket) }}">
+                        {{ bucket }}
+                    </a>
+                </td>
+                <td>
+                    <a href="{{ url_for('main.reporting_dashboard', bucket=bucket) }}">
+                        ${{ "%.2f"|format(amount) }}
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- A/R by carrier with drill‑down -->
+    <h4 class="mt-5">Receivables by Carrier</h4>
+    <table class="table table-bordered mt-3">
+        <thead>
+            <tr>
+                <th>Carrier</th>
+                <th>Total Outstanding</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for carrier_name, total in ar_by_carrier.items() %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('main.reporting_dashboard', carrier=carrier_name) }}">
+                        {{ carrier_name }}
+                    </a>
+                </td>
+                <td>
+                    <a href="{{ url_for('main.reporting_dashboard', carrier=carrier_name) }}">
+                        ${{ "%.2f"|format(total) }}
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Filtered open invoice detail -->
+    <h4 class="mt-5">Open Invoice Detail</h4>
+
+    {% if open_invoice_rows %}
+    <table class="table table-striped mt-3">
+        <thead>
+            <tr>
+                <th>Invoice #</th>
+                <th>Claimant</th>
+                <th>Carrier</th>
+                <th>Age (days)</th>
+                <th>Amount</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in open_invoice_rows %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('main.invoice_detail', invoice_id=row.invoice.id) }}">
+                        {{ row.invoice.invoice_number }}
+                    </a>
+                </td>
+                <td>{{ row.claim.claimant_name }}</td>
+                <td>{{ row.carrier_name }}</td>
+                <td>{{ row.age_days if row.age_days is not none else '—' }}</td>
+                <td>${{ "%.2f"|format(row.amount) }}</td>
+                <td>{{ row.invoice.status or 'Draft' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p class="text-muted mt-2">No open invoices match the current filters.</p>
+    {% endif %}
+</div>
+{% endblock %}

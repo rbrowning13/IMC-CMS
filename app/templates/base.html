@@ -14,6 +14,27 @@
 
   <!-- App stylesheet -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% if settings and settings.accent_color %}
+  <style>
+    :root {
+      --accent-color: {{ settings.accent_color }};
+    }
+
+    .navbar .nav-link {
+      padding-bottom: 0.35rem;
+    }
+
+    .navbar .nav-link.active {
+      color: var(--accent-color) !important;
+      font-weight: 600;
+      border-bottom: 2px solid var(--accent-color);
+    }
+
+    .navbar .nav-link.active:hover {
+      color: var(--accent-color) !important;
+    }
+  </style>
+  {% endif %}
 </head>
 <body class="bg-light">
 
@@ -22,12 +43,15 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
       <div class="container-fluid">
         <!-- Brand / Logo -->
-        <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.claims_list') }}">
-          <img src="{{ url_for('static', filename='images/logo.png') }}"
-               alt="Impact Medical Logo"
-               class="me-2 d-none d-sm-inline"
-               style="height: 32px;">
-          <span>Impact Medical CMS</span>
+        {% set brand_name = settings.business_name if settings and settings.business_name else 'Impact Medical CMS' %}
+        <a class="navbar-brand d-flex flex-column align-items-center" href="{{ url_for('main.claims_list') }}">
+          {% if settings and settings.logo_path %}
+            <img src="{{ url_for('static', filename=settings.logo_path) }}"
+                 alt="{{ brand_name }} Logo"
+                 class="mb-1"
+                 style="height: 70px; display: block; margin-left: auto; margin-right: auto;">
+          {% endif %}
+          <span style="line-height: 1.1;">{{ brand_name }}</span>
         </a>
 
         <!-- Mobile nav toggle -->
@@ -37,7 +61,7 @@
         </button>
 
         <!-- Nav links -->
-        <div class="collapse navbar-collapse" id="mainNavbar">
+        <div class="collapse navbar-collapse d-flex align-items-center" id="mainNavbar">
           <ul class="navbar-nav me-auto mb-2 mb-lg-0">
             <li class="nav-item">
               <a class="nav-link {% if active_page == 'claims' %}active{% endif %}"
@@ -62,10 +86,12 @@
                  href="{{ url_for('main.providers_list') }}">Providers</a>
             </li>
             <li class="nav-item">
-              <span class="nav-link disabled">Reports</span>
+              <a class="nav-link {% if active_page == 'reporting' %}active{% endif %}"
+                 href="{{ url_for('main.reporting_dashboard') }}">Reporting</a>
             </li>
             <li class="nav-item">
-              <span class="nav-link disabled">Analysis</span>
+              <a class="nav-link {% if active_page == 'analysis' %}active{% endif %}"
+                 href="{{ url_for('main.analysis_dashboard') }}">Analysis</a>
             </li>
             <li class="nav-item">
               <a class="nav-link {% if active_page == 'settings' %}active{% endif %}"
