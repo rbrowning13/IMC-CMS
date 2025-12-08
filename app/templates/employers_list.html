@@ -2,9 +2,9 @@
 {% block title %}Employers - Impact CMS{% endblock %}
 {% block content %}
 <div class="container-fluid">
-  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
     <h1 class="h4 mb-0">Employers</h1>
-    <div class="d-flex flex-wrap gap-2 mt-2 mt-sm-0">
+    <div class="d-flex align-items-center gap-2 flex-wrap flex-md-nowrap">
       <input
         id="employers-search"
         type="text"
@@ -13,12 +13,13 @@
         placeholder="Search employers..."
         aria-label="Search employers"
       >
-      <a href="{{ url_for('main.employer_new') }}" class="btn btn-primary btn-sm">
+      <a href="{{ url_for('main.employer_new') }}" class="btn btn-primary btn-sm rounded-pill">
         New Employer
       </a>
     </div>
   </div>
 
+  <!-- Employers table -->
   <div class="card shadow-sm">
     <div class="card-header">
       <h2 class="h6 mb-0">All Employers</h2>
@@ -29,17 +30,17 @@
           <table id="employers-table" class="table table-sm table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th>Name</th>
-                <th>Address</th>
-                <th>City / State / ZIP</th>
-                <th>Phone</th>
-                <th>Email</th>
+                <th class="sortable" data-sort-key="name"><span>Name</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="address"><span>Address</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="location"><span>City / State / ZIP</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="phone"><span>Phone</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="email"><span>Email</span> <span class="sort-indicator">↕</span></th>
                 <th class="text-end">Actions</th>
               </tr>
             </thead>
             <tbody>
               {% for employer in employers %}
-                <tr>
+                <tr data-row-index="{{ loop.index0 }}">
                   <td>
                     <a href="{{ url_for('main.employer_detail', employer_id=employer.id) }}">
                       {{ employer.name }}
@@ -116,6 +117,68 @@
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     attachTableSearch('employers-search', 'employers-table');
+
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.style.cursor = 'pointer';
+      let state = 0; // 0 = none, 1 = asc, 2 = desc
+
+      th.addEventListener('click', () => {
+        const table = document.getElementById('employers-table');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const key = th.getAttribute('data-sort-key');
+        const indicator = th.querySelector('.sort-indicator');
+
+        // Reset all headers except this one
+        document.querySelectorAll('th.sortable').forEach(h => {
+          if (h !== th) {
+            h.classList.remove('sorted-asc', 'sorted-desc');
+            const i = h.querySelector('.sort-indicator');
+            if (i) i.textContent = '↕';
+            h.dataset.state = 0;
+          }
+        });
+
+        // Determine next state
+        state = (parseInt(th.dataset.state || '0', 10) + 1) % 3;
+        th.dataset.state = state;
+
+        if (state === 0) {
+          // No sort — restore default order
+          indicator.textContent = '↕';
+          th.classList.remove('sorted-asc', 'sorted-desc');
+          // Rebuild table to original order using DOM order stored at load
+          const original = Array.from(tbody.querySelectorAll('tr')).sort((a, b) => {
+            return parseInt(a.dataset.rowIndex) - parseInt(b.dataset.rowIndex);
+          });
+          original.forEach(r => tbody.appendChild(r));
+          return;
+        }
+
+        const ascending = state === 1;
+        th.classList.toggle('sorted-asc', ascending);
+        th.classList.toggle('sorted-desc', !ascending);
+        indicator.textContent = ascending ? '↑' : '↓';
+
+        rows.sort((a, b) => {
+          const getVal = (row) => {
+            switch (key) {
+              case 'name': return row.children[0].innerText.trim().toLowerCase();
+              case 'address': return row.children[1].innerText.trim().toLowerCase();
+              case 'location': return row.children[2].innerText.trim().toLowerCase();
+              case 'phone': return row.children[3].innerText.trim().toLowerCase();
+              case 'email': return row.children[4].innerText.trim().toLowerCase();
+              default: return '';
+            }
+          };
+          const va = getVal(a);
+          const vb = getVal(b);
+          return ascending ? va.localeCompare(vb) : vb.localeCompare(va);
+        });
+
+        rows.forEach(r => tbody.appendChild(r));
+      });
+    });
   });
 </script>
 {% endblock %}

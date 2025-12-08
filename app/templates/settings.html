@@ -214,6 +214,30 @@
       </div>
     </div>
 
+    <!-- Lists & code tables -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header">
+        <h2 class="h6 mb-0">Lists &amp; Code Tables</h2>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small">
+          Manage reusable lists used throughout the app, such as report barriers and billable activity codes.
+        </p>
+        <ul class="mb-0">
+          <li>
+            <a href="{{ url_for('main.settings_barriers') }}">
+              Manage Barrier Options
+            </a>
+          </li>
+          <li>
+            <a href="{{ url_for('main.settings_billables') }}">
+              Manage Billable Activity Codes
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+
     <div class="d-flex justify-content-end mb-5">
       <button type="submit" class="btn btn-primary btn-sm">
         Save Settings

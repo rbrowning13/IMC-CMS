@@ -37,17 +37,32 @@
 
           <div class="col-md-3">
             <label for="phone" class="form-label">Phone</label>
-            <input type="text" name="phone" id="phone" class="form-control">
+            <input type="text" name="phone" id="phone" class="form-control" data-auto-phone="1" inputmode="numeric">
           </div>
 
           <div class="col-md-3">
             <label for="fax" class="form-label">Fax</label>
-            <input type="text" name="fax" id="fax" class="form-control">
+            <input type="text" name="fax" id="fax" class="form-control" data-auto-phone="1" inputmode="numeric">
           </div>
 
           <div class="col-md-6">
             <label for="email" class="form-label">Email</label>
             <input type="email" name="email" id="email" class="form-control">
+          </div>
+
+          <div class="col-md-3">
+            <label for="billing_rate" class="form-label">Standard Hourly Rate ($/hr)</label>
+            <input type="number" name="billing_rate" id="billing_rate" class="form-control" step="0.01" min="0">
+          </div>
+
+          <div class="col-md-3">
+            <label for="telephonic_rate" class="form-label">Telephonic Hourly Rate ($/hr)</label>
+            <input type="number" name="telephonic_rate" id="telephonic_rate" class="form-control" step="0.01" min="0">
+          </div>
+
+          <div class="col-md-3">
+            <label for="mileage_rate" class="form-label">Mileage Rate ($/mile)</label>
+            <input type="number" name="mileage_rate" id="mileage_rate" class="form-control" step="0.01" min="0">
           </div>
         </div>
 

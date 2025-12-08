@@ -9,7 +9,18 @@ body {
 
 /* Accent‑driven button styling */
 :root {
-  --accent-color: #0d6efd; /* fallback, replaced dynamically by settings */
+  --accent-color: #d6871f; /* fallback, replaced dynamically by settings */
+}
+
+/* Navbar tab accent styling (light & dark) */
+.navbar .nav-link {
+  border-bottom: 2px solid transparent;
+  border-radius: 0; /* keep tabs flat against the bottom edge */
+}
+
+.navbar .nav-link.active {
+  color: var(--accent-color) !important;
+  border-bottom-color: var(--accent-color) !important;
 }
 
 /* Make all buttons pill-shaped */
@@ -29,6 +40,21 @@ body {
 .btn-primary:focus {
   background-color: var(--accent-color) !important;
   color: #ffffff !important;
+  border: 2px solid var(--accent-color) !important;
+}
+
+/* Accent button: solid accent background, white text */
+.btn-accent,
+.btn-accent:visited {
+  background-color: var(--accent-color) !important;
+  color: #ffffff !important;
+  border: 2px solid var(--accent-color) !important;
+}
+
+.btn-accent:hover,
+.btn-accent:focus {
+  background-color: #ffffff !important;
+  color: var(--accent-color) !important;
   border: 2px solid var(--accent-color) !important;
 }
 
@@ -85,4 +111,322 @@ body {
   .invoice-print-page .section {
     page-break-inside: avoid;
   }
+}
+
+/* Universal scroll-area styling */
+.scroll-area {
+  max-height: 260px;
+  overflow-y: scroll !important; /* force persistent scrollbar */
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #c1c1c1 #f1f1f1; /* Firefox: thumb + track */
+}
+
+/* Chrome/Safari scrollbar styling */
+.scroll-area::-webkit-scrollbar {
+  width: 10px;
+}
+
+.scroll-area::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 5px;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 5px;
+  border: 2px solid #f1f1f1;
+}
+
+.scroll-area::-webkit-scrollbar-thumb:hover {
+  background: #a0a0a0;
+}
+
+html.dark-mode .scroll-area {
+  scrollbar-color: #555 #1e1e1e;
+}
+
+html.dark-mode .scroll-area::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+html.dark-mode .scroll-area::-webkit-scrollbar-thumb {
+  background: #555;
+  border: 2px solid #1e1e1e;
+}
+
+/* --------------------------------------------- */
+/* Reusable table scroll helpers (all themes)    */
+/* --------------------------------------------- */
+
+/* Compact table scroll area (e.g., billable items) */
+.table-scroll-compact {
+  max-height: 12rem;            /* roughly ~5 rows depending on content */
+  overflow-y: auto;
+}
+
+/* Taller table scroll area (e.g., long claim/report lists) */
+.table-scroll-tall {
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+/* Make sure scrollbars are visible and thin like other scroll areas */
+.table-scroll-compact,
+.table-scroll-tall {
+  scrollbar-width: thin;              /* Firefox */
+}
+
+.table-scroll-compact::-webkit-scrollbar,
+.table-scroll-tall::-webkit-scrollbar {
+  width: 10px;
+}
+
+.table-scroll-compact::-webkit-scrollbar-track,
+.table-scroll-tall::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.table-scroll-compact::-webkit-scrollbar-thumb,
+.table-scroll-tall::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 5px;
+  border: 2px solid #f1f1f1;
+}
+
+html.dark-mode .table-scroll-compact::-webkit-scrollbar-track,
+html.dark-mode .table-scroll-tall::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+html.dark-mode .table-scroll-compact::-webkit-scrollbar-thumb,
+html.dark-mode .table-scroll-tall::-webkit-scrollbar-thumb {
+  background: #555;
+  border: 2px solid #1e1e1e;
+}
+
+/* ---------------------- */
+/* Dark Mode Theme Layer  */
+/* ---------------------- */
+
+html.dark-mode body {
+  background-color: #121212 !important;
+  color: #e5e5e5 !important;
+}
+
+.card {
+  border-width: 3px !important;
+  border-style: solid !important;
+}
+
+html.dark-mode .card {
+  background-color: #1e1e1e !important;
+  color: #e5e5e5 !important;
+  border-color: #333 !important;
+  border-width: 3px !important;
+  border-style: solid !important;
+}
+
+html.dark-mode .card-body {
+  background-color: #1e1e1e !important;
+}
+
+/* Ensure all accordion shells and collapse areas are dark in dark mode */
+html.dark-mode .accordion,
+html.dark-mode .accordion-item,
+html.dark-mode .accordion-collapse,
+html.dark-mode .accordion-body,
+html.dark-mode .collapse,
+html.dark-mode .collapse.show {
+  background-color: #1e1e1e !important;
+  color: #e5e5e5 !important;
+  border-color: #333 !important;
+}
+
+html.dark-mode .navbar,
+html.dark-mode nav.navbar {
+  background-color: #1f1f1f !important;
+  border-bottom: 1px solid #333 !important;
+}
+
+html.dark-mode .navbar a,
+html.dark-mode .navbar-brand,
+html.dark-mode .nav-link {
+  color: #e5e5e5 !important;
+}
+
+/* Dark-mode styling for collapsible section headers on Claim Detail, etc. */
+html.dark-mode [data-bs-toggle="collapse"],
+html.dark-mode .accordion-button,
+html.dark-mode .accordion-header {
+  background-color: #1e1e1e !important;
+  color: #e5e5e5 !important;
+  border-color: #333 !important;
+}
+
+html.dark-mode [data-bs-toggle="collapse"]:hover,
+html.dark-mode .accordion-button:hover {
+  background-color: #262626 !important;
+}
+
+.form-control,
+input,
+textarea,
+select {
+  border: 3px solid #333 !important;
+}
+
+html.dark-mode .form-control,
+html.dark-mode input,
+html.dark-mode textarea,
+html.dark-mode select {
+  background-color: #2a2a2a !important;
+  color: #e5e5e5 !important;
+  border: 3px solid #666666 !important;
+}
+
+/* Dark-mode placeholders */
+html.dark-mode .form-control::placeholder,
+html.dark-mode input::placeholder,
+html.dark-mode textarea::placeholder,
+html.dark-mode select::placeholder {
+  color: #aaaaaa !important;
+  opacity: 1; /* ensure consistent visibility */
+}
+
+html.dark-mode .form-control:focus,
+html.dark-mode input:focus,
+html.dark-mode textarea:focus,
+html.dark-mode select:focus {
+  background-color: #2f2f2f !important;
+  color: #ffffff !important;
+  border: 3px solid var(--accent-color) !important;
+}
+
+html.dark-mode .table {
+  color: #e5e5e5 !important;
+}
+
+html.dark-mode .table th,
+html.dark-mode .table td {
+  background-color: #1e1e1e !important;
+  border-color: #333 !important;
+}
+
+html.dark-mode .table thead th {
+  background-color: #262626 !important;
+  color: #e5e5e5 !important;
+}
+
+/* Stronger dark-mode overrides for all table text and borders */
+html.dark-mode table,
+html.dark-mode .table,
+html.dark-mode table th,
+html.dark-mode table td,
+html.dark-mode .table th,
+html.dark-mode .table td {
+  color: #f1f1f1 !important;
+  border-color: #444 !important;
+}
+
+html.dark-mode .table-hover tbody tr:hover {
+  background-color: #2a2a2a !important;
+  color: #ffffff !important;
+}
+
+html.dark-mode .table-striped tbody tr:nth-of-type(odd) {
+  background-color: #1a1a1a !important;
+}
+
+html.dark-mode .table-striped tbody tr:nth-of-type(even) {
+  background-color: #222 !important;
+}
+
+html.dark-mode .btn-primary,
+html.dark-mode .btn-outline-primary {
+  background-color: #1e1e1e !important;
+  color: var(--accent-color) !important;
+  border-color: var(--accent-color) !important;
+}
+
+html.dark-mode .btn-primary:hover,
+html.dark-mode .btn-outline-primary:hover {
+  background-color: var(--accent-color) !important;
+  color: #ffffff !important;
+}
+
+/* Extra dark-mode overrides for Bootstrap utility classes */
+html.dark-mode .bg-light,
+html.dark-mode .bg-white,
+html.dark-mode .table-light,
+html.dark-mode .card-header,
+html.dark-mode .card-footer,
+html.dark-mode .card-body,
+html.dark-mode .accordion-item {
+  background-color: #1e1e1e !important;
+  color: #e5e5e5 !important;
+}
+
+html.dark-mode .text-dark {
+  color: #e5e5e5 !important;
+}
+
+html.dark-mode .text-muted {
+  color: #aaaaaa !important;
+}
+
+html.dark-mode .badge.bg-light,
+html.dark-mode .badge.bg-white {
+  background-color: #333 !important;
+  color: #f0f0f0 !important;
+}
+
+html.dark-mode .list-group-item {
+  background-color: #1e1e1e !important;
+  color: #e5e5e5 !important;
+  border-color: #333 !important;
+}
+
+html.dark-mode .alert {
+  background-color: #1e1e1e !important;
+  color: #e5e5e5 !important;
+  border-color: #444 !important;
+}
+
+html.dark-mode a {
+  color: var(--accent-color) !important;
+}
+
+html.dark-mode a:hover {
+  color: #ffffff !important;
+}
+
+/* Preserve accent color for active nav item in dark mode */
+html.dark-mode .navbar .nav-link.active,
+html.dark-mode .nav-link.active {
+  color: var(--accent-color) !important;
+  border-bottom-color: var(--accent-color) !important;
+}
+
+/* -------------------------------------------------- */
+/* Accent‑colored collapse/accordion arrows (light & dark mode) */
+/* -------------------------------------------------- */
+
+/* Bootstrap uses an inline SVG for the arrow. We override it with our own
+   that uses the CSS accent variable. */
+
+/* Light mode arrow */
+.accordion-button::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23d6871f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='1 5 8 12 15 5'/%3E%3C/svg%3E") !important;
+  transform: rotate(0deg);
+}
+
+/* Dark mode arrow (same accent color, but ensures visibility on dark BG) */
+html.dark-mode .accordion-button::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23d6871f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='1 5 8 12 15 5'/%3E%3C/svg%3E") !important;
+}
+
+/* When the accordion is open, Bootstrap rotates the arrow.
+   We maintain that behavior but retain accent color. */
+.accordion-button:not(.collapsed)::after {
+  transform: rotate(180deg);
 }

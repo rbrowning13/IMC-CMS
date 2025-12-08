@@ -40,17 +40,28 @@
     (function() {
       const carrierSelect = document.querySelector('select[name="carrier_id"]');
       const contactSelect = document.getElementById('carrier_contact_select');
-      if (!carrierSelect || !contactSelect) return;
+      const employerSelect = document.querySelector('select[name="employer_id"]');
 
-      const allOptions = Array.from(contactSelect.querySelectorAll('option[data-carrier-id]'));
+      if (!carrierSelect) return;
+
+      // Pre-cache options for contacts and employers, if those selects exist
+      const contactOptions = contactSelect
+        ? Array.from(contactSelect.querySelectorAll('option[data-carrier-id]'))
+        : [];
+      const employerOptions = employerSelect
+        ? Array.from(employerSelect.querySelectorAll('option[data-carrier-id]'))
+        : [];
 
       function updateContacts() {
-        const carrierId = carrierSelect.value;
+        if (!contactSelect || contactOptions.length === 0) return;
+
+        const carrierId = carrierSelect.value || '';
         contactSelect.value = '';
         let hasOptions = false;
 
-        allOptions.forEach(function(opt) {
-          if (opt.getAttribute('data-carrier-id') === carrierId) {
+        contactOptions.forEach(function(opt) {
+          const optCarrierId = opt.getAttribute('data-carrier-id') || '';
+          if (carrierId && optCarrierId === carrierId) {
             opt.hidden = false;
             hasOptions = true;
           } else {
@@ -61,11 +72,41 @@
         contactSelect.disabled = !hasOptions;
       }
 
-      // Initialize: hide all contact options and disable select until a carrier is chosen
-      allOptions.forEach(function(opt) { opt.hidden = true; });
-      contactSelect.disabled = true;
+      function updateEmployers() {
+        if (!employerSelect || employerOptions.length === 0) return;
 
-      carrierSelect.addEventListener('change', updateContacts);
+        const carrierId = carrierSelect.value || '';
+        // Clear current selection any time the carrier changes
+        employerSelect.value = '';
+        let hasOptions = false;
+
+        employerOptions.forEach(function(opt) {
+          const optCarrierId = opt.getAttribute('data-carrier-id') || '';
+          const show = carrierId && optCarrierId === carrierId;
+          opt.hidden = !show;
+          if (show) {
+            hasOptions = true;
+          }
+        });
+
+        employerSelect.disabled = !hasOptions;
+      }
+
+      // Initialize: hide all contact/employer options and disable selects until a carrier is chosen
+      if (contactSelect && contactOptions.length > 0) {
+        contactOptions.forEach(function(opt) { opt.hidden = true; });
+        contactSelect.disabled = true;
+      }
+
+      if (employerSelect && employerOptions.length > 0) {
+        employerOptions.forEach(function(opt) { opt.hidden = true; });
+        employerSelect.disabled = true;
+      }
+
+      carrierSelect.addEventListener('change', function() {
+        updateContacts();
+        updateEmployers();
+      });
     })();
   </script>
 {% endblock %}

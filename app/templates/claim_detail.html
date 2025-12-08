@@ -9,10 +9,6 @@
       <h1 class="h4 mb-0">
         Claim {{ claim.claim_number }}
       </h1>
-      <a href="{{ url_for('main.claim_edit', claim_id=claim.id) }}"
-   class="btn btn-sm btn-outline-secondary">
-  Edit Claim
-</a>
       <div class="text-muted small">
         {{ claim.claimant_name }}
         {% if employer %}
@@ -41,6 +37,10 @@
         </a>
         <a href="{{ url_for('main.claims_list') }}" class="btn btn-outline-secondary btn-sm">
           All Claims
+        </a>
+        <a href="{{ url_for('main.claim_edit', claim_id=claim.id) }}"
+           class="btn btn-outline-secondary btn-sm">
+          Edit Claim
         </a>
         <a href="{{ url_for('main.claim_delete', claim_id=claim.id) }}"
            class="btn btn-outline-danger btn-sm">
@@ -209,16 +209,19 @@
           <div class="card shadow-sm mb-3">
             <div class="card-body p-0">
               {% if billable_items %}
-                <div class="table-responsive">
-                  <table class="table table-sm table-hover mb-0 align-middle">
+                <div class="table-responsive" style="max-height: 14rem; overflow-y: auto;">
+                  <table id="billables-table" class="table table-sm table-hover mb-0 align-middle">
                     <thead class="table-light">
                       <tr>
-                        <th>Date</th>
-                        <th>Activity</th>
-                        <th class="text-end">Qty</th>
+                        <th class="sortable" data-sort-key="date"><span>Date</span> <span class="sort-indicator">
+                            ↕
+                          </span></th>
+                        <th class="sortable" data-sort-key="activity"><span>Activity</span> <span class="sort-indicator">↕</span></th>
+                        <th class="sortable text-end" data-sort-key="qty"><span>Qty</span> <span class="sort-indicator">↕</span></th>
                         <th>Units</th>
-                        <th>Description</th>
-                        <th>Invoice</th>
+                        <th class="sortable" data-sort-key="description"><span>Description</span> <span class="sort-indicator">↕</span></th>
+                        <th><span>Notes</span></th>
+                        <th class="sortable" data-sort-key="invoice"><span>Invoice</span> <span class="sort-indicator">↕</span></th>
                         <th class="text-end">Actions</th>
                       </tr>
                     </thead>
@@ -233,7 +236,13 @@
                           {% set units = 'hr' %}
                         {% endif %}
                         <tr>
-                          <td>{{ item.date_of_service|format_date or '—' }}</td>
+                          <td>
+                            {% if item.date_of_service %}
+                              {{ item.date_of_service.strftime('%m/%d/%Y') }}
+                            {% else %}
+                              —
+                            {% endif %}
+                          </td>
                           <td>{{ item.activity_code }}</td>
                           <td class="text-end">
                             {% if item.quantity is not none %}
@@ -251,6 +260,15 @@
                               </span>
                             {% else %}
                               <span class="text-muted fst-italic">No description</span>
+                            {% endif %}
+                          </td>
+                          <td style="max-width: 280px;">
+                            {% if item.notes %}
+                              <div class="small text-muted" style="max-height: 6.5em; overflow: hidden;">
+                                {{ item.notes }}
+                              </div>
+                            {% else %}
+                              <span class="text-muted fst-italic">No notes</span>
                             {% endif %}
                           </td>
                           <td>
@@ -301,67 +319,79 @@
               <h3 class="h6 mb-0">Add Billable Item</h3>
             </div>
             <div class="card-body small">
-              <form method="post" action="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
+              <form method="post"
+                    action="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
+                    class="row g-2 align-items-end mb-0">
                 <input type="hidden" name="form_type" value="billable_new">
 
-                <div class="row g-2 align-items-end">
-                  <div class="col-6 col-md-3">
-                    <label for="activity_code" class="form-label form-label-sm mb-1">Activity</label>
-                    <!-- DROPDOWN restored instead of free-text -->
-                    <select name="activity_code"
-                            id="activity_code"
-                            class="form-select form-select-sm"
-                            required>
-                      <option value="">Select activity…</option>
-                      {% for code, label in billable_activity_choices %}
-                        <option value="{{ code }}">{{ code }} – {{ label }}</option>
-                      {% endfor %}
-                    </select>
-                  </div>
+                <!-- Date -->
+                <div class="col-6 col-md-3">
+                  <label for="service_date" class="form-label form-label-sm mb-1">Date</label>
+                  <input type="text"
+                         id="service_date"
+                         name="service_date"
+                         class="form-control form-control-sm js-date-autofmt"
+                         inputmode="numeric"
+                         maxlength="10"
+                         placeholder="MM/DD/YYYY">
+                </div>
 
-                  <div class="col-6 col-md-3">
-                    <label for="service_date" class="form-label form-label-sm mb-1">Date</label>
-                    <input type="date"
-                           id="service_date"
-                           name="service_date"
-                           class="form-control form-control-sm">
-                  </div>
+                <!-- Activity -->
+                <div class="col-6 col-md-3">
+                  <label for="activity_code" class="form-label form-label-sm mb-1">Activity</label>
+                  <select name="activity_code"
+                          id="activity_code"
+                          class="form-select form-select-sm"
+                          required>
+                    <option value="">Select activity…</option>
+                    {% for code, label in billable_activity_choices %}
+                      <option value="{{ code }}">{{ code }} – {{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
 
-                  <div class="col-6 col-md-2">
-                    <label for="quantity" class="form-label form-label-sm mb-1">Qty</label>
-                    <input type="number"
-                           step="0.1"
-                           min="0"
-                           id="quantity"
-                           name="quantity"
-                           class="form-control form-control-sm">
-                  </div>
+                <!-- Description -->
+                <div class="col-12 col-md-4">
+                  <label for="description" class="form-label form-label-sm mb-1">Description</label>
+                  <input type="text"
+                         id="description"
+                         name="description"
+                         class="form-control form-control-sm"
+                         placeholder="e.g. CM – review records, phone calls…">
+                </div>
 
-                  <div class="col-12 col-md-4">
-                    <label for="description" class="form-label form-label-sm mb-1">Description</label>
-                    <input type="text"
-                           id="description"
-                           name="description"
-                           class="form-control form-control-sm"
-                           placeholder="e.g. CM – review records, phone calls…">
-                  </div>
+                <!-- Quantity -->
+                <div class="col-6 col-md-2">
+                  <label for="quantity" class="form-label form-label-sm mb-1">Qty</label>
+                  <input type="number"
+                         step="0.1"
+                         min="0"
+                         id="quantity"
+                         name="quantity"
+                         class="form-control form-control-sm">
+                </div>
 
-                  <div class="col-12 mt-2 text-end">
-                    <button type="submit" class="btn btn-primary btn-sm">
-                      Add Item
-                    </button>
-                  </div>
+                <!-- Notes and Submit button row -->
+                <div class="col-12 col-md-10">
+                  <label for="notes" class="form-label form-label-sm mb-1">Notes</label>
+                  <textarea id="notes"
+                            name="notes"
+                            class="form-control form-control-sm"
+                            rows="2"
+                            placeholder="Optional detailed notes…"></textarea>
+                </div>
+                <div class="col-12 col-md-2 mt-2 mt-md-0 text-end">
+                  <button type="submit" class="btn btn-primary btn-sm w-100 w-md-auto">
+                    Add Item
+                  </button>
                 </div>
               </form>
+
               <p class="text-muted mt-2 mb-0 small">
                 Mileage (MIL) is in miles; EXP is in dollars; all other codes are treated as hours.
               </p>
             </div>
           </div>
-
-        </div>
-      </div>
-    </div>
 
     {# ------------------ REPORTS ------------------ #}
     <div class="accordion-item mb-2">
@@ -382,14 +412,14 @@
               <h2 class="h6 mb-0">Reports</h2>
             </div>
             <div class="card-body p-0">
-              <table class="table table-sm mb-0 align-middle">
+              <table id="reports-table" class="table table-sm mb-0 align-middle">
                 <thead class="table-light">
                   <tr>
-                    <th style="width: 16%">Type</th>
-                    <th style="width: 24%">DOS Range</th>
-                    <th style="width: 20%">Treating Provider</th>
-                    <th style="width: 20%">Next Appointment</th>
-                    <th style="width: 15%">Next Report Due</th>
+                    <th style="width: 16%" class="sortable" data-sort-key="type"><span>Type</span> <span class="sort-indicator">↕</span></th>
+                    <th style="width: 24%" class="sortable" data-sort-key="dos"><span>DOS Range</span> <span class="sort-indicator">↕</span></th>
+                    <th style="width: 20%" class="sortable" data-sort-key="provider"><span>Treating Provider</span> <span class="sort-indicator">↕</span></th>
+                    <th style="width: 20%" class="sortable" data-sort-key="next_appt"><span>Next Appointment</span> <span class="sort-indicator">↕</span></th>
+                    <th style="width: 15%" class="sortable" data-sort-key="next_due"><span>Next Report Due</span> <span class="sort-indicator">↕</span></th>
                     <th style="width: 15%" class="text-end">Actions</th>
                   </tr>
                 </thead>
@@ -644,4 +674,207 @@
   </div> <!-- /accordion -->
 </div>
 
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // Date auto-formatting for inputs with class .js-date-autofmt
+  document.querySelectorAll('.js-date-autofmt').forEach(function (input) {
+    input.addEventListener('input', function () {
+      var digits = input.value.replace(/\D/g, '').slice(0, 8);
+      var parts = [];
+
+      if (digits.length > 4) {
+        parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4)];
+      } else if (digits.length > 2) {
+        parts = [digits.slice(0, 2), digits.slice(2)];
+      } else if (digits.length > 0) {
+        parts = [digits];
+      }
+
+      input.value = parts.join('/');
+
+      // Auto-tab when full date (MMDDYYYY) is entered
+      if (digits.length === 8) {
+        var form = input.form;
+        if (form) {
+          var elements = Array.from(form.elements);
+          var idx = elements.indexOf(input);
+          if (idx !== -1 && idx + 1 < elements.length) {
+            var next = elements[idx + 1];
+            if (next && typeof next.focus === 'function') {
+              next.focus();
+              if (typeof next.select === 'function') {
+                next.select();
+              }
+            }
+          }
+        }
+      }
+    });
+  });
+
+  // Helpers to normalize date strings for sorting (MM/DD/YYYY -> YYYYMMDD, etc.)
+  function dateTextToKey(txt) {
+    if (!txt) return '';
+    txt = txt.trim();
+    if (!txt || txt === '—' || txt === '?') return '';
+    var m = txt.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (!m) return txt.toLowerCase();
+    var mm = m[1].padStart(2, '0');
+    var dd = m[2].padStart(2, '0');
+    var yyyy = m[3];
+    return yyyy + mm + dd;
+  }
+
+  function dateTimeTextToKey(txt) {
+    if (!txt) return '';
+    txt = txt.trim();
+    if (!txt || txt === '—') return '';
+    // Expect "MM/DD/YYYY HH:MM AM"; fall back to date-only if needed
+    var parts = txt.split(/\s+/);
+    if (parts.length < 2) return dateTextToKey(txt);
+    var dateKey = dateTextToKey(parts[0]);
+    var timePart = parts[1] || '';
+    var ampm = (parts[2] || '').toUpperCase();
+    var tm = timePart.split(':');
+    var hh = parseInt(tm[0] || '0', 10);
+    var mm = parseInt(tm[1] || '0', 10);
+    if (ampm === 'PM' && hh < 12) hh += 12;
+    if (ampm === 'AM' && hh === 12) hh = 0;
+    var hhStr = String(hh).padStart(2, '0');
+    var mmStr = String(mm).padStart(2, '0');
+    return dateKey + hhStr + mmStr;
+  }
+
+  // Generic tri-state sorter for a table
+  function setupSortableTable(tableId, getValueForKey) {
+    var table = document.getElementById(tableId);
+    if (!table) return;
+    var tbody = table.querySelector('tbody');
+    if (!tbody) return;
+
+    function initOriginalOrder() {
+      var rows = Array.from(tbody.querySelectorAll('tr'));
+      rows.forEach(function (row, index) {
+        row.dataset.originalIndex = index;
+      });
+    }
+
+    initOriginalOrder();
+
+    table.querySelectorAll('th.sortable').forEach(function (th) {
+      th.style.cursor = 'pointer';
+      th.dataset.sortState = 'none'; // none | asc | desc
+      th.addEventListener('click', function () {
+        var key = th.getAttribute('data-sort-key');
+        if (!key) return;
+
+        var currentState = th.dataset.sortState || 'none';
+        var newState = currentState === 'none' ? 'asc' : (currentState === 'asc' ? 'desc' : 'none');
+
+        // Reset all headers in this table
+        table.querySelectorAll('th.sortable').forEach(function (hdr) {
+          hdr.classList.remove('sorted-asc', 'sorted-desc');
+          hdr.dataset.sortState = 'none';
+          var ind = hdr.querySelector('.sort-indicator');
+          if (ind) ind.textContent = '↕';
+        });
+
+        var rows = Array.from(tbody.querySelectorAll('tr'));
+
+        if (newState === 'none') {
+          // Restore original order
+          rows.sort(function (a, b) {
+            var ia = parseInt(a.dataset.originalIndex || '0', 10);
+            var ib = parseInt(b.dataset.originalIndex || '0', 10);
+            return ia - ib;
+          });
+        } else {
+          rows.sort(function (a, b) {
+            var va = getValueForKey(a, key);
+            var vb = getValueForKey(b, key);
+
+            if (va === null || va === undefined) va = '';
+            if (vb === null || vb === undefined) vb = '';
+
+            if (typeof va === 'number' && typeof vb === 'number') {
+              return newState === 'asc' ? (va - vb) : (vb - va);
+            } else {
+              va = String(va).toLowerCase();
+              vb = String(vb).toLowerCase();
+              if (va < vb) return newState === 'asc' ? -1 : 1;
+              if (va > vb) return newState === 'asc' ? 1 : -1;
+              return 0;
+            }
+          });
+        }
+
+        rows.forEach(function (row) {
+          tbody.appendChild(row);
+        });
+
+        if (newState !== 'none') {
+          th.dataset.sortState = newState;
+          th.classList.add(newState === 'asc' ? 'sorted-asc' : 'sorted-desc');
+          var indicator = th.querySelector('.sort-indicator');
+          if (indicator) {
+            indicator.textContent = newState === 'asc' ? '↑' : '↓';
+          }
+        }
+      });
+    });
+  }
+
+  // Billable Items table sorter
+  setupSortableTable('billables-table', function (row, key) {
+    var cells = row.children;
+    if (!cells || cells.length === 0) return '';
+    switch (key) {
+      case 'date': {
+        var txt = cells[0].innerText || '';
+        return dateTextToKey(txt);
+      }
+      case 'activity':
+        return (cells[1].innerText || '').trim();
+      case 'qty': {
+        var txtQ = cells[2].innerText || '';
+        var q = parseFloat(txtQ.replace(/[^\d.]/g, ''));
+        return isNaN(q) ? 0 : q;
+      }
+      case 'description':
+        return (cells[4].innerText || '').trim();
+      case 'invoice':
+        return (cells[6].innerText || '').trim();
+      default:
+        return '';
+    }
+  });
+
+  // Reports table sorter
+  setupSortableTable('reports-table', function (row, key) {
+    var cells = row.children;
+    if (!cells || cells.length === 0) return '';
+    switch (key) {
+      case 'type':
+        return (cells[0].innerText || '').trim();
+      case 'dos': {
+        var txt = cells[1].innerText || '';
+        var parts = txt.split('–');
+        return dateTextToKey((parts[0] || '').trim());
+      }
+      case 'provider':
+        return (cells[2].innerText || '').trim();
+      case 'next_appt': {
+        var txtA = cells[3].innerText || '';
+        return dateTimeTextToKey(txtA);
+      }
+      case 'next_due': {
+        var txtD = cells[4].innerText || '';
+        return dateTextToKey(txtD);
+      }
+      default:
+        return '';
+    }
+  });
+});
+</script>
 {% endblock %}

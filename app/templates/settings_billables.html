@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Billable Activity Codes – Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">Billable Activity Codes</h1>
+    <a href="{{ url_for('main.settings_view') }}" class="btn btn-outline-secondary btn-sm">
+      Back to Settings
+    </a>
+  </div>
+
+  {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  <div class="card mb-3">
+    <div class="card-header">
+      <strong>Add Billable Code</strong>
+    </div>
+    <div class="card-body">
+      <form method="post" class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label mb-1">Code</label>
+          <input type="text" name="code" class="form-control form-control-sm" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label mb-1">Description</label>
+          <input type="text" name="description" class="form-control form-control-sm"
+                 placeholder="e.g. Telephonic Case Management">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label mb-1">Sort order</label>
+          <input type="number" name="sort_order" class="form-control form-control-sm"
+                 placeholder="999">
+        </div>
+        <div class="col-md-1 d-flex align-items-end">
+          <button type="submit" class="btn btn-primary btn-sm">
+            Add
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <strong>Existing Billable Activity Codes</strong>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Code</th>
+              <th>Description</th>
+              <th>Sort order</th>
+              <th class="text-center">Active?</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for b in codes %}
+            <tr class="{% if not b.is_active %}table-secondary{% endif %}">
+              <td>{{ b.code }}</td>
+              <td>{{ b.label or "—" }}</td>
+              <td>{{ b.sort_order }}</td>
+              <td class="text-center">
+                {% if b.is_active %}
+                  <span class="badge bg-success">Active</span>
+                {% else %}
+                  <span class="badge bg-secondary">Inactive</span>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                <a href="{{ url_for('main.settings_billable_edit', code_id=b.id) }}"
+                   class="btn btn-outline-primary btn-sm">
+                  Edit
+                </a>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5" class="text-center text-muted">
+                No billable activity codes defined yet.
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

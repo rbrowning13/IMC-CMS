@@ -60,9 +60,9 @@
       <div class="col-sm-6">
         <p class="mb-1">
           <strong>Claim #:</strong> {{ claim.claim_number }}<br>
-          <strong>Date of Birth:</strong> {{ claim.dob|format_date }}<br>
-          <strong>Date of Injury:</strong> {{ claim.date_of_injury|format_date }}<br>
-          <strong>Referral Date:</strong> {{ report.referral_date|format_date }}<br>
+          <strong>Date of Birth:</strong> {{ claim.dob|format_date('%m-%d-%Y') }}<br>
+          <strong>Date of Injury:</strong> {{ claim.date_of_injury|format_date('%m-%d-%Y') }}<br>
+          <strong>Referral Date:</strong> {{ report.referral_date|format_date('%m-%d-%Y') }}<br>
           <strong>Claim State:</strong> {{ claim.claim_state or '—' }}<br>
           {% if claim.carrier %}
             <strong>Carrier:</strong> {{ claim.carrier.name }}<br>
@@ -70,7 +70,7 @@
           {% if claim.employer %}
             <strong>Employer:</strong> {{ claim.employer.name }}<br>
           {% endif %}
-          <strong>DOS:</strong> {{ report.dos_start|format_date }} – {{ report.dos_end|format_date }}
+          <strong>DOS:</strong> {{ report.dos_start|format_date('%m-%d-%Y') }} – {{ report.dos_end|format_date('%m-%d-%Y') }}
         </p>
       </div>
       <div class="col-sm-6">
@@ -83,7 +83,7 @@
           {% endif %}
           {% if report.initial_next_appt_datetime %}
             <strong>Next Appointment:</strong>
-            {{ report.initial_next_appt_datetime|format_datetime }}
+            {{ report.initial_next_appt_datetime|format_datetime('%m-%d-%Y %H:%M') }}
             {% if report.initial_next_appt_provider_name %}
               &nbsp;with {{ report.initial_next_appt_provider_name }}
             {% endif %}
@@ -250,7 +250,40 @@
     {% endif %}
 
     </div>
-    <p class="text-muted mt-4">Generated on {{ report.updated_at|format_datetime }}</p>
+    <hr>
+    <div style="page-break-before: always;"></div>
+    <h5>Case Manager Activities</h5>
+    {% if cm_activities and cm_activities|length > 0 %}
+      <table class="table table-sm table-bordered">
+        <thead>
+          <tr>
+            <th style="width: 110px;">Date</th>
+            <th style="width: 90px;">Code</th>
+            <th>Description</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in cm_activities %}
+            <tr>
+              <td>{{ item.date_of_service|format_date('%m-%d-%Y') }}</td>
+              <td>{{ item.activity_code }}</td>
+              <td>{{ item.description }}</td>
+              <td>
+                {% if item.notes %}
+                  {{ item.notes|nl2br }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-muted">N/A – No case management activities recorded for this period.</p>
+    {% endif %}
+    <p class="text-muted mt-4">Generated on {{ report.updated_at|format_datetime('%m-%d-%Y %H:%M') }}</p>
 
   </div>
 

@@ -49,17 +49,17 @@
 
             <dt class="col-sm-4">Invoice Date</dt>
             <dd class="col-sm-8">
-              {{ invoice.invoice_date or "—" }}
+              {{ invoice.invoice_date.strftime("%m/%d/%Y") if invoice.invoice_date else "—" }}
             </dd>
 
             <dt class="col-sm-4">Dates of Service</dt>
             <dd class="col-sm-8">
               {% if invoice.dos_start and invoice.dos_end %}
-                {{ invoice.dos_start }} – {{ invoice.dos_end }}
+                {{ invoice.dos_start.strftime("%m/%d/%Y") }} – {{ invoice.dos_end.strftime("%m/%d/%Y") }}
               {% elif invoice.dos_start %}
-                From {{ invoice.dos_start }}
+                From {{ invoice.dos_start.strftime("%m/%d/%Y") }}
               {% elif invoice.dos_end %}
-                Through {{ invoice.dos_end }}
+                Through {{ invoice.dos_end.strftime("%m/%d/%Y") }}
               {% else %}
                 —
               {% endif %}
@@ -129,10 +129,14 @@
             </div>
             <div class="col-sm-4">
               <label class="form-label form-label-sm">Invoice Date</label>
-              <input type="date"
-                     name="invoice_date"
-                     class="form-control form-control-sm"
-                     value="{{ invoice.invoice_date or '' }}">
+              <input
+                type="text"
+                name="invoice_date"
+                class="form-control form-control-sm auto-date-input"
+                data-auto-date="1"
+                inputmode="numeric"
+                placeholder="MM/DD/YYYY"
+                value="{{ invoice.invoice_date.strftime('%m/%d/%Y') if invoice.invoice_date else '' }}">
             </div>
             <div class="col-sm-2 d-grid">
               <button type="submit" class="btn btn-sm btn-primary mt-3">

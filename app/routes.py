@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 import json
 from collections import defaultdict
 import io
+import re
 
 
 from sqlalchemy.exc import IntegrityError
@@ -29,9 +30,13 @@ from werkzeug.utils import secure_filename
 from markupsafe import Markup, escape  # <-- ADD THIS LINE
 
 # Optional WeasyPrint import for PDF generation
+# On some systems (or missing native deps) importing WeasyPrint can raise
+# non-ImportError exceptions (e.g., OSError when libgobject/pango aren't found),
+# so we catch any Exception here and fall back to HTML = None. Routes that
+# need PDF generation should check `if HTML is None` and degrade gracefully.
 try:
     from weasyprint import HTML
-except ImportError:
+except Exception:
     HTML = None
 
 from .extensions import db
@@ -48,21 +53,36 @@ from .models import (
     ClaimDocument,
     Settings,
     BarrierOption,
+    BillingActivityCode,
 )
 
 bp = Blueprint("main", __name__)
 
-# ---- Billable activity choices (code, label) ----
+# ---- Billable activity definitions (canonical seed: code, label, sort_order) ----
+BILLABLE_ACTIVITY_SEED = [
+    ("ADMIN", "Administrative work", 10),
+    ("EMAIL", "Email correspondence", 20),
+    ("FAX", "Fax correspondence", 30),
+    ("TEXT", "Text messaging", 40),
+    ("TC", "Telephone call", 50),
+    ("TCM", "Telephonic case management", 60),
+    ("MTG", "Meetings / conferences", 70),
+    ("MR", "Medical record review", 80),
+    ("FR", "File / chart review", 90),
+    ("GDL", "Guideline / policy review", 100),
+    ("LTR", "Letter drafting / dictation", 110),
+    ("RPT", "Report writing / documentation", 120),
+    ("DOC", "Other document preparation / review", 130),
+    ("TRV", "Travel time", 140),
+    ("MIL", "Mileage (miles)", 150),
+    ("EXP", "Expenses (dollars)", 160),
+    ("WAIT", "Waiting time", 170),
+    ("NO BILL", "Non-billable activity", 999),
+]
+
+# Simple (code, label) list used by forms as a fallback
 BILLABLE_ACTIVITY_CHOICES = [
-    ("RPT", "Report writing / documentation"),
-    ("TEL", "Telephonic case management"),
-    ("MTG", "Meetings / conferences"),
-    ("DOC", "Document review"),
-    ("EMAIL", "Email correspondence"),
-    ("TRV", "Travel time"),
-    ("MIL", "Mileage (miles)"),
-    ("EXP", "Expenses (dollars)"),
-    ("NO BILL", "Non-billable activity"),
+    (code, label) for code, label, _ in BILLABLE_ACTIVITY_SEED
 ]
 
 # ---- Contact roles (editable via Settings) ----
@@ -212,20 +232,64 @@ def _open_in_file_manager(path: Path) -> None:
         pass
 
 # ---- date parsing helper ----
+
 def _parse_date(value: str):
-    """\
-    Parse a YYYY-MM-DD string (from an HTML date input) into a Python date.
-    Returns None if the value is empty or invalid.
+    """
+    Parse a date string from UI input.
+
+    Accepts either 'YYYY-MM-DD' (native date input) or 'MM/DD/YYYY'
+    (our js-date-autofmt text fields). Returns a datetime.date or None.
     """
     if not value:
         return None
-    value = value.strip()
-    if not value:
+
+    text = value.strip()
+    if not text:
         return None
+
+    # Try ISO format first, then MM/DD/YYYY
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+
+    return None
+
+
+# ---- MMDDYYYY parsing helper ----
+def _parse_mmddyyyy(raw: str, field_label: str = "Date"):
+    """
+    Parse dates entered as MMDDYYYY, MM/DD/YYYY, or MM-DD-YYYY.
+
+    Returns (date_obj, error_message). If parsing succeeds, error_message is None.
+    If the input is empty, returns (None, None) so the caller can decide whether
+    the field is required.
+    """
+    if not raw:
+        return None, None
+
+    s = raw.strip()
+    if not s:
+        return None, None
+
+    # Strip out any non-digits so we accept 12/07/2025, 12-07-2025, or 12072025.
+    digits = re.sub(r"\D", "", s)
+    if len(digits) != 8:
+        return None, f"{field_label} must be 8 digits in MMDDYYYY format."
+
     try:
-        return date.fromisoformat(value)
+        month = int(digits[0:2])
+        day = int(digits[2:4])
+        year = int(digits[4:8])
+
+        # Optional safety range so obvious typos get caught.
+        if year < 1900 or year > 2100:
+            return None, f"{field_label} year must be between 1900 and 2100."
+
+        return date(year, month, day), None
     except ValueError:
-        return None
+        return None, f"{field_label} must be a valid calendar date."
 
 
 # ---- validation helpers ----
@@ -488,6 +552,167 @@ def _get_barrier_options_grouped():
         grouped[category].append(opt)
     return grouped
 
+# ---- Settings: Billable Activity Codes management ----
+@bp.route("/settings/billables", methods=["GET", "POST"])
+def settings_billables():
+    """
+    Manage BillingActivityCode entries used for billable activity selection.
+
+    GET: render list of all billable codes with an inline add form.
+    POST: create a new billable code from the inline form.
+    """
+    settings = _ensure_settings()
+    # Build billable activity choices from the BillingActivityCode table.
+    # Only include active codes, ordered by sort_order then code.
+    db_codes = (
+        BillingActivityCode.query
+        .filter_by(is_active=True)
+        .order_by(BillingActivityCode.sort_order, BillingActivityCode.code)
+        .all()
+    )
+    if db_codes:
+        billable_activity_choices = [
+            (c.code, c.label or c.code) for c in db_codes
+        ]
+    else:
+        # Fallback to the global defaults if the table is empty.
+        billable_activity_choices = BILLABLE_ACTIVITY_CHOICES
+
+    error = None
+
+    # --- Auto-seed billing codes if table is empty ---
+    if BillingActivityCode.query.count() == 0:
+        for code, label, sort_order in BILLABLE_ACTIVITY_SEED:
+            db.session.add(
+                BillingActivityCode(
+                    code=code,
+                    label=label,
+                    sort_order=sort_order,
+                    is_active=True,
+                )
+            )
+        db.session.commit()
+
+    if request.method == "POST":
+        code = (request.form.get("code") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        sort_order_raw = (request.form.get("sort_order") or "").strip()
+
+        sort_order = None
+        if sort_order_raw:
+            try:
+                sort_order = int(sort_order_raw)
+            except ValueError:
+                sort_order = None
+
+        if not code:
+            error = "Code is required for a billable activity."
+        else:
+            # Normalize code
+            code_normalized = code.upper()
+
+            # Default sort order to a large value if not provided so it falls to the bottom.
+            if sort_order is None:
+                sort_order = 999
+
+            # Use the description text as the human label; if blank, fall back to the code
+            label = description or code_normalized
+
+            bac = BillingActivityCode(
+                code=code_normalized,
+                label=label,
+                sort_order=sort_order,
+                is_active=True,
+            )
+            db.session.add(bac)
+            try:
+                db.session.commit()
+                flash("Billable activity code added.", "success")
+                return redirect(url_for("main.settings_billables"))
+            except IntegrityError:
+                db.session.rollback()
+                error = "A billable activity with that code already exists. Please choose a different code."
+
+    # List all codes (active and inactive) ordered by sort_order then code.
+    codes = (
+        BillingActivityCode.query
+        .order_by(
+            BillingActivityCode.sort_order,
+            BillingActivityCode.code,
+        )
+        .all()
+    )
+
+    return render_template(
+        "settings_billables.html",
+        active_page="settings",
+        settings=settings,
+        codes=codes,
+        error=error,
+    )
+
+
+@bp.route("/settings/billables/<int:code_id>/edit", methods=["GET", "POST"])
+def settings_billable_edit(code_id):
+    """
+    Edit an existing BillingActivityCode.
+    """
+    settings = _ensure_settings()
+    billable = BillingActivityCode.query.get_or_404(code_id)
+    error = None
+
+    if request.method == "POST":
+        code = (request.form.get("code") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        sort_order_raw = (request.form.get("sort_order") or "").strip()
+        is_active_raw = (request.form.get("is_active") or "").strip().lower()
+
+        sort_order = None
+        if sort_order_raw:
+            try:
+                sort_order = int(sort_order_raw)
+            except ValueError:
+                sort_order = None
+
+        if not code:
+            error = "Code is required for a billable activity."
+        else:
+            billable.code = code.upper()
+            # Store the human-readable text in label; fall back to code if left blank
+            billable.label = description or billable.code
+            if sort_order is not None:
+                billable.sort_order = sort_order
+
+            billable.is_active = is_active_raw in ("on", "true", "1", "yes")
+
+            try:
+                db.session.commit()
+                flash("Billable activity code updated.", "success")
+                return redirect(url_for("main.settings_billables"))
+            except IntegrityError:
+                db.session.rollback()
+                error = "A billable activity with that code already exists. Please choose a different code."
+
+    return render_template(
+        "settings_billable_form.html",
+        active_page="settings",
+        settings=settings,
+        billable=billable,
+        error=error,
+    )
+
+
+@bp.route("/settings/billables/<int:code_id>/toggle", methods=["POST"])
+def settings_billable_toggle(code_id):
+    """
+    Quick toggle for a billable code's active flag from the list view.
+    """
+    billable = BillingActivityCode.query.get_or_404(code_id)
+    billable.is_active = not bool(billable.is_active)
+    db.session.commit()
+    flash("Billable activity code status updated.", "success")
+    return redirect(url_for("main.settings_billables"))
+
 # ---------- basic pages ----------
 
 
@@ -495,6 +720,17 @@ def _get_barrier_options_grouped():
 @bp.route("/claims")
 def claims_list():
     claims = Claim.query.order_by(Claim.id.desc()).all()
+
+    # Read optional filters from query string
+    status_filter = (request.args.get("status") or "").strip().lower()
+    billing_filter = (request.args.get("billing") or "").strip().lower()
+
+    # Normalise filters to known values or "all"
+    if status_filter not in ("active", "dormant"):
+        status_filter = "all"
+
+    if billing_filter not in ("none", "open", "closed"):
+        billing_filter = "all"
 
     # --- Dormant status calculation ---
     dormant_info = {}
@@ -505,26 +741,42 @@ def claims_list():
         last_date = None
 
         # Reports
-        r = Report.query.filter_by(claim_id=c.id).order_by(Report.created_at.desc()).first()
+        r = (
+            Report.query.filter_by(claim_id=c.id)
+            .order_by(Report.created_at.desc())
+            .first()
+        )
         if r and r.created_at:
             last_date = r.created_at.date()
 
         # Billables
-        b = BillableItem.query.filter_by(claim_id=c.id).order_by(BillableItem.created_at.desc()).first()
+        b = (
+            BillableItem.query.filter_by(claim_id=c.id)
+            .order_by(BillableItem.created_at.desc())
+            .first()
+        )
         if b and b.created_at:
             d = b.created_at.date()
             if not last_date or d > last_date:
                 last_date = d
 
         # Invoices
-        inv = Invoice.query.filter_by(claim_id=c.id).order_by(Invoice.id.desc()).first()
+        inv = (
+            Invoice.query.filter_by(claim_id=c.id)
+            .order_by(Invoice.id.desc())
+            .first()
+        )
         if inv and inv.invoice_date:
             d = inv.invoice_date
             if not last_date or d > last_date:
                 last_date = d
 
         # Documents
-        doc = ClaimDocument.query.filter_by(claim_id=c.id).order_by(ClaimDocument.uploaded_at.desc()).first()
+        doc = (
+            ClaimDocument.query.filter_by(claim_id=c.id)
+            .order_by(ClaimDocument.uploaded_at.desc())
+            .first()
+        )
         if doc and doc.uploaded_at:
             d = doc.uploaded_at.date()
             if not last_date or d > last_date:
@@ -575,12 +827,42 @@ def claims_list():
             else:
                 entry["open"] += 1
 
+    # --- Apply filters to claims list ---
+    filtered_claims = []
+    for c in claims:
+        # Status filter based on dormant_info
+        if status_filter in ("active", "dormant"):
+            info = dormant_info.get(c.id, {})
+            is_dormant = bool(info.get("is_dormant", False))
+
+            if status_filter == "active" and is_dormant:
+                continue
+            if status_filter == "dormant" and not is_dormant:
+                continue
+
+        # Billing filter based on billing_summary
+        summary = billing_summary.get(c.id, {"total": 0, "open": 0, "closed": 0})
+        total_inv = summary["total"]
+        open_inv = summary["open"]
+        closed_inv = summary["closed"]
+
+        if billing_filter == "none" and total_inv != 0:
+            continue
+        if billing_filter == "open" and open_inv <= 0:
+            continue
+        if billing_filter == "closed" and closed_inv <= 0:
+            continue
+
+        filtered_claims.append(c)
+
     return render_template(
         "claims_list.html",
         active_page="claims",
-        claims=claims,
+        claims=filtered_claims,
         billing_summary=billing_summary,
         dormant_info=dormant_info,
+        status_filter=status_filter,
+        billing_filter=billing_filter,
     )
 
 
@@ -636,9 +918,13 @@ def analysis_dashboard():
 
     # ----- Stale claims (no recent activity) -----
     # Use last report / billable / invoice / document date similar to claims_list.
-    stale_threshold_days = 60
-    stale_claims_count = 0
+    # Threshold comes from Settings.dormant_claim_days, falling back to 60 days if not set.
+    if settings and getattr(settings, "dormant_claim_days", None):
+        stale_threshold_days = settings.dormant_claim_days
+    else:
+        stale_threshold_days = 60
 
+    stale_claims_count = 0
     for c in active_claims:
         last_date = None
 
@@ -1327,16 +1613,8 @@ def new_claim():
         employer_id_raw = (request.form.get("employer_id") or "").strip()
         carrier_contact_id_raw = (request.form.get("carrier_contact_id") or "").strip()
 
-        def parse_date(value: str):
-            if not value:
-                return None
-            try:
-                return datetime.strptime(value, "%Y-%m-%d").date()
-            except ValueError:
-                return None
-
-        dob = parse_date(dob_raw)
-        doi = parse_date(doi_raw)
+        dob = _parse_date(dob_raw)
+        doi = _parse_date(doi_raw)
 
         if not claimant_name or not claim_number:
             error = "Claimant name and claim number are required."
@@ -1564,6 +1842,22 @@ def claim_detail(claim_id):
         if (inv.status or "Draft") not in ("Paid", "Void")
     )
 
+    # Build billable activity choices from the BillingActivityCode table.
+    # Only include active codes, ordered by sort_order then code.
+    db_codes = (
+        BillingActivityCode.query
+        .filter_by(is_active=True)
+        .order_by(BillingActivityCode.sort_order, BillingActivityCode.code)
+        .all()
+    )
+    if db_codes:
+        billable_activity_choices = [
+            (c.code, c.label or c.code) for c in db_codes
+        ]
+    else:
+        # Fallback to the global defaults if the table is empty.
+        billable_activity_choices = BILLABLE_ACTIVITY_CHOICES
+
     error = None
 
     if request.method == "POST":
@@ -1572,12 +1866,39 @@ def claim_detail(claim_id):
         # ---- New billable item ----
         if form_type == "billable_new":
             activity_code = (request.form.get("activity_code") or "").strip()
-            service_date_raw = (request.form.get("service_date") or "").strip() or None
-            service_date_parsed = _parse_date(service_date_raw)
+
+            # Improved: accept MM/DD/YYYY and YYYY-MM-DD
+            raw_date_value = (
+                (request.form.get("service_date") or "").strip()
+                or (request.form.get("date") or "").strip()
+                or (request.form.get("date_of_service") or "").strip()
+            )
+
+            def _parse_billable_date(value: str):
+                value = (value or "").strip()
+                if not value:
+                    return None
+                # Try ISO first
+                try:
+                    if "-" in value:
+                        return datetime.strptime(value, "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+                # Then MM/DD/YYYY
+                try:
+                    return datetime.strptime(value, "%m/%d/%Y").date()
+                except ValueError:
+                    return None
+
+            service_date_parsed = _parse_billable_date(raw_date_value)
 
             # Allow description to be optional, but never NULL at the DB level.
             raw_description = (request.form.get("description") or "").strip()
             description = raw_description if raw_description else None
+
+            # Read notes field
+            notes_raw = (request.form.get("notes") or "").strip()
+            notes = notes_raw if notes_raw else None
 
             qty_raw = (request.form.get("quantity") or "").strip()
             quantity = float(qty_raw) if qty_raw else None
@@ -1587,7 +1908,7 @@ def claim_detail(claim_id):
             # gets a non-NULL value.
             if not description and activity_code:
                 label = None
-                for code, label_text in BILLABLE_ACTIVITY_CHOICES:
+                for code, label_text in billable_activity_choices:
                     if code == activity_code:
                         label = label_text
                         break
@@ -1605,6 +1926,7 @@ def claim_detail(claim_id):
                     date_of_service=service_date_parsed,
                     quantity=quantity,
                     description=description,
+                    notes=notes,
                     is_complete=is_complete,
                 )
                 db.session.add(item)
@@ -1677,7 +1999,7 @@ def claim_detail(claim_id):
         invoices=invoices,
         invoice_map=invoice_map,
         open_invoice_count=open_invoice_count,
-        billable_activity_choices=BILLABLE_ACTIVITY_CHOICES,
+        billable_activity_choices=billable_activity_choices,
         error=error,
     )
 
@@ -1688,11 +2010,23 @@ def report_detail(claim_id, report_id):
     claim = Claim.query.get_or_404(claim_id)
     report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
 
+    # Load barrier options for display in read-only view
+    barriers_by_category = _get_barrier_options_grouped()
+    selected_barrier_ids = set()
+    if report.barriers_json:
+        try:
+            data = json.loads(report.barriers_json)
+            selected_barrier_ids = {int(x) for x in data}
+        except (TypeError, ValueError):
+            selected_barrier_ids = set()
+
     return render_template(
         "report_detail.html",
         active_page="claims",
         claim=claim,
         report=report,
+        barriers_by_category=barriers_by_category,
+        selected_barrier_ids=selected_barrier_ids,
     )
 
 
@@ -1923,9 +2257,25 @@ def report_edit(claim_id, report_id):
             except (TypeError, ValueError):
                 continue
 
-        dos_start = _parse_date(dos_start_raw) if dos_start_raw else None
-        dos_end = _parse_date(dos_end_raw) if dos_end_raw else None
-        next_report_due = _parse_date(next_report_due_raw) if next_report_due_raw else None
+        # Use new MMDDYYYY parser for the three report date fields
+        dos_start = None
+        dos_end = None
+        next_report_due = None
+
+        if dos_start_raw:
+            dos_start, err = _parse_mmddyyyy(dos_start_raw, "DOS Start")
+            if err and not error:
+                error = err
+
+        if dos_end_raw:
+            dos_end, err = _parse_mmddyyyy(dos_end_raw, "DOS End")
+            if err and not error:
+                error = err
+
+        if next_report_due_raw:
+            next_report_due, err = _parse_mmddyyyy(next_report_due_raw, "Next Report Due")
+            if err and not error:
+                error = err
 
         treating_provider_id = None
         if treating_provider_id_raw:
@@ -1937,7 +2287,8 @@ def report_edit(claim_id, report_id):
         valid_types = {"initial", "progress", "closure"}
         if not report_type or report_type not in valid_types:
             error = "Report type is required."
-        else:
+
+        if not error:
             report.report_type = report_type
             report.dos_start = dos_start
             report.dos_end = dos_end
@@ -2210,10 +2561,9 @@ def report_next_appointment_ics(claim_id, report_id):
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/print")
 def report_print(claim_id, report_id):
     """
-    Render a print-friendly report preview.
-
-    Gina can use the browser's Print dialog (including "Save as PDF") instead of
-    the app generating PDFs directly.
+    Render a print-friendly version of a report, including a
+    Case Manager Activities narrative built from billable items
+    in the report's DOS range.
     """
     claim = Claim.query.get_or_404(claim_id)
     report = (
@@ -2222,30 +2572,45 @@ def report_print(claim_id, report_id):
     )
     settings = _ensure_settings()
 
-    # Build barriers list from report.barriers_json (list of BarrierOption IDs)
-    selected_ids = []
-    if report.barriers_json:
-        try:
-            selected_ids = json.loads(report.barriers_json)
-        except Exception:
-            selected_ids = []
+    # Build Case Manager Activities list from billable items
+    cm_activities = []
+    if report.dos_start and report.dos_end:
+        q = (
+            BillableItem.query
+            .filter_by(claim_id=claim.id)
+            .filter(BillableItem.date_of_service.isnot(None))
+            .filter(BillableItem.date_of_service >= report.dos_start)
+            .filter(BillableItem.date_of_service <= report.dos_end)
+        )
 
-    barriers = []
-    if selected_ids:
-        barriers = (
-            BarrierOption.query
-            .filter(BarrierOption.id.in_(selected_ids))
-            .order_by(BarrierOption.sort_order, BarrierOption.label)
+        # Exclude pure expenses; we only want time/mileage/etc.
+        q = q.filter(BillableItem.activity_code != "EXP")
+
+        items = (
+            q.order_by(
+                BillableItem.date_of_service.asc().nullslast(),
+                BillableItem.created_at.asc(),
+            )
             .all()
         )
+
+        for item in items:
+            cm_activities.append(
+                {
+                    "date_of_service": item.date_of_service,
+                    "activity_code": item.activity_code or "",
+                    "description": item.description or "",
+                    "notes": item.notes or "",
+                }
+            )
 
     return render_template(
         "report_print.html",
         active_page="claims",
+        settings=settings,
         claim=claim,
         report=report,
-        settings=settings,
-        barriers=barriers,
+        cm_activities=cm_activities,
     )
 
 
@@ -2316,53 +2681,7 @@ def report_delete(claim_id, report_id):
 
     return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
-@bp.route("/claims/<int:claim_id>/billable/<int:item_id>/edit", methods=["GET", "POST"])
-def billable_edit(claim_id, item_id):
-    claim = Claim.query.get_or_404(claim_id)
-    item = BillableItem.query.filter_by(id=item_id, claim_id=claim.id).first_or_404()
-
-    error = None
-
-    if request.method == "POST":
-        activity_code = (request.form.get("activity_code") or "").strip()
-        service_date_raw = (request.form.get("service_date") or "").strip() or None
-        service_date_parsed = _parse_date(service_date_raw)
-
-        raw_description = (request.form.get("description") or "").strip()
-        description = raw_description if raw_description else None
-
-        qty_raw = (request.form.get("quantity") or "").strip()
-        quantity = float(qty_raw) if qty_raw else None
-
-        # Ensure description is never NULL at the DB level, even if the user
-        # leaves it blank when editing.
-        if not description and activity_code:
-            label = None
-            for code, label_text in BILLABLE_ACTIVITY_CHOICES:
-                if code == activity_code:
-                    label = label_text
-                    break
-            description = label or activity_code
-
-        if not activity_code:
-            error = "Activity code is required."
-        else:
-            item.activity_code = activity_code
-            item.date_of_service = service_date_parsed
-            item.description = description
-            item.quantity = quantity
-            item.is_complete = _billable_is_complete(activity_code, service_date_parsed, quantity)
-            db.session.commit()
-            return redirect(url_for("main.claim_detail", claim_id=claim.id))
-
-    return render_template(
-        "billable_edit.html",
-        active_page="claims",
-        claim=claim,
-        item=item,
-        error=error,
-        billable_activity_choices=BILLABLE_ACTIVITY_CHOICES,
-    )
+# --- Billable item delete route ---
 
 
 # --- Billable item delete route ---
@@ -2496,6 +2815,7 @@ def employers_list():
 
 @bp.route("/employers/new", methods=["GET", "POST"])
 def employer_new():
+    carriers = Carrier.query.order_by(Carrier.name).all()
     error = None
 
     if request.method == "POST":
@@ -2509,6 +2829,9 @@ def employer_new():
         fax = (request.form.get("fax") or "").strip() or None
         email = (request.form.get("email") or "").strip() or None
 
+        carrier_id_raw = (request.form.get("carrier_id") or "").strip()
+
+        # Basic validation
         if not _validate_email(email):
             error = "Email address looks invalid."
         elif not _validate_phone(phone):
@@ -2530,6 +2853,17 @@ def employer_new():
                 fax=fax,
                 email=email,
             )
+
+            # Safely coerce carrier_id to an int or None
+            carrier_id = None
+            if carrier_id_raw:
+                try:
+                    carrier_id = int(carrier_id_raw)
+                except ValueError:
+                    carrier_id = None
+
+            employer.carrier_id = carrier_id
+
             db.session.add(employer)
             db.session.commit()
             return redirect(url_for("main.employers_list"))
@@ -2537,6 +2871,7 @@ def employer_new():
     return render_template(
         "employer_new.html",
         active_page="employers",
+        carriers=carriers,
         error=error,
     )
 
@@ -2648,20 +2983,29 @@ def carrier_edit(carrier_id):
 @bp.route("/employers/<int:employer_id>/edit", methods=["GET", "POST"])
 def employer_edit(employer_id):
     employer = Employer.query.get_or_404(employer_id)
+    carriers = Carrier.query.order_by(Carrier.name).all()
     error = None
 
     if request.method == "POST":
         name = (request.form.get("name") or "").strip()
+        city = (request.form.get("city") or "").strip() or None
         address1 = (request.form.get("address1") or "").strip() or None
         address2 = (request.form.get("address2") or "").strip() or None
-        city = (request.form.get("city") or "").strip() or None
         state = (request.form.get("state") or "").strip() or None
         postal_code = (request.form.get("postal_code") or "").strip() or None
-
         phone = (request.form.get("phone") or "").strip() or None
         fax = (request.form.get("fax") or "").strip() or None
         email = (request.form.get("email") or "").strip() or None
 
+        carrier_id_raw = (request.form.get("carrier_id") or "").strip()
+        carrier_id = None
+        if carrier_id_raw:
+            try:
+                carrier_id = int(carrier_id_raw)
+            except ValueError:
+                carrier_id = None
+
+        # Basic validation similar to employer_new/carrier_edit
         if not _validate_email(email):
             error = "Email address looks invalid."
         elif not _validate_phone(phone):
@@ -2673,25 +3017,27 @@ def employer_edit(employer_id):
 
         if not error:
             employer.name = name
+            employer.city = city
             employer.address1 = address1
             employer.address2 = address2
-            employer.city = city
             employer.state = state
             employer.postal_code = postal_code
             employer.phone = phone
             employer.fax = fax
             employer.email = email
+            employer.carrier_id = carrier_id
 
             db.session.commit()
-            return redirect(url_for("main.employers_list"))
+            flash("Employer updated successfully.", "success")
+            return redirect(url_for("main.employer_detail", employer_id=employer.id))
 
     return render_template(
         "employer_edit.html",
         active_page="employers",
         employer=employer,
+        carriers=carriers,
         error=error,
     )
-
 
 
 @bp.route("/providers/<int:provider_id>/edit", methods=["GET", "POST"])
@@ -3169,4 +3515,238 @@ def settings_view():
         error=error,
         contact_roles=contact_roles,
         contact_roles_text=contact_roles_text,
+    )
+    
+   # ---- Settings: Barrier Options management ----
+
+@bp.route("/settings/barriers", methods=["GET", "POST"])
+def settings_barriers():
+    """
+    Manage BarrierOption entries (used in report barriers checklist).
+
+    GET: render list of all barrier options with add form.
+    POST: create a new barrier option from the inline form.
+    """
+    settings = _ensure_settings()  # reuse for header / business name
+        # Auto-seed default barrier options if the table is empty so that
+    # there is exactly one canonical list used everywhere (settings + reports).
+    if BarrierOption.query.count() == 0:
+        default_barriers = [
+            ("General", "Depression / PTSD / Psychosocial", 10),
+            ("General", "Smoker", 20),
+            ("General", "Treatment Noncompliance", 30),
+            ("General", "Diabetes", 40),
+            ("General", "Frequently Missing Work", 50),
+            ("General", "Hypertension", 60),
+            ("General", "Substance Abuse History", 70),
+            ("General", "Pain Management", 80),
+            ("General", "Legal Representation", 90),
+            ("General", "Surgery or Recent Hospital Stay", 100),
+            ("General", "Late Injury Reporting", 110),
+        ]
+        for category, label, sort_order in default_barriers:
+            db.session.add(
+                BarrierOption(
+                    category=category,
+                    label=label,
+                    sort_order=sort_order,
+                    is_active=True,
+                )
+            )
+        db.session.commit()
+    error = None
+
+    if request.method == "POST":
+        label = (request.form.get("label") or "").strip()
+        category = (request.form.get("category") or "").strip() or None
+        sort_order_raw = (request.form.get("sort_order") or "").strip()
+
+        sort_order = None
+        if sort_order_raw:
+            try:
+                sort_order = int(sort_order_raw)
+            except ValueError:
+                sort_order = None
+
+        if not label:
+            error = "Label is required for a barrier."
+        else:
+            # Default sort order so new ones fall to the bottom if not specified
+            if sort_order is None:
+                sort_order = 999
+
+            opt = BarrierOption(
+                label=label,
+                category=category,
+                sort_order=sort_order,
+                is_active=True,
+            )
+            db.session.add(opt)
+            db.session.commit()
+            flash("Barrier added.", "success")
+            return redirect(url_for("main.settings_barriers"))
+
+    # List all options (active + inactive) grouped by category then sort_order/label.
+    options = (
+        BarrierOption.query
+        .order_by(
+            BarrierOption.category.nullsfirst(),
+            BarrierOption.sort_order,
+            BarrierOption.label,
+        )
+        .all()
+    )
+
+    return render_template(
+        "settings_barriers.html",
+        active_page="settings",
+        settings=settings,
+        options=options,
+        error=error,
+    )
+
+
+@bp.route("/settings/barriers/<int:barrier_id>/edit", methods=["GET", "POST"])
+def settings_barrier_edit(barrier_id):
+    """
+    Edit an existing BarrierOption.
+    """
+    settings = _ensure_settings()
+    barrier = BarrierOption.query.get_or_404(barrier_id)
+    error = None
+
+    if request.method == "POST":
+        label = (request.form.get("label") or "").strip()
+        category = (request.form.get("category") or "").strip() or None
+        sort_order_raw = (request.form.get("sort_order") or "").strip()
+        is_active_raw = (request.form.get("is_active") or "").strip().lower()
+
+        sort_order = None
+        if sort_order_raw:
+            try:
+                sort_order = int(sort_order_raw)
+            except ValueError:
+                sort_order = None
+
+        if not label:
+            error = "Label is required for a barrier."
+        else:
+            barrier.label = label
+            barrier.category = category
+            if sort_order is not None:
+                barrier.sort_order = sort_order
+
+            barrier.is_active = is_active_raw in ("on", "true", "1", "yes")
+
+            db.session.commit()
+            flash("Barrier updated.", "success")
+            return redirect(url_for("main.settings_barriers"))
+
+    return render_template(
+        "settings_barrier_form.html",
+        active_page="settings",
+        settings=settings,
+        barrier=barrier,
+        error=error,
+    )
+
+
+@bp.route("/settings/barriers/<int:barrier_id>/toggle", methods=["POST"])
+def settings_barrier_toggle(barrier_id):
+    """
+    Quick toggle for a barrier's active flag from the list view.
+    """
+    barrier = BarrierOption.query.get_or_404(barrier_id)
+    barrier.is_active = not bool(barrier.is_active)
+    db.session.commit()
+    flash("Barrier status updated.", "success")
+    return redirect(url_for("main.settings_barriers")) 
+
+# ---- Billable edit route ----
+@bp.route("/claims/<int:claim_id>/billable/<int:item_id>/edit", methods=["GET", "POST"])
+def billable_edit(claim_id, item_id):
+    """
+    Edit a billable item for a claim.
+    """
+    claim = Claim.query.get_or_404(claim_id)
+    item = BillableItem.query.filter_by(id=item_id, claim_id=claim.id).first_or_404()
+    # Build billable activity choices from the BillingActivityCode table.
+    db_codes = (
+        BillingActivityCode.query
+        .filter_by(is_active=True)
+        .order_by(BillingActivityCode.sort_order, BillingActivityCode.code)
+        .all()
+    )
+    if db_codes:
+        billable_activity_choices = [
+            (c.code, c.label or c.code) for c in db_codes
+        ]
+    else:
+        billable_activity_choices = BILLABLE_ACTIVITY_CHOICES
+
+    error = None
+    if request.method == "POST":
+        # Read form fields
+        raw_date_value = (
+            (request.form.get("service_date") or "").strip()
+            or (request.form.get("date") or "").strip()
+            or (request.form.get("date_of_service") or "").strip()
+        )
+        def _parse_billable_date(value: str):
+            value = (value or "").strip()
+            if not value:
+                return None
+            # Try ISO first
+            try:
+                if "-" in value:
+                    return datetime.strptime(value, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+            # Then MM/DD/YYYY
+            try:
+                return datetime.strptime(value, "%m/%d/%Y").date()
+            except ValueError:
+                return None
+        service_date_parsed = _parse_billable_date(raw_date_value)
+        activity_code = (request.form.get("activity_code") or "").strip()
+        qty_raw = (request.form.get("quantity") or "").strip()
+        quantity = float(qty_raw) if qty_raw else None
+        raw_description = (request.form.get("description") or "").strip()
+        description = raw_description if raw_description else None
+        # Read notes field
+        notes_raw = (request.form.get("notes") or "").strip()
+        notes = notes_raw if notes_raw else None
+
+        # If description is still empty, fall back to the human label for this
+        # activity code
+        if not description and activity_code:
+            label = None
+            for code, label_text in billable_activity_choices:
+                if code == activity_code:
+                    label = label_text
+                    break
+            description = label or activity_code
+
+        if not activity_code:
+            error = "Activity code is required."
+        else:
+            is_complete = _billable_is_complete(
+                activity_code, service_date_parsed, quantity
+            )
+            item.activity_code = activity_code
+            item.date_of_service = service_date_parsed
+            item.quantity = quantity
+            item.description = description
+            item.notes = notes
+            item.is_complete = is_complete
+            db.session.commit()
+            return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+    return render_template(
+        "billable_edit.html",
+        active_page="claims",
+        claim=claim,
+        item=item,
+        billable_activity_choices=billable_activity_choices,
+        error=error,
     )

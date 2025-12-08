@@ -5,6 +5,11 @@
   <h2 class="mb-4">Analysis Dashboard</h2>
 
   <!-- Top summary cards: claims snapshot -->
+  {% if settings and settings.dormant_claim_days %}
+    {% set dormant_days = settings.dormant_claim_days %}
+  {% else %}
+    {% set dormant_days = 60 %}
+  {% endif %}
   <div class="row mb-4">
     <div class="col-md-4 mb-3">
       <div class="card stat-card text-center">
@@ -37,11 +42,9 @@
     <div class="col-md-4 mb-3">
       <div class="card stat-card text-center">
         <div class="card-body">
-          <div class="stat-label">Stale Claims (&gt;60 days)</div>
+          <div class="stat-label">Inactive Claims</div>
           <div class="stat-value">{{ stale_claims_count }}</div>
-          <div class="small text-muted mt-2">
-            No reports, billables, invoices, or docs in 60+ days
-          </div>
+          <div class="small text-muted mt-2">&nbsp;</div>
         </div>
       </div>
     </div>

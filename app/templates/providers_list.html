@@ -2,9 +2,9 @@
 {% block title %}Providers - Impact CMS{% endblock %}
 {% block content %}
 <div class="container-fluid">
-  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
     <h1 class="h4 mb-0">Providers</h1>
-    <div class="d-flex flex-wrap gap-2 mt-2 mt-sm-0">
+    <div class="d-flex align-items-center gap-2 flex-wrap flex-md-nowrap">
       <input
         id="providers-search"
         type="text"
@@ -13,7 +13,7 @@
         placeholder="Search providers..."
         aria-label="Search providers"
       >
-      <a href="{{ url_for('main.provider_new') }}" class="btn btn-primary btn-sm">
+      <a href="{{ url_for('main.provider_new') }}" class="btn btn-primary btn-sm rounded-pill">
         New Provider
       </a>
     </div>
@@ -29,11 +29,11 @@
           <table id="providers-table" class="table table-sm table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th>Name</th>
-                <th>Address</th>
-                <th>City / State / ZIP</th>
-                <th>Phone</th>
-                <th>Email</th>
+                <th class="sortable" data-sort-key="name"><span>Name</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="address"><span>Address</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="location"><span>City / State / ZIP</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="phone"><span>Phone</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="email"><span>Email</span> <span class="sort-indicator">↕</span></th>
                 <th class="text-end">Actions</th>
               </tr>
             </thead>
@@ -115,7 +115,90 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
+    // Hook up search
     attachTableSearch('providers-search', 'providers-table');
+
+    const table = document.getElementById('providers-table');
+    if (!table) return;
+
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    // Store original order so we can restore it on "unsort"
+    rows.forEach((row, index) => {
+      row.dataset.rowIndex = index.toString();
+    });
+
+    const headers = table.querySelectorAll('th.sortable');
+
+    headers.forEach(th => {
+      th.style.cursor = 'pointer';
+      th.addEventListener('click', () => {
+        const key = th.getAttribute('data-sort-key');
+        const indicator = th.querySelector('.sort-indicator');
+
+        // Determine current and next state
+        const isAsc = th.classList.contains('sorted-asc');
+        const isDesc = th.classList.contains('sorted-desc');
+        let nextState;
+        if (!isAsc && !isDesc) {
+          nextState = 'asc';   // unsorted -> ascending
+        } else if (isAsc) {
+          nextState = 'desc';  // ascending -> descending
+        } else {
+          nextState = 'none';  // descending -> unsorted/original
+        }
+
+        // Reset all headers' state and indicators for this table
+        headers.forEach(h => {
+          h.classList.remove('sorted-asc', 'sorted-desc');
+          const ind = h.querySelector('.sort-indicator');
+          if (ind) ind.textContent = '↕';
+        });
+
+        let workingRows = Array.from(tbody.querySelectorAll('tr'));
+
+        if (nextState === 'none') {
+          // Restore original order
+          workingRows.sort((a, b) => {
+            const ia = parseInt(a.dataset.rowIndex || '0', 10);
+            const ib = parseInt(b.dataset.rowIndex || '0', 10);
+            return ia - ib;
+          });
+          if (indicator) indicator.textContent = '↕';
+        } else {
+          const getVal = (row) => {
+            switch (key) {
+              case 'name':
+                return row.children[0].innerText.trim().toLowerCase();
+              case 'address':
+                return row.children[1].innerText.trim().toLowerCase();
+              case 'location':
+                return row.children[2].innerText.trim().toLowerCase();
+              case 'phone':
+                return row.children[3].innerText.trim().toLowerCase();
+              case 'email':
+                return row.children[4].innerText.trim().toLowerCase();
+              default:
+                return '';
+            }
+          };
+
+          workingRows.sort((a, b) => {
+            const va = getVal(a);
+            const vb = getVal(b);
+            const cmp = va.localeCompare(vb);
+            return nextState === 'asc' ? cmp : -cmp;
+          });
+
+          th.classList.add(nextState === 'asc' ? 'sorted-asc' : 'sorted-desc');
+          if (indicator) indicator.textContent = nextState === 'asc' ? '↑' : '↓';
+        }
+
+        // Re-attach rows in the new order
+        workingRows.forEach(r => tbody.appendChild(r));
+      });
+    });
   });
 </script>
 {% endblock %}

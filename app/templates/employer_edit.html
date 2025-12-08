@@ -1,86 +1,165 @@
 {% extends "base.html" %}
+{% block title %}Edit Employer - Impact CMS{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h2 class="mb-0">Edit Employer</h2>
-  <a href="{{ url_for('main.employers_list') }}" class="btn btn-outline-secondary btn-sm">
-    Back to Employers
-  </a>
-</div>
+<div class="container-fluid">
 
-<div class="card">
-  <div class="card-header">
-    Employer Details
+  <!-- Page header -->
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
+    <h1 class="h4 mb-0">Edit Employer</h1>
+    <a href="{{ url_for('main.employers_list') }}" class="btn btn-outline-secondary btn-sm rounded-pill mt-2 mt-sm-0">
+      Back to Employers
+    </a>
   </div>
-  <div class="card-body">
-    {% if error %}
-      <div class="alert alert-danger">{{ error }}</div>
-    {% endif %}
 
-    <form method="post">
-      <div class="row mb-3">
-        <div class="col-md-6">
-          <label class="form-label">Name<span class="text-danger">*</span></label>
-          <input type="text" name="name" class="form-control"
-                 value="{{ employer.name or '' }}" required>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">City</label>
-          <input type="text" name="city" class="form-control"
-                 value="{{ employer.city or '' }}">
-        </div>
-      </div>
+  {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
 
-      <div class="row mb-3">
-        <div class="col-md-6">
-          <label class="form-label">Address 1</label>
-          <input type="text" name="address1" class="form-control"
-                 value="{{ employer.address1 or '' }}">
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Address 2</label>
-          <input type="text" name="address2" class="form-control"
-                 value="{{ employer.address2 or '' }}">
-        </div>
+  <form method="post" novalidate>
+    <div class="card shadow-sm">
+      <div class="card-header">
+        <h2 class="h6 mb-0">Employer Details</h2>
       </div>
+      <div class="card-body">
 
-      <div class="row mb-3">
-        <div class="col-md-6">
-          <label class="form-label">State</label>
-          <select name="state" class="form-select">
-            {{ state_options(employer.state) }}
-          </select>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">ZIP</label>
-          <input type="text" name="postal_code" class="form-control"
-                 value="{{ employer.postal_code or '' }}">
-        </div>
-      </div>
+        <div class="row g-3">
+          <!-- Name & City -->
+          <div class="col-md-6">
+            <label for="name" class="form-label form-label-sm">Name<span class="text-danger">*</span></label>
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              id="name"
+              name="name"
+              value="{{ employer.name or '' }}"
+              required
+            >
+          </div>
+          <div class="col-md-6">
+            <label for="city" class="form-label form-label-sm">City</label>
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              id="city"
+              name="city"
+              value="{{ employer.city or '' }}"
+            >
+          </div>
 
-      <div class="row mb-3">
-        <div class="col-md-4">
-          <label class="form-label">Phone</label>
-          <input type="text" name="phone" class="form-control"
-                 value="{{ employer.phone or '' }}">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Fax</label>
-          <input type="text" name="fax" class="form-control"
-                 value="{{ employer.fax or '' }}">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Email</label>
-          <input type="email" name="email" class="form-control"
-                 value="{{ employer.email or '' }}">
-        </div>
-      </div>
+          <!-- Address 1 & 2 -->
+          <div class="col-md-6">
+            <label for="address1" class="form-label form-label-sm">Address 1</label>
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              id="address1"
+              name="address1"
+              value="{{ employer.address1 or '' }}"
+            >
+          </div>
+          <div class="col-md-6">
+            <label for="address2" class="form-label form-label-sm">Address 2</label>
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              id="address2"
+              name="address2"
+              value="{{ employer.address2 or '' }}"
+            >
+          </div>
 
-      <div class="mt-3 d-flex justify-content-end">
-        <a href="{{ url_for('main.employers_list') }}" class="btn btn-outline-secondary me-2">Cancel</a>
-        <button type="submit" class="btn btn-primary">Save Changes</button>
+          <!-- State & ZIP -->
+          <div class="col-md-3">
+            <label for="state" class="form-label form-label-sm">State</label>
+            <select
+              id="state"
+              name="state"
+              class="form-select form-select-sm"
+            >
+              <option value="">—</option>
+              {% for opt in state_options() %}
+                {% set abbr = opt[0] %}
+                <option value="{{ abbr }}" {% if employer.state == abbr %}selected{% endif %}>
+                  {{ abbr }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label for="postal_code" class="form-label form-label-sm">ZIP</label>
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              id="postal_code"
+              name="postal_code"
+              value="{{ employer.postal_code or '' }}"
+            >
+          </div>
+
+          <!-- Carrier -->
+          <div class="col-md-6">
+            <label for="carrier_id" class="form-label form-label-sm">Carrier</label>
+            <select
+              id="carrier_id"
+              name="carrier_id"
+              class="form-select form-select-sm"
+            >
+              <option value="">—</option>
+              {% for carrier in carriers %}
+                <option
+                  value="{{ carrier.id }}"
+                  {% if employer.carrier_id == carrier.id %}selected{% endif %}
+                >
+                  {{ carrier.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- Phone / Fax / Email -->
+          <div class="col-md-4">
+            <label for="phone" class="form-label form-label-sm">Phone</label>
+            <input
+              type="text"
+              class="form-control form-control-sm phone-input"
+              id="phone"
+              name="phone"
+              value="{{ employer.phone or '' }}"
+            >
+          </div>
+          <div class="col-md-4">
+            <label for="fax" class="form-label form-label-sm">Fax</label>
+            <input
+              type="text"
+              class="form-control form-control-sm phone-input"
+              id="fax"
+              name="fax"
+              value="{{ employer.fax or '' }}"
+            >
+          </div>
+          <div class="col-md-4">
+            <label for="email" class="form-label form-label-sm">Email</label>
+            <input
+              type="email"
+              class="form-control form-control-sm"
+              id="email"
+              name="email"
+              value="{{ employer.email or '' }}"
+            >
+          </div>
+        </div>
+
       </div>
-    </form>
-  </div>
+      <div class="card-footer d-flex justify-content-between">
+        <a href="{{ url_for('main.employers_list') }}" class="btn btn-outline-secondary btn-sm">
+          Cancel
+        </a>
+        <button type="submit" class="btn btn-primary btn-sm">
+          Save Employer
+        </button>
+      </div>
+    </div>
+  </form>
 </div>
 {% endblock %}

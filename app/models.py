@@ -51,6 +51,8 @@ class Employer(db.Model):
     phone = db.Column(db.String(50))
     fax = db.Column(db.String(50))
     email = db.Column(db.String(255))
+    carrier_id = db.Column(db.Integer, db.ForeignKey("carrier.id"))
+    carrier = db.relationship("Carrier", backref="employers")
 
     claims = db.relationship("Claim", back_populates="employer")
     contacts = db.relationship(
@@ -385,6 +387,7 @@ class BillableItem(db.Model):
     date_of_service = db.Column(db.Date)
 
     description = db.Column(db.String(255), nullable=False)
+    notes = db.Column(db.Text)
     activity_code = db.Column(db.String(20))  # MIL, EXP, NO BILL, etc.
 
     quantity = db.Column(db.Float)  # hours, miles, dollars, etc.

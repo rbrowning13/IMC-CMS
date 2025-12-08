@@ -68,6 +68,14 @@
                 —
               {% endif %}
             </dd>
+            <dt class="col-sm-4">Carrier</dt>
+            <dd class="col-sm-8">
+              {% if employer.carrier %}
+                {{ employer.carrier.name }}
+              {% else %}
+                —
+              {% endif %}
+            </dd>
 
             <dt class="col-sm-4">Claims</dt>
             <dd class="col-sm-8">

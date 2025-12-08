@@ -26,12 +26,12 @@
           <table id="invoices-table" class="table table-sm table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th>Invoice #</th>
-                <th>Claim</th>
-                <th>Carrier</th>
-                <th>Status</th>
-                <th>Invoice Date</th>
-                <th class="text-end">Total</th>
+                <th class="sortable" data-sort-key="invoice_number"><span>Invoice #</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="claim"><span>Claim</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="carrier"><span>Carrier</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="status"><span>Status</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="invoice_date"><span>Invoice Date</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable text-end" data-sort-key="total"><span>Total</span> <span class="sort-indicator">↕</span></th>
               </tr>
             </thead>
             <tbody>
@@ -92,6 +92,79 @@
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     attachTableSearch('invoices-search', 'invoices-table');
+
+    const table = document.getElementById('invoices-table');
+    if (!table) return;
+
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    rows.forEach((row, idx) => row.dataset.originalIndex = idx);
+
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.style.cursor = 'pointer';
+
+      th.addEventListener('click', () => {
+        const key = th.getAttribute('data-sort-key');
+        const indicator = th.querySelector('.sort-indicator');
+
+        const isAsc = th.classList.contains('sorted-asc');
+        const isDesc = th.classList.contains('sorted-desc');
+
+        document.querySelectorAll('th.sortable').forEach(h => {
+          h.classList.remove('sorted-asc', 'sorted-desc');
+          const ind = h.querySelector('.sort-indicator');
+          if (ind) ind.textContent = '↕';
+        });
+
+        let newState;
+        if (!isAsc && !isDesc) newState = 'asc';
+        else if (isAsc) newState = 'desc';
+        else newState = 'none';
+
+        if (newState === 'none') {
+          const restored = rows.slice().sort((a,b) =>
+            Number(a.dataset.originalIndex) - Number(b.dataset.originalIndex)
+          );
+          restored.forEach(r => tbody.appendChild(r));
+          indicator.textContent = '↕';
+          return;
+        }
+
+        th.classList.add(newState === 'asc' ? 'sorted-asc' : 'sorted-desc');
+        indicator.textContent = newState === 'asc' ? '↑' : '↓';
+
+        const sorted = rows.slice().sort((a,b) => {
+          const cellA = getValue(a, key);
+          const cellB = getValue(b, key);
+
+          if (cellA < cellB) return newState === 'asc' ? -1 : 1;
+          if (cellA > cellB) return newState === 'asc' ? 1 : -1;
+          return 0;
+        });
+
+        sorted.forEach(r => tbody.appendChild(r));
+      });
+    });
+
+    function getValue(row, key) {
+      switch (key) {
+        case 'invoice_number':
+          return row.children[0].innerText.trim().toLowerCase();
+        case 'claim':
+          return row.children[1].innerText.trim().toLowerCase();
+        case 'carrier':
+          return row.children[2].innerText.trim().toLowerCase();
+        case 'status':
+          return row.children[3].innerText.trim().toLowerCase();
+        case 'invoice_date':
+          return row.children[4].innerText.trim().toLowerCase();
+        case 'total':
+          return row.children[5].innerText.trim().replace('$','').toLowerCase();
+        default:
+          return row.innerText.trim().toLowerCase();
+      }
+    }
   });
 </script>
 {% endblock %}

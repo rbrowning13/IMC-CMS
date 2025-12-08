@@ -54,13 +54,35 @@
       </div>
 
       <div class="row mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Carrier</label>
+          <select name="carrier_id" class="form-select">
+            <option value="">Select carrier...</option>
+            {% for carrier in carriers %}
+              <option value="{{ carrier.id }}">{{ carrier.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="row mb-3">
         <div class="col-md-4">
           <label class="form-label">Phone</label>
-          <input type="text" name="phone" class="form-control">
+          <input type="text"
+                 name="phone"
+                 class="form-control js-phone-autofmt"
+                 inputmode="numeric"
+                 autocomplete="tel"
+                 data-auto-phone="1">
         </div>
         <div class="col-md-4">
           <label class="form-label">Fax</label>
-          <input type="text" name="fax" class="form-control">
+          <input type="text"
+                 name="fax"
+                 class="form-control js-phone-autofmt"
+                 inputmode="numeric"
+                 autocomplete="tel"
+                 data-auto-phone="1">
         </div>
         <div class="col-md-4">
           <label class="form-label">Email</label>

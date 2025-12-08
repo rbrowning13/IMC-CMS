@@ -23,3 +23,25 @@
     </a>
   </div>
 </div>
+
+<div class="mb-3">
+  <label class="form-label form-label-sm mb-0">Invoice Date</label>
+  <input type="text"
+         name="invoice_date"
+         class="form-control form-control-sm auto-date-input"
+         value="{{ invoice.invoice_date.strftime('%m/%d/%Y') if invoice.invoice_date }}"
+         data-auto-date="1"
+         inputmode="numeric"
+         placeholder="MM/DD/YYYY">
+</div>
+
+<div class="mb-3">
+  <label class="form-label form-label-sm mb-0">Due Date</label>
+  <input type="text"
+         name="due_date"
+         class="form-control form-control-sm auto-date-input"
+         value="{{ invoice.due_date.strftime('%m/%d/%Y') if invoice.due_date }}"
+         data-auto-date="1"
+         inputmode="numeric"
+         placeholder="MM/DD/YYYY">
+</div>

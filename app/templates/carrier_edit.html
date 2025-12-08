@@ -62,12 +62,14 @@
         <div class="col-md-4">
           <label class="form-label">Phone</label>
           <input type="text" name="phone" class="form-control"
-                 value="{{ carrier.phone or '' }}">
+                 value="{{ carrier.phone or '' }}"
+                 data-auto-phone="1" inputmode="numeric">
         </div>
         <div class="col-md-4">
           <label class="form-label">Fax</label>
           <input type="text" name="fax" class="form-control"
-                 value="{{ carrier.fax or '' }}">
+                 value="{{ carrier.fax or '' }}"
+                 data-auto-phone="1" inputmode="numeric">
         </div>
         <div class="col-md-4">
           <label class="form-label">Email</label>

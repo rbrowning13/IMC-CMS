@@ -2,9 +2,9 @@
 {% block title %}Claims - Impact CMS{% endblock %}
 {% block content %}
 <div class="container-fluid">
-  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-    <h1 class="h4 mb-0">Claims</h1>
-    <div class="d-flex flex-wrap gap-2 mt-2 mt-sm-0">
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
+    <h1 class="h4 mb-2 mb-sm-0">Claims</h1>
+    <div class="d-flex align-items-center gap-2">
       <input
         id="claims-search"
         type="text"
@@ -13,9 +13,48 @@
         placeholder="Search claims..."
         aria-label="Search claims"
       >
+      <button
+        class="btn btn-outline-secondary btn-sm"
+        type="button"
+        data-bs-toggle="collapse"
+        data-bs-target="#claims-filters"
+        aria-expanded="false"
+        aria-controls="claims-filters">
+        Filters
+      </button>
       <a href="{{ url_for('main.new_claim') }}" class="btn btn-primary btn-sm">
         New Claim
       </a>
+    </div>
+  </div>
+
+  <div id="claims-filters" class="collapse mb-3">
+    <div class="card card-body py-2">
+      <div class="row g-2 align-items-center small">
+        <div class="col-sm-6 col-md-4">
+          <label for="claims-filter-status" class="form-label form-label-sm mb-0">Claim status</label>
+          <select id="claims-filter-status" class="form-select form-select-sm">
+            <option value="">All</option>
+            <option value="active">Active</option>
+            <option value="dormant">Dormant</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </div>
+        <div class="col-sm-6 col-md-4">
+          <label for="claims-filter-billing" class="form-label form-label-sm mb-0">Billing status</label>
+          <select id="claims-filter-billing" class="form-select form-select-sm">
+            <option value="">All</option>
+            <option value="none">No invoices</option>
+            <option value="open">Open invoices</option>
+            <option value="closed">All closed</option>
+          </select>
+        </div>
+        <div class="col-sm-12 col-md-4 d-flex align-items-end justify-content-end mt-2 mt-md-0">
+          <button type="button" id="claims-filters-clear" class="btn btn-outline-secondary btn-sm">
+            Clear filters
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -29,12 +68,12 @@
           <table id="claims-table" class="table table-sm table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th>Claim #</th>
-                <th>Claimant</th>
-                <th>Carrier</th>
-                <th>Employer</th>
-                <th class="text-center">Status</th>
-                <th class="text-center">Billing</th>
+                <th class="sortable" data-sort-key="claim_number"><span>Claim #</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="claimant"><span>Claimant</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="carrier"><span>Carrier</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="employer"><span>Employer</span> <span class="sort-indicator">↕</span></th>
+                <th class="text-center sortable" data-sort-key="status"><span>Status</span> <span class="sort-indicator">↕</span></th>
+                <th class="text-center sortable" data-sort-key="billing"><span>Billing</span> <span class="sort-indicator">↕</span></th>
               </tr>
             </thead>
             <tbody>
@@ -43,7 +82,11 @@
                 {% set summary = billing_summary.get(claim.id) if billing_summary else None %}
                 {% set dormancy = dormant_info.get(claim.id) if dormant_info else None %}
 
-                <tr{% if dormancy and dormancy["is_dormant"] %} class="table-warning"{% endif %}>
+                <tr
+                  {% if dormancy and dormancy["is_dormant"] %}class="table-warning"{% endif %}
+                  data-status="{% if dormancy %}{% if dormancy['is_dormant'] %}dormant{% else %}active{% endif %}{% else %}unknown{% endif %}"
+                  data-billing="{% if not summary or summary['total'] == 0 %}none{% elif summary['open'] > 0 %}open{% else %}closed{% endif %}"
+                >
                   <td>
                     <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
                       {{ claim.claim_number }}
@@ -128,7 +171,151 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
+    // Hook up search helper
     attachTableSearch('claims-search', 'claims-table');
+
+    const table = document.getElementById('claims-table');
+    if (!table) {
+      return;
+    }
+
+    const tbody = table.querySelector('tbody');
+    const allRows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
+
+    // Remember original row order for tri-state sorting
+    allRows.forEach(function (row, index) {
+      row.dataset.originalIndex = String(index);
+    });
+
+    // ----- Filters (status + billing), preserving search-hidden rows -----
+    const statusFilter = document.getElementById('claims-filter-status');
+    const billingFilter = document.getElementById('claims-filter-billing');
+    const clearBtn = document.getElementById('claims-filters-clear');
+
+    function applyFilters() {
+      const statusVal = statusFilter ? statusFilter.value.toLowerCase() : '';
+      const billingVal = billingFilter ? billingFilter.value.toLowerCase() : '';
+
+      allRows.forEach(function (row) {
+        const rowStatus = (row.getAttribute('data-status') || '').toLowerCase();
+        const rowBilling = (row.getAttribute('data-billing') || '').toLowerCase();
+
+        const statusMatch = !statusVal || rowStatus === statusVal;
+        const billingMatch = !billingVal || rowBilling === billingVal;
+
+        if (statusMatch && billingMatch) {
+          // Only show the row if search has not hidden it
+          if (!row.dataset.searchHidden || row.dataset.searchHidden === '0') {
+            row.style.display = '';
+          }
+        } else {
+          row.style.display = 'none';
+        }
+      });
+    }
+
+    if (statusFilter) {
+      statusFilter.addEventListener('change', applyFilters);
+    }
+    if (billingFilter) {
+      billingFilter.addEventListener('change', applyFilters);
+    }
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function () {
+        if (statusFilter) statusFilter.value = '';
+        if (billingFilter) billingFilter.value = '';
+        applyFilters();
+      });
+    }
+
+    // ----- Tri-state sorting for claims table -----
+    function getSortValue(row, key) {
+      switch (key) {
+        case 'claim_number':
+          return (row.children[0].innerText || '').trim().toLowerCase();
+        case 'claimant':
+          return (row.children[1].innerText || '').trim().toLowerCase();
+        case 'carrier':
+          return (row.children[2].innerText || '').trim().toLowerCase();
+        case 'employer':
+          return (row.children[3].innerText || '').trim().toLowerCase();
+        case 'status':
+          return (row.children[4].innerText || '').trim().toLowerCase();
+        case 'billing':
+          return (row.children[5].innerText || '').trim().toLowerCase();
+        default:
+          return '';
+      }
+    }
+
+    const sortableHeaders = table.querySelectorAll('th.sortable');
+
+    sortableHeaders.forEach(function (th) {
+      th.style.cursor = 'pointer';
+      th.dataset.sortState = 'none'; // none | asc | desc
+
+      th.addEventListener('click', function () {
+        const key = th.getAttribute('data-sort-key');
+        if (!key) return;
+
+        const currentState = th.dataset.sortState || 'none';
+        let newState;
+        if (currentState === 'none') {
+          newState = 'asc';
+        } else if (currentState === 'asc') {
+          newState = 'desc';
+        } else {
+          newState = 'none';
+        }
+
+        // Reset all headers except the one clicked
+        sortableHeaders.forEach(function (other) {
+          if (other !== th) {
+            other.dataset.sortState = 'none';
+            const otherIndicator = other.querySelector('.sort-indicator');
+            if (otherIndicator) {
+              otherIndicator.textContent = '↕';
+            }
+          }
+        });
+
+        // Update this header's indicator
+        const indicator = th.querySelector('.sort-indicator');
+        if (indicator) {
+          if (newState === 'asc') {
+            indicator.textContent = '↑';
+          } else if (newState === 'desc') {
+            indicator.textContent = '↓';
+          } else {
+            indicator.textContent = '↕';
+          }
+        }
+
+        th.dataset.sortState = newState;
+
+        const rowsToSort = Array.from(tbody.querySelectorAll('tr'));
+
+        if (newState === 'none') {
+          // Restore original order based on data-original-index
+          rowsToSort.sort(function (a, b) {
+            const ia = parseInt(a.dataset.originalIndex || '0', 10);
+            const ib = parseInt(b.dataset.originalIndex || '0', 10);
+            return ia - ib;
+          });
+        } else {
+          rowsToSort.sort(function (a, b) {
+            const va = getSortValue(a, key);
+            const vb = getSortValue(b, key);
+            if (va === vb) return 0;
+            return newState === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+          });
+        }
+
+        rowsToSort.forEach(function (row) {
+          tbody.appendChild(row);
+        });
+      });
+    });
   });
 </script>
 {% endblock %}

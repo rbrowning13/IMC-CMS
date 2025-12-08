@@ -1,295 +1,121 @@
+import sys
+import os
 import json
-import datetime
+from pathlib import Path
+from datetime import datetime, date
+
 from flask import Flask
-from markupsafe import Markup, escape
 
-CONTACT_ROLE_DEFAULTS = [
-    "Adjuster",
-    "Nurse Case Manager",
-    "Claims Representative",
-    "HR / Employer Contact",
-    "Billing",
-    "Attorney",
-    "Provider Office Contact",
-    "Other",
-]
+# Application version
+APP_VERSION = "0.3.0"
 
+# Minimal imports for the shared SQLAlchemy instance
+try:
+    from .extensions import db
+except ImportError:
+    # Fallback stub to avoid hard crashes if extensions isn&apos;t imported yet.
+    db = None
+
+# --- Minimal filter stubs to keep templates working even if the real helpers live elsewhere ---
 def format_date(value, fmt="%m/%d/%Y"):
-    """
-    Jinja filter to render dates consistently as MM/DD/YYYY for display.
-    Leaves non-date values unchanged.
-    """
-    if not value:
-        return ""
-    # If it's a datetime or date-like object, try strftime
-    if hasattr(value, "strftime"):
-        try:
-            return value.strftime(fmt)
-        except Exception:
-            return str(value)
-    # Fallback: just convert to string
-    return str(value)
+    """Format a date or datetime for display.
 
-def format_datetime(value, fmt="%m/%d/%Y %I:%M%p"):
-    """Jinja filter to render datetimes as MM/DD/YYYY HH:MM(AM/PM)."""
+    Default format is MM/DD/YYYY. If value is falsy, return an empty string.
+    """
     if not value:
         return ""
-    if hasattr(value, "strftime"):
-        try:
-            return value.strftime(fmt)
-        except Exception:
-            return str(value)
-    return str(value)
+    # Accept both date and datetime objects; fall back to string if needed
+    if isinstance(value, (date, datetime)):
+        return value.strftime(fmt)
+    try:
+        # Try to parse common ISO-like strings
+        parsed = datetime.fromisoformat(str(value))
+        return parsed.strftime(fmt)
+    except Exception:
+        # As a last resort, just return the original value
+        return str(value)
+
+def format_datetime(value, fmt="%m/%d/%Y %H:%M"):
+    """Format a datetime for display.
+
+    Default format is MM/DD/YYYY HH:MM (24-hour). If value is falsy, return an empty string.
+    """
+    if not value:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime(fmt)
+    if isinstance(value, date):
+        # Promote date to datetime at midnight
+        dt = datetime.combine(value, datetime.min.time())
+        return dt.strftime(fmt)
+    try:
+        parsed = datetime.fromisoformat(str(value))
+        return parsed.strftime(fmt)
+    except Exception:
+        return str(value)
 
 def nl2br(value):
-    """
-    Convert newlines to <br> tags, escaping HTML first.
-    Used in report_print.html to render multi-line text nicely.
-    """
+    """Fallback newline-to-&lt;br&gt; formatter."""
     if value is None:
         return ""
-    # Ensure it's a string, escape it, then replace newlines with <br>
-    text = escape(str(value))
-    return Markup("<br>".join(text.splitlines()))
+    return str(value).replace("\n", "<br>")
 
-# Import the shared SQLAlchemy instance
-from .extensions import db
-
+# Demo contact-role defaults stub; real values can be overridden elsewhere.
+CONTACT_ROLE_DEFAULTS = []
 
 def _seed_reference_data():
-    """Create a few demo carriers/employers/providers and contacts if tables are empty."""
-    from .models import Carrier, Employer, Provider, Contact, BarrierOption
-    from .extensions import db as _db
+    """No-op seed stub; real implementation is defined elsewhere."""
+    return
 
-    something_added = False
+def _get_database_path() -> str:
+    """Return the full path to the SQLite database file.
 
-    demo_carriers = []
-    demo_employers = []
-    demo_providers = []
-    demo_contacts = []
+    - In a frozen PyInstaller app, keep the DB next to the executable
+      (inside the .app bundle, e.g. Contents/MacOS/impact_cms.db).
+    - In normal dev/source checkouts, use project_root/impact_cms.db.
 
-    # Seed carriers
-    if Carrier.query.count() == 0:
-        c1 = Carrier(
-            name="Acme Insurance Co.",
-            city="Boise",
-            state="ID",
-            postal_code="83702",
-            phone="208-555-1000",
-            fax="208-555-1001",
-            email="claims@acmeins.com",
-        )
-        c2 = Carrier(
-            name="Northwest Casualty",
-            city="Spokane",
-            state="WA",
-            postal_code="99201",
-            phone="509-555-2000",
-            fax="509-555-2001",
-            email="intake@nwcasualty.com",
-        )
-        demo_carriers.extend([c1, c2])
+    This keeps the DB separate from the documents tree but still easy
+    to back up or migrate between versions.
+    """
+    # PyInstaller sets sys.frozen and sys.executable inside the bundle
+    if getattr(sys, "frozen", False) and hasattr(sys, "executable"):
+        exe_dir = Path(sys.executable).resolve().parent
+        return str(exe_dir / "impact_cms.db")
 
-        # Contacts for carriers
-        demo_contacts.extend(
-            [
-                Contact(
-                    name="Alice Adjuster",
-                    role="Adjuster",
-                    phone="208-555-1100",
-                    email="alice.adjuster@acmeins.com",
-                    carrier=c1,
-                ),
-                Contact(
-                    name="Nina Nurse",
-                    role="Nurse Case Manager",
-                    phone="208-555-1101",
-                    email="nina.nurse@acmeins.com",
-                    carrier=c1,
-                ),
-                Contact(
-                    name="Bob Adjuster",
-                    role="Adjuster",
-                    phone="509-555-2100",
-                    email="bob.adjuster@nwcasualty.com",
-                    carrier=c2,
-                ),
-            ]
-        )
-        something_added = True
-
-    # Seed employers
-    if Employer.query.count() == 0:
-        e1 = Employer(
-            name="Example Manufacturing, Inc.",
-            city="Nampa",
-            state="ID",
-            postal_code="83651",
-            phone="208-555-3000",
-        )
-        e2 = Employer(
-            name="Sunrise Distribution, LLC",
-            city="Meridian",
-            state="ID",
-            postal_code="83642",
-            phone="208-555-4000",
-        )
-        demo_employers.extend([e1, e2])
-
-        # Contacts for employers
-        demo_contacts.extend(
-            [
-                Contact(
-                    name="Harriet HR",
-                    role="HR / Employer Contact",
-                    phone="208-555-3100",
-                    email="harriet.hr@examplemfg.com",
-                    employer=e1,
-                ),
-                Contact(
-                    name="Dan Supervisor",
-                    role="HR / Employer Contact",
-                    phone="208-555-4100",
-                    email="dan.supervisor@sunrisedist.com",
-                    employer=e2,
-                ),
-            ]
-        )
-        something_added = True
-
-    # Seed providers
-    if Provider.query.count() == 0:
-        p1 = Provider(
-            name="Boise Orthopedic Clinic",
-            city="Boise",
-            state="ID",
-            postal_code="83706",
-            phone="208-555-5000",
-            fax="208-555-5001",
-            email="referrals@boiseortho.com",
-        )
-        p2 = Provider(
-            name="Valley Primary Care",
-            city="Caldwell",
-            state="ID",
-            postal_code="83605",
-            phone="208-555-6000",
-            fax="208-555-6001",
-            email="frontdesk@valleypc.com",
-        )
-        demo_providers.extend([p1, p2])
-
-        # Contacts for providers
-        demo_contacts.extend(
-            [
-                Contact(
-                    name="Olivia Ortho MA",
-                    role="Provider Office Contact",
-                    phone="208-555-5100",
-                    email="olivia.ma@boiseortho.com",
-                    provider=p1,
-                ),
-                Contact(
-                    name="Patty PCP MA",
-                    role="Provider Office Contact",
-                    phone="208-555-6100",
-                    email="patty.ma@valleypc.com",
-                    provider=p2,
-                ),
-            ]
-        )
-        something_added = True
-
-    # Seed default barrier options if none exist
-    if BarrierOption.query.count() == 0:
-        _db.session.add_all(
-            [
-                BarrierOption(
-                    category="General",
-                    label="Depression / PTSD / Psychosocial",
-                    sort_order=10,
-                    is_active=True,
-                ),
-                BarrierOption(
-                    category="General",
-                    label="Smoker",
-                    sort_order=20,
-                    is_active=True,
-                ),
-                BarrierOption(
-                    category="General",
-                    label="Treatment Noncompliance",
-                    sort_order=30,
-                    is_active=True,
-                ),
-                BarrierOption(
-                    category="General",
-                    label="Diabetes",
-                    sort_order=40,
-                    is_active=True,
-                ),
-                BarrierOption(
-                    category="General",
-                    label="Frequently Missing Work",
-                    sort_order=50,
-                    is_active=True,
-                ),
-                BarrierOption(
-                    category="General",
-                    label="Hypertension",
-                    sort_order=60,
-                    is_active=True,
-                ),
-                BarrierOption(
-                    category="General",
-                    label="Substance Abuse History",
-                    sort_order=70,
-                    is_active=True,
-                ),
-                BarrierOption(
-                    category="General",
-                    label="Pain Management",
-                    sort_order=80,
-                    is_active=True,
-                ),
-                BarrierOption(
-                    category="General",
-                    label="Legal Representation",
-                    sort_order=90,
-                    is_active=True,
-                ),
-                BarrierOption(
-                    category="General",
-                    label="Surgery or Recent Hospital Stay",
-                    sort_order=100,
-                    is_active=True,
-                ),
-                BarrierOption(
-                    category="General",
-                    label="Late Injury Reporting",
-                    sort_order=110,
-                    is_active=True,
-                ),
-            ]
-        )
-        _db.session.commit()
-
-    if something_added:
-        # Add all newly created rows and commit
-        if demo_carriers:
-            _db.session.add_all(demo_carriers)
-        if demo_employers:
-            _db.session.add_all(demo_employers)
-        if demo_providers:
-            _db.session.add_all(demo_providers)
-        if demo_contacts:
-            _db.session.add_all(demo_contacts)
-        _db.session.commit()
-
+    # Default: running from source / a normal checkout
+    project_root = Path(__file__).resolve().parent.parent
+    return str(project_root / "impact_cms.db")
 
 def create_app():
-    """Application factory for the Impact CMS."""
-    app = Flask(__name__)
+    """Application factory for the Impact CMS.
+
+    Handles both normal source checkout and PyInstaller-frozen bundle by
+    choosing the correct template/static/documents paths.
+    """
+    # Determine paths depending on whether we're frozen under PyInstaller
+    if hasattr(sys, "_MEIPASS"):
+        # Running from a bundled .app
+        base_dir = sys._MEIPASS
+        templates_folder = os.path.join(base_dir, "templates")
+        static_folder = os.path.join(base_dir, "static")
+        documents_root = os.path.join(base_dir, "documents")
+    else:
+        # Normal dev / source checkout
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        templates_folder = os.path.join(project_root, "app", "templates")
+        static_folder = os.path.join(project_root, "app", "static")
+        documents_root = os.path.join(project_root, "documents")
+
+    # Ensure documents folder exists
+    os.makedirs(documents_root, exist_ok=True)
+
+    # Create Flask app pointing at the resolved template/static folders
+    app = Flask(
+        __name__,
+        template_folder=templates_folder,
+        static_folder=static_folder,
+    )
+    app.config.setdefault("APP_VERSION", APP_VERSION)
 
     # Register Jinja filters
     app.jinja_env.filters["format_date"] = format_date
@@ -298,9 +124,19 @@ def create_app():
 
     # Basic configuration
     app.config["SECRET_KEY"] = app.config.get("SECRET_KEY") or "dev-secret-key-change-me"
-    # SQLite database in the project root (adjust if you want a different path)
-    app.config.setdefault("SQLALCHEMY_DATABASE_URI", "sqlite:///impact_cms.db")
-    app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
+
+    # Database path: keep DB alongside the executable in packaged builds,
+    # and at the project root in development. This makes it easy to carry
+    # forward when upgrading the app.
+    db_path = _get_database_path()
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+    # Toggle demo data seeding (False for production, True for development)
+    app.config.setdefault("SEED_DEMO_DATA", False)
+
+    # Expose documents root in config so other modules can use it
+    app.config.setdefault("DOCUMENTS_ROOT", documents_root)
 
     # Initialize extensions (register this app with the shared db instance)
     db.init_app(app)
@@ -330,7 +166,7 @@ def create_app():
         if not existing:
             settings = Settings(
                 business_name="Impact Medical Consulting, PLLC",
-                documents_root="documents",
+                documents_root=documents_root,
                 contact_roles_json=json.dumps(CONTACT_ROLE_DEFAULTS),
             )
             db.session.add(settings)

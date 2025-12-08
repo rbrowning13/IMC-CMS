@@ -33,6 +33,30 @@
     .navbar .nav-link.active:hover {
       color: var(--accent-color) !important;
     }
+
+    /* Accent button using configured accent color */
+    .btn-accent {
+      background-color: var(--accent-color);
+      border-color: var(--accent-color);
+      color: #fff;
+      border-radius: 999px;
+      padding: 0.25rem 1rem;
+      font-weight: 500;
+    }
+
+    .btn-accent:hover,
+    .btn-accent:focus {
+      background-color: var(--accent-color);
+      border-color: var(--accent-color);
+      color: #fff;
+      filter: brightness(0.9);
+    }
+
+    .btn-accent:disabled,
+    .btn-accent.disabled {
+      opacity: 0.65;
+      pointer-events: none;
+    }
   </style>
   {% endif %}
 </head>
@@ -45,12 +69,6 @@
         <!-- Brand / Logo -->
         {% set brand_name = settings.business_name if settings and settings.business_name else 'Impact Medical CMS' %}
         <a class="navbar-brand d-flex flex-column align-items-center" href="{{ url_for('main.claims_list') }}">
-          {% if settings and settings.logo_path %}
-            <img src="{{ url_for('static', filename=settings.logo_path) }}"
-                 alt="{{ brand_name }} Logo"
-                 class="mb-1"
-                 style="height: 70px; display: block; margin-left: auto; margin-right: auto;">
-          {% endif %}
           <span style="line-height: 1.1;">{{ brand_name }}</span>
         </a>
 
@@ -99,10 +117,18 @@
             </li>
           </ul>
 
-          <!-- Right side: version text placeholder -->
-          <span class="navbar-text text-secondary small">
-            v1.0.0
-          </span>
+          <!-- Right side: theme toggle + version -->
+          <div class="d-flex align-items-center gap-2">
+            <button id="themeToggle"
+                    type="button"
+                    class="btn btn-sm btn-outline-light"
+                    aria-label="Toggle dark mode">
+              🌓
+            </button>
+            <span class="navbar-text text-secondary small">
+              v{{ config.APP_VERSION }}
+            </span>
+          </div>
         </div>
       </div>
     </nav>
@@ -143,6 +169,199 @@
         });
       });
     }
+  </script>
+
+  <script>
+    // Simple dark-mode toggle with localStorage persistence.
+    document.addEventListener('DOMContentLoaded', function () {
+      var root = document.documentElement;
+      var toggle = document.getElementById('themeToggle');
+      if (!toggle) {
+        return;
+      }
+
+      var saved = null;
+      try {
+        saved = window.localStorage.getItem('impact_theme');
+      } catch (e) {
+        saved = null;
+      }
+
+      function applyTheme(theme) {
+        if (theme === 'dark') {
+          root.classList.add('dark-mode');
+          toggle.textContent = '☀';
+        } else {
+          root.classList.remove('dark-mode');
+          toggle.textContent = '🌓';
+        }
+      }
+
+      // Initialize from saved preference (default light).
+      if (saved === 'dark') {
+        applyTheme('dark');
+      } else {
+        applyTheme('light');
+      }
+
+      toggle.addEventListener('click', function () {
+        var isDark = root.classList.contains('dark-mode');
+        var next = isDark ? 'light' : 'dark';
+        applyTheme(next);
+        try {
+          window.localStorage.setItem('impact_theme', next);
+        } catch (e) {
+          // Ignore storage errors
+        }
+      });
+    });
+  </script>
+  <script>
+    // Auto-format date and phone inputs and auto-advance when complete.
+    document.addEventListener('DOMContentLoaded', function () {
+      function focusNextField(input) {
+        if (!input || !input.form) return;
+        var elements = Array.prototype.filter.call(input.form.elements, function (el) {
+          if (!el) return false;
+          if (el.disabled) return false;
+          if (el.type === 'hidden') return false;
+          if (typeof el.offsetParent === 'undefined') return true;
+          return el.offsetParent !== null;
+        });
+        var index = elements.indexOf(input);
+        if (index >= 0 && index + 1 < elements.length) {
+          elements[index + 1].focus();
+        }
+      }
+
+      function setupAutoDate(input) {
+        if (!input) return;
+        input.addEventListener('input', function () {
+          var digits = (input.value || '').replace(/\D/g, '').slice(0, 8);
+          var mm = '';
+          var dd = '';
+          var yyyy = '';
+
+          if (digits.length >= 2) {
+            mm = digits.slice(0, 2);
+            if (digits.length >= 4) {
+              dd = digits.slice(2, 4);
+              if (digits.length > 4) {
+                yyyy = digits.slice(4);
+              }
+            } else if (digits.length > 2) {
+              dd = digits.slice(2);
+            }
+          } else {
+            mm = digits;
+          }
+
+          var parts = [];
+          if (mm) parts.push(mm);
+          if (dd) parts.push(dd);
+          if (yyyy) parts.push(yyyy);
+          input.value = parts.join('/');
+
+          if (digits.length === 8) {
+            focusNextField(input);
+          }
+        });
+      }
+
+      function setupAutoPhone(input) {
+        if (!input) return;
+        input.addEventListener('input', function () {
+          var digits = (input.value || '').replace(/\D/g, '').slice(0, 10);
+          var formatted = '';
+
+          if (digits.length > 0) {
+            formatted = '(' + digits.slice(0, Math.min(3, digits.length));
+          }
+          if (digits.length >= 4) {
+            formatted += ') ' + digits.slice(3, Math.min(6, digits.length));
+          } else if (digits.length > 3) {
+            formatted += ') ' + digits.slice(3);
+          }
+          if (digits.length >= 7) {
+            formatted += '-' + digits.slice(6);
+          }
+
+          input.value = formatted;
+
+          if (digits.length === 10) {
+            focusNextField(input);
+          }
+        });
+        input.addEventListener('keypress', function (evt) {
+          var ch = evt.key;
+          if (!ch) return;
+          // Allow control keys (Backspace, Arrow keys, etc.)
+          if (ch.length > 1) return;
+          if (!/[0-9]/.test(ch)) {
+            evt.preventDefault();
+          }
+        });
+      }
+
+      var dateInputs = document.querySelectorAll('input[data-auto-date="1"], input.js-date-autofmt');
+      Array.prototype.forEach.call(dateInputs, function (input) {
+        setupAutoDate(input);
+      });
+
+      var phoneInputs = document.querySelectorAll('input[type="tel"], input[data-auto-phone="1"], input.js-phone-autofmt, input.phone-input');
+      Array.prototype.forEach.call(phoneInputs, function (input) {
+        // Avoid attaching handlers multiple times if this script runs more than once
+        if (input.dataset && input.dataset.phoneWired === '1') {
+          return;
+        }
+        setupAutoPhone(input);
+        if (input.dataset) {
+          input.dataset.phoneWired = '1';
+        }
+      });
+    });
+  </script>
+
+  <script>
+    // Preserve scroll position per page using sessionStorage.
+    (function () {
+      try {
+        var pathKey = 'scrollPos:' + window.location.pathname;
+
+        function restoreScroll() {
+          try {
+            if (!window.sessionStorage) return;
+            var saved = window.sessionStorage.getItem(pathKey);
+            if (saved !== null) {
+              var y = parseInt(saved, 10);
+              if (!isNaN(y)) {
+                window.scrollTo(0, y);
+              }
+            }
+          } catch (e) {
+            // Ignore storage errors
+          }
+        }
+
+        function saveScroll() {
+          try {
+            if (!window.sessionStorage) return;
+            var y = window.scrollY || window.pageYOffset || 0;
+            window.sessionStorage.setItem(pathKey, String(y));
+          } catch (e) {
+            // Ignore storage errors
+          }
+        }
+
+        document.addEventListener('DOMContentLoaded', restoreScroll);
+        window.addEventListener('scroll', saveScroll);
+        window.addEventListener('beforeunload', saveScroll);
+      } catch (e) {
+        if (window.console && console.warn) {
+          console.warn('Scroll persistence failed:', e);
+        }
+      }
+    })();
   </script>
 </body>
 </html>

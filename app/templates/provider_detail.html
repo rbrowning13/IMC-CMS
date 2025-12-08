@@ -170,12 +170,12 @@
             </div>
             <div class="col-md-3">
               <label class="form-label form-label-sm mb-0">Phone</label>
-              <input type="text" name="phone" class="form-control form-control-sm"
+              <input type="text" name="phone" class="form-control form-control-sm phone-input provider-contact-phone"
                      value="{{ edit_contact.phone if edit_contact else '' }}">
             </div>
             <div class="col-md-3">
               <label class="form-label form-label-sm mb-0">Fax</label>
-              <input type="text" name="fax" class="form-control form-control-sm"
+              <input type="text" name="fax" class="form-control form-control-sm phone-input provider-contact-fax"
                      value="{{ edit_contact.fax if edit_contact else '' }}">
             </div>
             <div class="col-md-5">
@@ -213,4 +213,53 @@
   </div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      function formatPhone(value) {
+        const digits = value.replace(/\D/g, '').slice(0, 10);
+        const len = digits.length;
+        if (len === 0) return '';
+        if (len < 4) return '(' + digits;
+        if (len < 7) return '(' + digits.slice(0, 3) + ') ' + digits.slice(3);
+        return (
+          '(' +
+          digits.slice(0, 3) +
+          ') ' +
+          digits.slice(3, 6) +
+          '-' +
+          digits.slice(6)
+        );
+      }
+
+      function attachPhoneFormatter(input) {
+        if (!input) return;
+        input.addEventListener('input', function (e) {
+          const cursorPos = input.selectionStart;
+          const before = input.value;
+          input.value = formatPhone(input.value);
+
+          // Try to keep cursor near the end when typing
+          if (document.activeElement === input) {
+            const diff = before.length - input.value.length;
+            const newPos = Math.max(0, cursorPos - diff);
+            input.setSelectionRange(newPos, newPos);
+          }
+        });
+
+        // Initial formatting if value is prefilled
+        if (input.value) {
+          input.value = formatPhone(input.value);
+        }
+      }
+
+      const providerPhoneInputs = document.querySelectorAll(
+        '.provider-contact-phone, .provider-contact-fax'
+      );
+      providerPhoneInputs.forEach(attachPhoneFormatter);
+    });
+  </script>
 {% endblock %}

@@ -2,9 +2,9 @@
 {% block title %}Carriers - Impact CMS{% endblock %}
 {% block content %}
 <div class="container-fluid">
-  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
     <h1 class="h4 mb-0">Carriers</h1>
-    <div class="d-flex flex-wrap gap-2 mt-2 mt-sm-0">
+    <div class="d-flex align-items-center gap-2 flex-wrap flex-md-nowrap">
       <input
         id="carriers-search"
         type="text"
@@ -13,7 +13,7 @@
         placeholder="Search carriers..."
         aria-label="Search carriers"
       >
-      <a href="{{ url_for('main.carrier_new') }}" class="btn btn-primary btn-sm">
+      <a href="{{ url_for('main.carrier_new') }}" class="btn btn-primary btn-sm rounded-pill">
         New Carrier
       </a>
     </div>
@@ -29,17 +29,17 @@
           <table id="carriers-table" class="table table-sm table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th>Name</th>
-                <th>Address</th>
-                <th>City / State / ZIP</th>
-                <th>Phone</th>
-                <th>Email</th>
+                <th class="sortable" data-sort-key="name"><span>Name</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="address"><span>Address</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="location"><span>City / State / ZIP</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="phone"><span>Phone</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="email"><span>Email</span> <span class="sort-indicator">↕</span></th>
                 <th class="text-end">Actions</th>
               </tr>
             </thead>
             <tbody>
               {% for carrier in carriers %}
-                <tr>
+                <tr data-row-index="{{ loop.index0 }}">
                   <td>
                     <a href="{{ url_for('main.carrier_detail', carrier_id=carrier.id) }}">
                       {{ carrier.name }}
@@ -115,7 +115,99 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
+    // Hook up search for this table
     attachTableSearch('carriers-search', 'carriers-table');
+
+    const table = document.getElementById('carriers-table');
+    if (!table) return;
+
+    const tbody = table.querySelector('tbody');
+    const headers = table.querySelectorAll('th.sortable');
+
+    // Ensure each row has a stable original index (for restoring unsorted order)
+    Array.from(tbody.querySelectorAll('tr')).forEach((row, idx) => {
+      if (!row.dataset.rowIndex) {
+        row.dataset.rowIndex = idx;
+      }
+    });
+
+    headers.forEach(th => {
+      th.style.cursor = 'pointer';
+      th.addEventListener('click', () => {
+        const key = th.getAttribute('data-sort-key');
+        const indicator = th.querySelector('.sort-indicator');
+
+        const isAsc = th.classList.contains('sorted-asc');
+        const isDesc = th.classList.contains('sorted-desc');
+
+        // Determine new state: none -> asc -> desc -> none
+        let newState;
+        if (!isAsc && !isDesc) {
+          newState = 'asc';
+        } else if (isAsc) {
+          newState = 'desc';
+        } else {
+          newState = 'none';
+        }
+
+        // Reset all headers' classes and indicators
+        headers.forEach(h => {
+          h.classList.remove('sorted-asc', 'sorted-desc');
+          const ind = h.querySelector('.sort-indicator');
+          if (ind) ind.textContent = '↕';
+        });
+
+        let rows = Array.from(tbody.querySelectorAll('tr'));
+        let sortedRows;
+
+        if (newState === 'none') {
+          // Restore original row order using data-row-index
+          sortedRows = rows.sort((a, b) => {
+            const ia = parseInt(a.dataset.rowIndex || '0', 10);
+            const ib = parseInt(b.dataset.rowIndex || '0', 10);
+            return ia - ib;
+          });
+        } else {
+          // Sort by the selected column
+          const getVal = (row) => {
+            switch (key) {
+              case 'name':
+                return row.children[0].innerText.trim().toLowerCase();
+              case 'address':
+                return row.children[1].innerText.trim().toLowerCase();
+              case 'location':
+                return row.children[2].innerText.trim().toLowerCase();
+              case 'phone':
+                return row.children[3].innerText.trim().toLowerCase();
+              case 'email':
+                return row.children[4].innerText.trim().toLowerCase();
+              default:
+                return '';
+            }
+          };
+
+          sortedRows = rows.sort((a, b) => {
+            const va = getVal(a);
+            const vb = getVal(b);
+            return newState === 'asc'
+              ? va.localeCompare(vb)
+              : vb.localeCompare(va);
+          });
+        }
+
+        // Re-attach rows in new order
+        sortedRows.forEach(r => tbody.appendChild(r));
+
+        // Apply new header state
+        if (newState === 'asc') {
+          th.classList.add('sorted-asc');
+          if (indicator) indicator.textContent = '↑';
+        } else if (newState === 'desc') {
+          th.classList.add('sorted-desc');
+          if (indicator) indicator.textContent = '↓';
+        }
+      });
+    });
   });
 </script>
 {% endblock %}
