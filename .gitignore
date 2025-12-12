@@ -27,3 +27,24 @@ instance/
 *.sqlite3
 __pycache__/
 *.pyc
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+
+# Databases
+*.db
+
+# Build artifacts
+build/
+dist/
+*.spec
+# VS Code
+.vscode/
+
+# Generated/static artifacts
+app/static/logos/
