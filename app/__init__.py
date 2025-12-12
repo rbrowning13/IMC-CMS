@@ -6,6 +6,9 @@ from datetime import datetime, date
 
 from flask import Flask
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Application version
 APP_VERSION = "0.3.0"
 
@@ -125,11 +128,12 @@ def create_app():
     # Basic configuration
     app.config["SECRET_KEY"] = app.config.get("SECRET_KEY") or "dev-secret-key-change-me"
 
-    # Database path: keep DB alongside the executable in packaged builds,
-    # and at the project root in development. This makes it easy to carry
-    # forward when upgrading the app.
-    db_path = _get_database_path()
-    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
+    # Database configuration (Postgres via DATABASE_URL; fail loudly if missing)
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is not set. Refusing to start with an implicit SQLite database.")
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     # Toggle demo data seeding (False for production, True for development)
