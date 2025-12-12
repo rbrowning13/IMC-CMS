@@ -463,6 +463,7 @@ class Settings(db.Model):
     postal_code = db.Column(db.String(20))
     phone = db.Column(db.String(50))
     email = db.Column(db.String(255))
+    responsible_case_manager = db.Column(db.String(255))
 
     # Billing rates
     hourly_rate = db.Column(db.Float)

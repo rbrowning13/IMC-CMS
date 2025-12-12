@@ -65,6 +65,9 @@
               {{ claim.claim_number or "—" }}<br>
             <strong>Claimant:</strong>
               {{ claim.claimant_name or "—" }}<br>
+            {% if settings.responsible_case_manager %}
+              <strong>Case Manager:</strong> {{ settings.responsible_case_manager }}<br>
+            {% endif %}
           </p>
         </div>
       </div>

@@ -75,6 +75,11 @@
                  value="{{ settings.email or '' }}">
         </div>
         <div class="mb-2">
+          <label class="form-label form-label-sm">Case Manager</label>
+          <input type="text" name="responsible_case_manager" class="form-control form-control-sm"
+                 value="{{ settings.responsible_case_manager or '' }}">
+        </div>
+        <div class="mb-2">
           <label class="form-label form-label-sm">EIN / Tax ID</label>
           <input type="text" name="ein" class="form-control form-control-sm"
                  value="{{ settings.ein or '' }}">

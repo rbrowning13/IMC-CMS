@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Mobile Billable Entry - Impact CMS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    :root {
+      --accent-color: {{ accent_color or '#ff9500' }};
+      --bg-color: #121212;
+      --card-bg: #1c1c1e;
+      --text-color: #f5f5f7;
+      --muted-color: #a1a1a7;
+      --border-color: #2c2c2e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+    }
+
+    .page {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .page-header {
+      padding: 1rem 1.25rem 0.5rem;
+    }
+
+    .page-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 0 0 0.25rem;
+    }
+
+    .page-subtitle {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--muted-color);
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border-radius: 16px;
+      margin: 0 1rem 1.25rem;
+      padding: 1rem 1.25rem 1.25rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    }
+
+    .error {
+      background: rgba(255, 69, 58, 0.12);
+      border-radius: 12px;
+      padding: 0.6rem 0.75rem;
+      font-size: 0.8rem;
+      color: #ff453a;
+      margin-bottom: 0.85rem;
+    }
+
+    .field {
+      margin-bottom: 0.95rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.25rem;
+      color: var(--muted-color);
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      background-color: #000;
+      color: var(--text-color);
+      padding: 0.7rem 0.85rem;
+      font-size: 0.95rem;
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      color: #5c5c60;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--accent-color);
+      box-shadow: 0 0 0 1px var(--accent-color);
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .qty-row {
+      display: flex;
+      align-items: stretch;
+      border-radius: 999px;
+      border: 1px solid var(--border-color);
+      background-color: #000;
+      overflow: hidden;
+    }
+
+    .qty-btn {
+      width: 44px;
+      border: none;
+      background: transparent;
+      color: var(--text-color);
+      font-size: 1.3rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .qty-btn:active {
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+
+    .qty-input {
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      text-align: center;
+    }
+
+    .help {
+      font-size: 0.75rem;
+      color: var(--muted-color);
+      margin-top: 0.25rem;
+    }
+
+    .buttons {
+      margin: 0 1rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .btn-primary,
+    .btn-outline {
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 0.85rem 1rem;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background-color: var(--accent-color);
+      border: 1px solid var(--accent-color);
+      color: var(--bg-color);
+    }
+
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--accent-color);
+      color: var(--accent-color);
+    }
+
+    @media (min-width: 700px) {
+      .page {
+        align-items: center;
+      }
+      .page-header,
+      .card,
+      .buttons {
+        max-width: 480px;
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <h1 class="page-title">New Billable Activity</h1>
+      {% if claim %}
+        <p class="page-subtitle">
+          {{ claim.claimant or "Unnamed Claimant" }}
+          {% if claim.claim_number %}&nbsp;·&nbsp;Claim #{{ claim.claim_number }}{% endif %}
+        </p>
+      {% endif %}
+    </header>
+
+    <main>
+      <div class="card">
+        {% if error %}
+          <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <form method="post" id="mobile-billable-form">
+          <div class="field">
+            <label for="service_date">Date of Service</label>
+            <input
+              type="date"
+              id="service_date"
+              name="service_date"
+              autocomplete="off"
+              placeholder="MM/DD/YYYY"
+              value="{{ service_date or '' }}"
+              required
+            >
+          </div>
+
+          <div class="field">
+            <label for="activity_code">Activity Code</label>
+            <select
+              id="activity_code"
+              name="activity_code"
+              required
+            >
+              <option value="">Select activity…</option>
+              {% for code, label in billable_activity_choices %}
+                <option value="{{ code }}" {% if code == selected_activity_code %}selected{% endif %}>
+                  {{ code }} – {{ label }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="quantity">Quantity</label>
+            <div class="qty-row">
+              <button
+                type="button"
+                class="qty-btn"
+                id="qty-decrease"
+                aria-label="Decrease quantity"
+              >
+                &minus;
+              </button>
+              <input
+                type="text"
+                id="quantity"
+                name="quantity"
+                class="qty-input"
+                inputmode="decimal"
+                autocomplete="off"
+                value="{{ quantity or '0.0' }}"
+                placeholder="0.0"
+                required
+              >
+              <button
+                type="button"
+                class="qty-btn"
+                id="qty-increase"
+                aria-label="Increase quantity"
+              >
+                +
+              </button>
+            </div>
+            <div class="help" id="quantity-help">
+              Time in hours (step 0.1)
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="description">Description</label>
+            <input
+              type="text"
+              id="description"
+              name="description"
+              autocomplete="off"
+              placeholder="e.g. CM – review records, phone calls…"
+              value="{{ description or '' }}"
+            >
+            <div class="help">
+              Short label used on invoices and report tables.
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="notes">Notes</label>
+            <textarea
+              id="notes"
+              name="notes"
+              placeholder="Brief narrative of the activity…"
+            >{{ notes or "" }}</textarea>
+          </div>
+        </form>
+      </div>
+    </main>
+
+    <div class="buttons">
+      <button type="submit" form="mobile-billable-form" class="btn-primary">
+        Save Activity
+      </button>
+      {% if claim %}
+        <a href="{{ url_for('mobile.mobile_claims') }}" class="btn-outline">
+          Back to Claim Picker
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const activitySelect = document.getElementById('activity_code');
+      const qtyInput = document.getElementById('quantity');
+      const qtyHelp = document.getElementById('quantity-help');
+      const minusBtn = document.getElementById('qty-decrease');
+      const plusBtn = document.getElementById('qty-increase');
+      const dateInput = document.getElementById('service_date');
+
+      function getStepForActivity(code) {
+        if (!code) return 0.1;
+
+        const mileageCodes = ['MIL'];
+        const expenseCodes = ['EXP'];
+
+        if (mileageCodes.includes(code)) return 1;
+        if (expenseCodes.includes(code)) return 0.01;
+
+        return 0.1;
+      }
+
+      function updateQuantityHelp() {
+        const code = activitySelect ? activitySelect.value : '';
+        const step = getStepForActivity(code);
+
+        if (!qtyHelp) return;
+
+        if (step === 1) {
+          qtyHelp.textContent = 'Miles (step 1)';
+        } else if (step === 0.01) {
+          qtyHelp.textContent = 'Expenses (step 0.01)';
+        } else {
+          qtyHelp.textContent = 'Time in hours (step 0.1)';
+        }
+      }
+
+      function adjustQuantity(direction) {
+        if (!qtyInput) return;
+
+        const step = getStepForActivity(activitySelect ? activitySelect.value : '');
+        const raw = qtyInput.value.replace(',', '.').trim();
+        let current = parseFloat(raw);
+
+        if (isNaN(current)) {
+          current = 0;
+        }
+
+        let next = current + direction * step;
+        if (next < 0) next = 0;
+
+        if (step === 1) {
+          qtyInput.value = String(Math.round(next));
+        } else if (step === 0.01) {
+          qtyInput.value = next.toFixed(2);
+        } else {
+          qtyInput.value = next.toFixed(1);
+        }
+      }
+
+      if (activitySelect) {
+        activitySelect.addEventListener('change', updateQuantityHelp);
+        updateQuantityHelp();
+      }
+
+      if (minusBtn) {
+        minusBtn.addEventListener('click', function () {
+          adjustQuantity(-1);
+        });
+      }
+
+      if (plusBtn) {
+        plusBtn.addEventListener('click', function () {
+          adjustQuantity(1);
+        });
+      }
+
+      if (dateInput && !dateInput.value) {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        dateInput.value = `${yyyy}-${mm}-${dd}`;
+      }
+    });
+  </script>
+</body>
+</html>

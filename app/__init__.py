@@ -143,7 +143,10 @@ def create_app():
 
     # Register blueprints
     from .routes import bp as main_bp
+    from .mobile_routes import mobile_bp
+
     app.register_blueprint(main_bp)
+    app.register_blueprint(mobile_bp, url_prefix="/mobile")
 
     @app.context_processor
     def inject_settings():

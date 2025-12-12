@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mobile – Select Claim</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+      :root {
+        --mobile-accent: var(--accent-color, #f5a623);
+      }
+
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 0;
+        background: #0b0b0d;
+        color: #f7f7f7;
+      }
+
+      .mobile-shell {
+        max-width: 520px;
+        margin: 0 auto;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        padding: 1.5rem 0.75rem 1rem;
+        box-sizing: border-box;
+      }
+
+      .mobile-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .mobile-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0 0 0.15rem 0;
+      }
+
+      .mobile-badge {
+        font-size: 0.7rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid var(--mobile-accent);
+        color: var(--mobile-accent);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .mobile-chip {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(0, 0, 0, 0.35);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #f7f7f7;
+      }
+
+      .mobile-search {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        margin-bottom: 0.75rem;
+      }
+
+      .mobile-search input {
+        width: 100%;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: #141418;
+        color: #f7f7f7;
+        font-size: 0.85rem;
+      }
+
+      .mobile-search input::placeholder {
+        color: rgba(255, 255, 255, 0.45);
+      }
+
+      .mobile-claims-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        margin-top: 0.25rem;
+      }
+
+      .mobile-claim-card {
+        border-radius: 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        background: #15151a;
+        padding: 0.7rem 0.8rem;
+        text-decoration: none;
+        display: block;
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
+        color: inherit;
+      }
+
+      .mobile-claim-card:hover {
+        border-color: var(--mobile-accent);
+      }
+
+      .mobile-claim-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.5rem;
+        margin-bottom: 0.3rem;
+      }
+
+      .mobile-claim-name {
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+
+      .mobile-claim-number {
+        font-size: 0.75rem;
+        opacity: 0.85;
+      }
+
+      .mobile-claim-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        font-size: 0.78rem;
+        opacity: 0.9;
+      }
+
+      .mobile-claim-meta strong {
+        font-weight: 500;
+      }
+
+      .mobile-claim-status {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        padding: 0.15rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(0, 0, 0, 0.3);
+      }
+
+      .mobile-empty {
+        font-size: 0.85rem;
+        opacity: 0.75;
+        margin-top: 0.75rem;
+      }
+
+      .mobile-footer-links {
+        margin-top: auto;
+        padding-top: 1rem;
+        font-size: 0.75rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.5rem;
+        opacity: 0.7;
+      }
+
+      .mobile-footer-links a {
+        text-decoration: none;
+        font-weight: 500;
+        color: var(--mobile-accent);
+      }
+
+      .mobile-footer-links a:hover {
+        text-decoration: underline;
+      }
+
+      .btn-mobile-primary {
+        border-radius: 999px;
+        border: 1px solid var(--mobile-accent);
+        background: rgba(245, 166, 35, 0.08);
+        color: var(--mobile-accent);
+        padding: 0.25rem 0.9rem;
+        font-size: 0.75rem;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+      }
+
+      .btn-mobile-primary:hover {
+        background: rgba(245, 166, 35, 0.16);
+      }
+    </style>
+</head>
+<body data-theme="{{ session.get('theme', 'light') }}">
+  <div class="mobile-shell">
+    <header class="mobile-header">
+      <div>
+        <p class="mobile-title">Select Claim</p>
+        <div class="mobile-badge">Billable Entry</div>
+      </div>
+    </header>
+
+    <div class="mobile-search">
+      <input
+        id="mobile-claim-search"
+        type="text"
+        class="form-control form-control-sm"
+        placeholder="Search by name, claim number, carrier..."
+        autocomplete="off"
+      >
+    </div>
+
+    <section class="mobile-claims-list" id="mobile-claims-list">
+      {% if claims %}
+        {% for claim in claims %}
+          <a
+            href="{{ url_for('mobile.mobile_billable_new', claim_id=claim.id) }}"
+            class="mobile-claim-card claim-row"
+            data-search-text="
+              {{ (claim.claimant_name or '') | lower }}
+              {{ (claim.claim_number or '') | lower }}
+              {{ (claim.carrier.name if claim.carrier else '') | lower }}
+              {{ (claim.employer.name if claim.employer else '') | lower }}
+            "
+          >
+            <div class="mobile-claim-card-header">
+              <div>
+                <div class="mobile-claim-name">
+                  {{ claim.claimant_name or 'Unnamed Claimant' }}
+                </div>
+                {% if claim.claim_number %}
+                  <div class="mobile-claim-number">
+                    Claim #{{ claim.claim_number }}
+                  </div>
+                {% endif %}
+              </div>
+              <div class="mobile-claim-status">
+                {{ 'Closed' if claim.is_closed else 'Open' }}
+              </div>
+            </div>
+            <div class="mobile-claim-meta">
+              {% if claim.carrier %}
+                <div><strong>Carrier:</strong> {{ claim.carrier.name }}</div>
+              {% endif %}
+              {% if claim.employer %}
+                <div><strong>Employer:</strong> {{ claim.employer.name }}</div>
+              {% endif %}
+              {% if claim.referral_date %}
+                <div>
+                  <strong>Referral:</strong>
+                  {{ claim.referral_date|format_date }}
+                </div>
+              {% endif %}
+            </div>
+          </a>
+        {% endfor %}
+      {% else %}
+        <p class="mobile-empty">
+          No claims found. Create a claim from the desktop app, then use this screen to quickly select it on your phone.
+        </p>
+      {% endif %}
+    </section>
+
+    <footer class="mobile-footer-links">
+      <span>Impact CMS – Mobile Billables</span>
+      <a href="{{ url_for('main.claims_list') }}">Full site</a>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      const searchInput = document.getElementById('mobile-claim-search');
+      const rows = Array.from(document.querySelectorAll('.claim-row'));
+
+      if (!searchInput || !rows.length) {
+        return;
+      }
+
+      searchInput.addEventListener('input', function () {
+        const needle = this.value.trim().toLowerCase();
+
+        rows.forEach(row => {
+          const haystack = (row.getAttribute('data-search-text') || '').toLowerCase();
+          const match = !needle || haystack.includes(needle);
+          row.style.display = match ? '' : 'none';
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
