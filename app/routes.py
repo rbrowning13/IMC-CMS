@@ -49,6 +49,7 @@ from .models import (
     BillableItem,
     Invoice,
     Report,
+    ReportApprovedProvider,
     ReportDocument,
     ClaimDocument,
     Settings,
@@ -1804,9 +1805,9 @@ def claim_detail(claim_id):
         .order_by(
             BillableItem.date_of_service.desc().nullslast(),
             BillableItem.created_at.desc(),
+        )
+        .all()
     )
-    .all()
-)
 
     # Reports
     reports = (
@@ -2003,7 +2004,6 @@ def claim_detail(claim_id):
         error=error,
     )
 
-
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>")
 def report_detail(claim_id, report_id):
     """Read-only view / preview of a single report."""
@@ -2020,11 +2020,14 @@ def report_detail(claim_id, report_id):
         except (TypeError, ValueError):
             selected_barrier_ids = set()
 
+    settings = _ensure_settings()
+
     return render_template(
         "report_detail.html",
         active_page="claims",
         claim=claim,
         report=report,
+        settings=settings,
         barriers_by_category=barriers_by_category,
         selected_barrier_ids=selected_barrier_ids,
     )
@@ -2198,6 +2201,19 @@ def report_edit(claim_id, report_id):
 
     error = None
 
+    # Treating Provider(s) multi-select: current selections from join table (ordered)
+    approved_provider_ids = (
+        db.session.query(ReportApprovedProvider.provider_id)
+        .filter(ReportApprovedProvider.report_id == report.id)
+        .order_by(ReportApprovedProvider.sort_order.asc())
+        .all()
+    )
+    approved_provider_ids = [pid for (pid,) in approved_provider_ids]
+
+    # Back-compat: if none yet, fall back to legacy single treating provider
+    if not approved_provider_ids and getattr(report, "treating_provider_id", None):
+        approved_provider_ids = [report.treating_provider_id]
+
     if request.method == "POST":
         report_type_raw = (request.form.get("report_type") or "").strip().lower()
         # If the form doesn't send report_type (e.g., type is fixed on edit),
@@ -2296,7 +2312,39 @@ def report_edit(claim_id, report_id):
             report.case_management_plan = case_management_plan
             report.next_report_due = next_report_due
 
-            report.treating_provider_id = treating_provider_id
+            # --- Treating Provider(s): persist checkbox selections via join table ---
+            selected_ids = request.form.getlist("approved_provider_ids")
+
+            # Normalize to ints, preserve order, drop blanks/duplicates
+            cleaned_ids = []
+            for raw in selected_ids:
+                raw = (raw or "").strip()
+                if not raw:
+                    continue
+                try:
+                    pid = int(raw)
+                except ValueError:
+                    continue
+                if pid not in cleaned_ids:
+                    cleaned_ids.append(pid)
+
+            # Replace existing links
+            ReportApprovedProvider.query.filter_by(report_id=report.id).delete()
+            for idx, pid in enumerate(cleaned_ids):
+                db.session.add(
+                    ReportApprovedProvider(
+                        report_id=report.id,
+                        provider_id=pid,
+                        sort_order=idx,
+                    )
+                )
+
+            # Back-compat: keep legacy single provider pointing to the first selection
+            report.treating_provider_id = cleaned_ids[0] if cleaned_ids else None
+
+            # Keep template state consistent if validation errors occur
+            approved_provider_ids = cleaned_ids
+
             report.status_treatment_plan = status_treatment_plan
             report.employment_status = employment_status
 
@@ -2360,6 +2408,7 @@ def report_edit(claim_id, report_id):
         barriers_by_category=barriers_by_category,
         selected_barrier_ids=selected_barrier_ids,
         providers=providers,
+        approved_provider_ids=approved_provider_ids,
     )
 
 
@@ -2604,6 +2653,10 @@ def report_print(claim_id, report_id):
                 }
             )
 
+
+    # Back-compat: some templates/partials may still reference cm_items
+    cm_items = cm_activities
+
     return render_template(
         "report_print.html",
         active_page="claims",
@@ -2611,6 +2664,7 @@ def report_print(claim_id, report_id):
         claim=claim,
         report=report,
         cm_activities=cm_activities,
+        cm_items=cm_items,
     )
 
 
@@ -3417,6 +3471,7 @@ def settings_view():
         settings.postal_code = (request.form.get("postal_code") or "").strip() or None
         settings.phone = (request.form.get("phone") or "").strip() or None
         settings.email = (request.form.get("email") or "").strip() or None
+        settings.responsible_case_manager = (request.form.get("responsible_case_manager") or "").strip() or None
 
         # --- Rates ---
         try:
@@ -3499,6 +3554,28 @@ def settings_view():
             # Store relative path; used with url_for('static', filename=settings.logo_path)
             settings.logo_path = f"logos/{stored_name}"
         # IMPORTANT: do NOT clear settings.logo_path if no file is uploaded
+
+        # --- Signature file upload handling ---
+        signature_file = request.files.get("signature_file")
+        if signature_file and signature_file.filename:
+            if not _allowed_file(signature_file.filename):
+                flash("Signature file type not allowed.", "danger")
+                return redirect(url_for("main.settings_view"))
+
+            safe_name = secure_filename(signature_file.filename)
+            unique_prefix = uuid.uuid4().hex[:8]
+            stored_name = f"{unique_prefix}_{safe_name}"
+
+            static_root = Path(current_app.root_path) / "static"
+            sig_folder = static_root / "signatures"
+            sig_folder.mkdir(parents=True, exist_ok=True)
+
+            file_path = sig_folder / stored_name
+            signature_file.save(file_path)
+
+            # Store relative path; used with url_for('static', filename=settings.signature_path)
+            settings.signature_path = f"signatures/{stored_name}"
+        # IMPORTANT: do NOT clear settings.signature_path if no file is uploaded
 
         db.session.commit()
         flash("Settings saved.", "success")

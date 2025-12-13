@@ -1,294 +1,610 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container mt-4" style="max-width: 900px;">
+<style>
+  /* Clinically clean print layout */
+  :root {
+    --ink: #111827;
+    --muted: #6b7280;
+    --rule: #e5e7eb;
+    --accent: {{ settings.accent_color or '#f59e0b' }};
+  }
 
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="mb-0">Report Preview / Print Layout</h2>
-    <div class="d-flex gap-2">
-      <a href="{{ url_for('main.report_edit', claim_id=claim.id, report_id=report.id) }}"
-         class="btn btn-outline-primary btn-sm">
-        Back to Report
-      </a>
-      <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
-         class="btn btn-outline-primary btn-sm">
-        Back to Claim
-      </a>
-      <button type="button"
-              class="btn btn-outline-primary btn-sm"
-              onclick="window.print()">
-        Print
-      </button>
-      <a href="{{ url_for('main.report_print', claim_id=claim.id, report_id=report.id, download=1) }}"
-         class="btn btn-outline-primary btn-sm"
-         
-         rel="noopener">
-        Download PDF
-      </a>
-    </div>
+  .rp-wrap { max-width: 980px; margin: 0 auto; }
+  .rp-card {
+    background: #fff;
+    color: var(--ink) !important; /* force dark text inside the print card */
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    color-scheme: light; /* prevent dark-mode UA theming inside the print card */
+  }
+
+  /*
+    VS the dark theme CSS: we need to out-muscle global/bootstrap/table rules.
+    Default everything inside the card to ink, then selectively re-apply muted.
+  */
+  .rp-card, .rp-card * {
+    color: var(--ink) !important;
+  }
+
+  /* Muted text inside the print card */
+  .rp-card .rp-bizmeta,
+  .rp-card .rp-title .rp-sub,
+  .rp-card .rp-na,
+  .rp-card .rp-table th,
+  .rp-card .rp-footer,
+  .rp-card .rp-siglabel,
+  .rp-card .rp-sigtitle {
+    color: var(--muted) !important;
+  }
+
+  .rp-pad { padding: 28px; }
+
+  .rp-topbar { display: flex; justify-content: space-between; align-items: center; margin: 18px auto 10px auto; max-width: 980px; }
+  .rp-topbar h2 { margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--ink); }
+  .rp-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+  .rp-letterhead { display: grid; grid-template-columns: 260px 1fr; gap: 18px; align-items: start; }
+  .rp-logo { display: flex; flex-direction: column; align-items: flex-start; }
+  .rp-logo img { max-height: 72px; width: auto; display: block; margin: 0 0 10px 0; }
+  .rp-biz { font-weight: 700; color: var(--ink); line-height: 1.15; }
+  .rp-bizmeta { color: var(--muted); font-size: 0.92rem; line-height: 1.35; margin-top: 6px; }
+
+  .rp-title { text-align: right; }
+  .rp-title h1 { margin: 0; font-size: 1.45rem; font-weight: 700; color: var(--ink); }
+  .rp-title .rp-sub { color: var(--muted); margin-top: 6px; font-size: 0.95rem; }
+
+  .rp-rule {
+    border-top: 5px solid var(--accent, #f59e0b);
+    margin: 20px 0 20px 0;
+  }
+
+  .rp-claimbox {
+    background: #f3f4f6;
+    border: 5px solid #d1d5db;
+    border-radius: 10px;
+    padding: 16px 18px 18px 18px;
+    margin-bottom: 20px;
+  }
+
+  .rp-providerbox {
+    background: #f3f4f6;
+    border: 5px solid #d1d5db;
+    border-radius: 10px;
+    padding: 14px 18px 16px 18px;
+    margin-bottom: 20px;
+  }
+
+  .rp-providerbox .rp-provider-title {
+    margin: 0 0 10px 0;
+    font-size: 0.9rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--ink);
+  }
+
+  .rp-providergrid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px 16px;
+  }
+
+  .rp-provider {
+    background: #fff;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 10px 10px;
+    font-size: 0.86rem;
+    line-height: 1.25;
+  }
+
+  .rp-provider .rp-pname {
+    font-weight: 800;
+    margin: 0 0 4px 0;
+  }
+
+  .rp-provider .rp-pline {
+    margin: 0;
+    color: var(--ink);
+  }
+
+  @media (max-width: 820px) {
+    .rp-providergrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  @media print {
+    .rp-providergrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+
+  .rp-patient { margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--ink); }
+
+  .rp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 10px; }
+  .rp-dl { margin: 0; }
+  .rp-dl dt {
+    font-weight: 700;
+    color: var(--ink);
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin-top: 10px;
+  }
+  .rp-dl dd { margin: 2px 0 0 0; color: var(--ink); font-size: 0.98rem; }
+
+  .rp-section { margin-top: 22px; }
+  .rp-section h3 { margin: 0 0 8px 0; font-size: 1.05rem; font-weight: 700; color: var(--ink); }
+  .rp-body { color: var(--ink); line-height: 1.5; font-size: 0.98rem; }
+  .rp-na { color: var(--muted); }
+
+  .rp-list { margin: 0; padding-left: 1.1rem; }
+  .rp-list li { margin: 0.15rem 0; }
+
+  .rp-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    background: #fff;
+  }
+
+  /* Headers (muted) */
+  .rp-table thead th,
+  .rp-table thead th * {
+    text-align: left;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--muted) !important;
+    padding: 8px 8px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  /* Body cells (FORCE ink text; out-muscle any dark-theme/bootstrap table rules) */
+  .rp-card table.rp-table tbody tr,
+  .rp-card table.rp-table tbody tr * {
+    background: #fff !important;
+    filter: none !important;
+    opacity: 1 !important;
+  }
+
+  .rp-card table.rp-table tbody tr td,
+  .rp-card table.rp-table tbody tr td * {
+    vertical-align: top;
+    padding: 9px 8px;
+    border-bottom: 1px solid var(--rule);
+    font-size: 0.95rem;
+    color: var(--ink) !important;
+    -webkit-text-fill-color: var(--ink) !important; /* Safari/Chrome sometimes ignore color under dark theme */
+    opacity: 1 !important;
+    text-shadow: none !important;
+  }
+
+  /* If the theme applies zebra/hover backgrounds, kill them for print card */
+  .rp-card table.rp-table tbody tr:nth-child(odd),
+  .rp-card table.rp-table tbody tr:nth-child(even),
+  .rp-card table.rp-table tbody tr:hover {
+    background: #fff !important;
+  }
+
+  .rp-footer { margin-top: 18px; color: var(--muted); font-size: 0.85rem; line-height: 1.35; }
+
+  .rp-signature {
+    margin-top: 24px;
+  }
+  .rp-signature .rp-siglabel {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+  .rp-signature .rp-sigimg {
+    max-height: 90px;
+    width: auto;
+    display: block;
+    margin: 0 0 6px 0;
+  }
+  .rp-signature .rp-signame {
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0;
+  }
+  .rp-signature .rp-sigtitle {
+    color: var(--muted);
+    margin: 2px 0 0 0;
+    font-size: 0.92rem;
+  }
+  .rp-signature .rp-sigline {
+    border-top: 1px solid var(--rule);
+    margin-top: 8px;
+    max-width: 360px;
+  }
+
+  .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+
+  @media print {
+    .no-print { display: none !important; }
+    .container { max-width: 100% !important; }
+    a[href]:after { content: "" !important; }
+    .rp-card { border: 0; }
+    .rp-wrap { max-width: 100%; }
+  }
+</style>
+
+<div class="rp-topbar no-print">
+  <h2>Report Preview / Print</h2>
+  <div class="rp-actions">
+    <a href="{{ url_for('main.report_edit', claim_id=claim.id, report_id=report.id) }}" class="btn btn-outline-primary btn-sm">Back to Report</a>
+    <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-primary btn-sm">Back to Claim</a>
+    <button type="button" class="btn btn-outline-primary btn-sm" onclick="window.print()">Print</button>
+    <a href="{{ url_for('main.report_print', claim_id=claim.id, report_id=report.id, download=1) }}" class="btn btn-outline-primary btn-sm" rel="noopener">Download PDF</a>
   </div>
+</div>
 
-  <div class="card p-4">
+<div class="rp-wrap">
+  <div class="rp-card rp-pad">
 
-    {# Accent color helper #}
-    {% set accent = settings.accent_color or '#0d6efd' %}
-
-    {# Letterhead-style header with logo + business info #}
-    <div class="d-flex align-items-center justify-content-between mb-3" style="width: 100%;">
-      <div class="me-3 text-center" style="flex: 0 0 auto;">
-        {% if settings.logo_path %}
+    <div class="rp-letterhead">
+      <div class="rp-logo">
+        {% if settings and settings.logo_path %}
           <img
             src="{{ url_for('static', filename=settings.logo_path) }}"
-            alt="{{ settings.business_name or 'Logo' }}"
-            style="max-height: 80px; width: auto; display: block; margin: 0 auto;"
+            alt="{{ settings.business_name or 'Business Logo' }}"
           >
         {% endif %}
-      </div>
 
-      <div style="flex: 1 1 auto; text-align: center;">
-        <h3 class="mb-0">{{ report.report_type|capitalize }} Report</h3>
-      </div>
-
-      <div style="flex: 0 0 80px;"></div>  {# Spacer to mimic logo width on right side #}
-    </div>
-
-    <hr style="border-top: 3px solid {{ accent }};">
-
-    {# Claim / report header #}
-    <h4 class="mb-2">{{ claim.claimant_name }}</h4>
-
-    <div class="row mb-3">
-      <div class="col-sm-6">
-        <p class="mb-1">
-          <strong>Claim #:</strong> {{ claim.claim_number }}<br>
-          <strong>Date of Birth:</strong> {{ claim.dob|format_date('%m/%d/%Y') }}<br>
-          <strong>Date of Injury:</strong> {{ claim.date_of_injury|format_date('%m/%d/%Y') }}<br>
-          <strong>Referral Date:</strong> {{ report.referral_date|format_date('%m/%d/%Y') }}<br>
-          <strong>Claim State:</strong> {{ claim.claim_state or '—' }}<br>
-          {% if claim.carrier %}
-            <strong>Carrier:</strong> {{ claim.carrier.name }}<br>
-          {% endif %}
-          {% if claim.employer %}
-            <strong>Employer:</strong> {{ claim.employer.name }}<br>
-          {% endif %}
-          <strong>DOS:</strong> {{ report.dos_start|format_date('%m/%d/%Y') }} – {{ report.dos_end|format_date('%m/%d/%Y') }}
-        </p>
-      </div>
-      <div class="col-sm-6">
-        <p class="mb-1">
-          {% if report.treating_provider %}
-            <strong>Treating Provider:</strong> {{ report.treating_provider.name }}<br>
-          {% endif %}
-          {% if claim.primary_care_provider %}
-            <strong>Primary Care Provider:</strong> {{ claim.primary_care_provider }}<br>
-          {% endif %}
-          {% if settings.responsible_case_manager %}
-            <strong>Case Manager:</strong> {{ settings.responsible_case_manager }}<br>
-          {% endif %}
-          {% if report.initial_next_appt_datetime %}
-            <strong>Next Appointment:</strong>
-            {{ report.initial_next_appt_datetime|format_datetime('%m/%d/%Y %H:%M') }}
-            {% if report.initial_next_appt_provider_name %}
-              &nbsp;with {{ report.initial_next_appt_provider_name }}
-            {% endif %}
+        <div class="rp-biz">{{ settings.business_name or 'Impact Medical Consulting' }}</div>
+        <div class="rp-bizmeta">
+          {% if settings.address1 %}{{ settings.address1 }}{% endif %}
+          {% if settings.address2 %}<br>{{ settings.address2 }}{% endif %}
+          {% if settings.city or settings.state or settings.postal_code %}
             <br>
+            {{ settings.city or '' }}{% if settings.city and (settings.state or settings.postal_code) %}, {% endif %}{{ settings.state or '' }} {{ settings.postal_code or '' }}
           {% endif %}
-        </p>
+          {% if settings.phone %}<br>{{ settings.phone }}{% endif %}
+          {% if settings.email %}<br>{{ settings.email }}{% endif %}
+        </div>
+      </div>
+
+      <div class="rp-title">
+        <h1>{{ report.report_type|capitalize }} Report</h1>
+        <div class="rp-sub">
+          Date of Service: {{ report.dos_start|format_date('%m/%d/%Y') }} – {{ report.dos_end|format_date('%m/%d/%Y') }}
+        </div>
+        {% if report.next_report_due %}
+          <div class="rp-sub">Next report due: {{ report.next_report_due|format_date('%m/%d/%Y') }}</div>
+        {% endif %}
       </div>
     </div>
 
-    <hr>
-    <div class="mt-4">
+    <div class="rp-rule"></div>
 
-    {# Status / Treatment Plan #}
-    <h5>Status / Treatment Plan</h5>
-    <p>
-      {% if report.status_treatment_plan %}
-        {{ report.status_treatment_plan|nl2br }}
-      {% else %}
-        <span class="text-muted">N/A</span>
-      {% endif %}
-    </p>
-    <hr>
+    <div class="rp-claimbox avoid-break">
+      <p class="rp-patient">{{ claim.claimant_name }}</p>
 
-    {# Work Status #}
-    <h5>Work Status</h5>
-    <p>
-      {% if report.work_status %}
-        {{ report.work_status|nl2br }}
-      {% else %}
-        <span class="text-muted">N/A</span>
-      {% endif %}
-    </p>
-    <hr>
+      <div class="rp-grid">
+        <dl class="rp-dl">
+          <dt>Claim #</dt>
+          <dd>{{ claim.claim_number or '—' }}</dd>
 
-    {# Employment Status #}
-    <h5>Employment Status</h5>
-    <p>
-      {% if report.employment_status %}
-        {{ report.employment_status }}
-      {% else %}
-        <span class="text-muted">N/A</span>
-      {% endif %}
-    </p>
-    <hr>
+          <dt>Date of Birth</dt>
+          <dd>{{ claim.dob|format_date('%m/%d/%Y') }}</dd>
 
-    {# Case Management Plan #}
-    <h5>Case Management Plan</h5>
-    <p>
-      {% if report.case_management_plan %}
-        {{ report.case_management_plan|nl2br }}
-      {% else %}
-        <span class="text-muted">N/A</span>
-      {% endif %}
-    </p>
-    <hr>
+          <dt>Date of Injury</dt>
+          <dd>{{ claim.doi|format_date('%m/%d/%Y') }}</dd>
 
-    {# Barriers #}
-    <h5>Barriers to Recovery</h5>
-    {% if barriers and barriers|length > 0 %}
-      <ul>
-        {% for b in barriers %}
-          <li>{{ b.label }}</li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="text-muted">N/A – No significant barriers identified.</p>
+          <dt>Claim State</dt>
+          <dd>{{ claim.claim_state or '—' }}</dd>
+
+          {% if claim.carrier %}
+            <dt>Carrier</dt>
+            <dd>{{ claim.carrier.name }}</dd>
+          {% endif %}
+
+          {% if claim.employer %}
+            <dt>Employer</dt>
+            <dd>{{ claim.employer.name }}</dd>
+          {% endif %}
+        </dl>
+
+        <dl class="rp-dl">
+          {% if report.referral_date %}
+            <dt>Referral Date</dt>
+            <dd>{{ report.referral_date|format_date('%m/%d/%Y') }}</dd>
+          {% endif %}
+
+          {% if report.approved_treating_providers is defined and report.approved_treating_providers and report.approved_treating_providers|length > 0 %}
+            <dt>Approved Treating Provider(s)</dt>
+            <dd>
+              {% for p in report.approved_treating_providers %}
+                {{ p.name }}{% if not loop.last %}<br>{% endif %}
+              {% endfor %}
+            </dd>
+          {% elif report.treating_provider %}
+            <dt>Approved Treating Provider(s)</dt>
+            <dd>{{ report.treating_provider.name }}</dd>
+          {% endif %}
+
+          {% if report.initial_next_appt_datetime %}
+            <dt>Next Appointment</dt>
+            <dd>
+              {{ report.initial_next_appt_datetime|format_datetime('%m/%d/%Y %H:%M') }}
+              {% if report.initial_next_appt_provider_name %}
+                &nbsp;with {{ report.initial_next_appt_provider_name }}
+              {% endif %}
+            </dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+
+    {% set _providers = [] %}
+    {% if report.approved_treating_providers is defined and report.approved_treating_providers and report.approved_treating_providers|length > 0 %}
+      {% set _providers = report.approved_treating_providers %}
+    {% elif report.treating_provider %}
+      {% set _providers = [report.treating_provider] %}
     {% endif %}
-    <hr>
+
+    {% if _providers and _providers|length > 0 %}
+      <div class="rp-providerbox avoid-break">
+        <div class="rp-provider-title">Treating Provider(s)</div>
+
+        <div class="rp-providergrid">
+          {% for p in _providers %}
+            <div class="rp-provider">
+              <p class="rp-pname">{{ p.name or '—' }}</p>
+
+              {% if p.address1 or p.address2 or p.city or p.state or p.postal_code %}
+                <p class="rp-pline">
+                  {% if p.address1 %}{{ p.address1 }}{% endif %}
+                  {% if p.address2 %}<br>{{ p.address2 }}{% endif %}
+                  {% if p.city or p.state or p.postal_code %}
+                    <br>
+                    {{ p.city or '' }}{% if p.city and (p.state or p.postal_code) %}, {% endif %}{{ p.state or '' }} {{ p.postal_code or '' }}
+                  {% endif %}
+                </p>
+              {% endif %}
+
+              {% if p.phone %}
+                <p class="rp-pline">{{ p.phone }}</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="rp-section avoid-break">
+      <h3>Status / Treatment Plan</h3>
+      <div class="rp-body">
+        {% if report.status_treatment_plan %}
+          {{ report.status_treatment_plan|nl2br }}
+        {% else %}
+          <span class="rp-na">N/A</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="rp-section avoid-break">
+      <h3>Work Status</h3>
+      <div class="rp-body">
+        {% if report.work_status %}
+          {{ report.work_status|nl2br }}
+        {% else %}
+          <span class="rp-na">N/A</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if report.employment_status is defined %}
+      <div class="rp-section avoid-break">
+        <h3>Employment Status</h3>
+        <div class="rp-body">
+          {% if report.employment_status %}
+            {{ report.employment_status }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="rp-section avoid-break">
+      <h3>Case Management Plan</h3>
+      <div class="rp-body">
+        {% if report.case_management_plan %}
+          {{ report.case_management_plan|nl2br }}
+        {% else %}
+          <span class="rp-na">N/A</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="rp-section avoid-break">
+      <h3>Barriers to Recovery</h3>
+      <div class="rp-body">
+        {% if barriers and barriers|length > 0 %}
+          <ul class="rp-list">
+            {% for b in barriers %}
+              <li>{{ b.label }}</li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <span class="rp-na">N/A – No significant barriers identified.</span>
+        {% endif %}
+      </div>
+    </div>
 
     {# INITIAL-specific fields #}
     {% if report.report_type == 'initial' %}
-      <h5>Diagnosis</h5>
-      <p>
-        {% if report.initial_diagnosis %}
-          {{ report.initial_diagnosis|nl2br }}
-        {% else %}
-          <span class="text-muted">N/A</span>
-        {% endif %}
-      </p>
-      <hr>
+      <div class="rp-section avoid-break">
+        <h3>Diagnosis</h3>
+        <div class="rp-body">
+          {% if report.initial_diagnosis %}
+            {{ report.initial_diagnosis|nl2br }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
+      </div>
 
-      <h5>Mechanism of Injury</h5>
-      <p>
-        {% if report.initial_mechanism_of_injury %}
-          {{ report.initial_mechanism_of_injury|nl2br }}
-        {% else %}
-          <span class="text-muted">N/A</span>
-        {% endif %}
-      </p>
-      <hr>
+      <div class="rp-section avoid-break">
+        <h3>Mechanism of Injury</h3>
+        <div class="rp-body">
+          {% if report.initial_mechanism_of_injury %}
+            {{ report.initial_mechanism_of_injury|nl2br }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
+      </div>
 
-      <h5>Co‑existing Conditions</h5>
-      <p>
-        {% if report.initial_coexisting_conditions %}
-          {{ report.initial_coexisting_conditions|nl2br }}
-        {% else %}
-          <span class="text-muted">N/A</span>
-        {% endif %}
-      </p>
-      <hr>
+      <div class="rp-section avoid-break">
+        <h3>Concurrent Conditions</h3>
+        <div class="rp-body">
+          {% if report.initial_coexisting_conditions %}
+            {{ report.initial_coexisting_conditions|nl2br }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
+      </div>
 
-      <h5>Surgical History</h5>
-      <p>
-        {% if report.initial_surgical_history %}
-          {{ report.initial_surgical_history|nl2br }}
-        {% else %}
-          <span class="text-muted">N/A</span>
-        {% endif %}
-      </p>
-      <hr>
+      <div class="rp-section avoid-break">
+        <h3>Surgical History</h3>
+        <div class="rp-body">
+          {% if report.initial_surgical_history %}
+            {{ report.initial_surgical_history|nl2br }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
+      </div>
 
-      <h5>Medications</h5>
-      <p>
-        {% if report.initial_medications %}
-          {{ report.initial_medications|nl2br }}
-        {% else %}
-          <span class="text-muted">N/A</span>
-        {% endif %}
-      </p>
-      <hr>
+      <div class="rp-section avoid-break">
+        <h3>Medications</h3>
+        <div class="rp-body">
+          {% if report.initial_medications %}
+            {{ report.initial_medications|nl2br }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
+      </div>
 
-      <h5>Diagnostics</h5>
-      <p>
-        {% if report.initial_diagnostics %}
-          {{ report.initial_diagnostics|nl2br }}
-        {% else %}
-          <span class="text-muted">N/A</span>
-        {% endif %}
-      </p>
-      <hr>
+      <div class="rp-section avoid-break">
+        <h3>Diagnostics</h3>
+        <div class="rp-body">
+          {% if report.initial_diagnostics %}
+            {{ report.initial_diagnostics|nl2br }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
+      </div>
     {% endif %}
 
     {# CLOSURE-specific fields #}
     {% if report.report_type == 'closure' %}
-      <h5>Closure Reason</h5>
-      <p>
-        {% if report.closure_reason %}
-          {{ report.closure_reason }}
-        {% else %}
-          <span class="text-muted">N/A</span>
-        {% endif %}
-      </p>
-      <hr>
+      <div class="rp-section avoid-break">
+        <h3>Closure Reason</h3>
+        <div class="rp-body">
+          {% if report.closure_reason %}
+            {{ report.closure_reason }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
+      </div>
 
-      <h5>Closure Details</h5>
-      <p>
-        {% if report.closure_details %}
-          {{ report.closure_details|nl2br }}
-        {% else %}
-          <span class="text-muted">N/A</span>
-        {% endif %}
-      </p>
-      <hr>
+      <div class="rp-section avoid-break">
+        <h3>Closure Details</h3>
+        <div class="rp-body">
+          {% if report.closure_details %}
+            {{ report.closure_details|nl2br }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
+      </div>
 
-      <h5>Case Management Impact</h5>
-      <p>
-        {% if report.closure_case_management_impact %}
-          {{ report.closure_case_management_impact|nl2br }}
-        {% else %}
-          <span class="text-muted">N/A</span>
-        {% endif %}
-      </p>
-      <hr>
+      <div class="rp-section avoid-break">
+        <h3>Case Management Impact</h3>
+        <div class="rp-body">
+          {% if report.closure_case_management_impact %}
+            {{ report.closure_case_management_impact|nl2br }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
+      </div>
     {% endif %}
 
-    </div>
-    <hr>
-    <div style="page-break-before: always;"></div>
-    <h5>Case Manager Activities</h5>
     {% if cm_activities and cm_activities|length > 0 %}
-      <table class="table table-sm table-bordered">
-        <thead>
-          <tr>
-            <th style="width: 110px;">Date</th>
-            <th style="width: 90px;">Code</th>
-            <th>Description</th>
-            <th>Notes</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for item in cm_activities %}
+      <div class="rp-rule" style="margin-top: 26px;"></div>
+
+      <div class="rp-section avoid-break">
+        <h3>Case Manager Activities</h3>
+        <table class="rp-table">
+          <thead>
             <tr>
-              <td>{{ item.date_of_service|format_date('%m/%d/%Y') }}</td>
-              <td>{{ item.activity_code }}</td>
-              <td>{{ item.description }}</td>
-              <td>
-                {% if item.notes %}
-                  {{ item.notes|nl2br }}
-                {% else %}
-                  <span class="text-muted">—</span>
-                {% endif %}
-              </td>
+              <th style="width: 105px;">Date</th>
+              <th style="width: 80px;">Code</th>
+              <th style="width: 220px;">Description</th>
+              <th>Notes</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="text-muted">N/A – No case management activities recorded for this period.</p>
+          </thead>
+          <tbody>
+            {% for item in cm_activities %}
+              <tr class="avoid-break">
+                <td>{{ item.date_of_service|format_date('%m/%d/%Y') }}</td>
+                <td>{{ item.activity_code }}</td>
+                <td>{{ item.description or '—' }}</td>
+                <td>
+                  {% if item.notes %}
+                    {{ item.notes|nl2br }}
+                  {% else %}
+                    <span class="rp-na">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% endif %}
-    <p class="text-muted mt-4">Generated on {{ report.updated_at|format_datetime('%m/%d/%Y %H:%M') }}</p>
+
+    {% if settings and (settings.signature_path or settings.responsible_case_manager) %}
+      <div class="rp-signature avoid-break">
+        <div class="rp-siglabel">Signature</div>
+
+        {% if settings.signature_path %}
+          <img
+            class="rp-sigimg"
+            src="{{ url_for('static', filename=settings.signature_path) }}"
+            alt="Signature"
+          >
+        {% endif %}
+
+        {% if settings.responsible_case_manager %}
+          <p class="rp-signame">{{ settings.responsible_case_manager }}</p>
+          <p class="rp-sigtitle">Case Manager</p>
+          <div class="rp-sigline"></div>
+        {% else %}
+          <div class="rp-sigline"></div>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {% if settings and settings.report_footer_text %}
+      <div class="rp-footer">
+        {{ settings.report_footer_text|nl2br }}
+      </div>
+    {% endif %}
+
+    <div class="rp-footer" style="margin-top: 10px;">
+      Generated {{ report.updated_at|format_datetime('%m/%d/%Y %H:%M') }}
+    </div>
 
   </div>
-
 </div>
 {% endblock %}

@@ -64,18 +64,40 @@
               <input type="hidden" name="report_type" value="{{ report.report_type }}">
             </div>
 
-            <!-- Provider selector -->
+            <!-- Treating Provider(s) selector (checkbox list) -->
             <div class="col-md-8">
-              <label class="form-label form-label-sm mb-0">Treating Provider</label>
-              <select name="treating_provider_id" class="form-select form-select-sm">
-                <option value="">— Select provider —</option>
+              <label class="form-label form-label-sm mb-1">Treating Provider(s)</label>
+              <input
+                type="text"
+                id="provider_search"
+                class="form-control form-control-sm mb-2"
+                placeholder="Search providers…"
+                autocomplete="off"
+              >
+
+              {# Prefer ids passed in from the route; fallback to existing single treating_provider_id #}
+              {% set _sel_ids = approved_provider_ids if approved_provider_ids is defined else [] %}
+              {% if (not _sel_ids) and report.treating_provider_id %}
+                {% set _sel_ids = [report.treating_provider_id] %}
+              {% endif %}
+
+              <div id="provider_list" class="border rounded p-2" style="max-height: 180px; overflow-y: auto;">
                 {% for provider in providers %}
-                  <option value="{{ provider.id }}"
-                          {% if report.treating_provider_id == provider.id %}selected{% endif %}>
-                    {{ provider.name }}
-                  </option>
+                  <div class="form-check mb-1">
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      name="approved_provider_ids"
+                      id="provider_{{ provider.id }}"
+                      value="{{ provider.id }}"
+                      {% if provider.id in _sel_ids %}checked{% endif %}
+                    >
+                    <label class="form-check-label" for="provider_{{ provider.id }}">
+                      {{ provider.name }}
+                    </label>
+                  </div>
                 {% endfor %}
-              </select>
+              </div>
             </div>
 
             {% if report.report_type == 'initial' %}
@@ -545,6 +567,44 @@
       updateIcsButtonState();
       dtInput.addEventListener("input", updateIcsButtonState);
       dtInput.addEventListener("change", updateIcsButtonState);
+    }
+</script>
+<script>
+  (function () {
+    // Treating Provider(s) search filter (find-as-you-type)
+    const providerSearch = document.getElementById("provider_search");
+    const providerList = document.getElementById("provider_list");
+
+    function normalize(str) {
+      return (str || "").toString().toLowerCase().trim();
+    }
+
+    function filterProviders() {
+      if (!providerSearch || !providerList) return;
+      const q = normalize(providerSearch.value);
+      const rows = providerList.querySelectorAll(".form-check");
+
+      rows.forEach(function (row) {
+        const label = row.querySelector("label");
+        const text = normalize(label ? label.textContent : "");
+        row.style.display = q === "" || text.includes(q) ? "" : "none";
+      });
+    }
+
+    if (providerSearch) {
+      providerSearch.addEventListener("input", filterProviders);
+
+      // Esc clears search
+      providerSearch.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+          providerSearch.value = "";
+          filterProviders();
+          providerSearch.blur();
+        }
+      });
+
+      // Run once on load
+      filterProviders();
     }
   })();
 </script>

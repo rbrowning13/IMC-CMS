@@ -283,6 +283,28 @@ class BarrierOption(db.Model):
 
 
 # ============================================================
+#  REPORT ↔ PROVIDER (Approved Treating Provider(s))
+# ============================================================
+
+class ReportApprovedProvider(db.Model):
+    """Association row linking a Report to one approved treating Provider."""
+    __tablename__ = "report_approved_provider"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    report_id = db.Column(db.Integer, db.ForeignKey("report.id"), nullable=False)
+    provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"), nullable=False)
+
+    # Optional ordering for display/print (lower = earlier)
+    sort_order = db.Column(db.Integer, default=0)
+
+    report = db.relationship("Report", back_populates="approved_provider_links")
+    provider = db.relationship("Provider")
+
+    def __repr__(self):
+        return f"<ReportApprovedProvider report={self.report_id} provider={self.provider_id}>"
+
+# ============================================================
 #  REPORT MODEL
 # ============================================================
 
@@ -311,6 +333,19 @@ class Report(db.Model):
     # Treating provider per report
     treating_provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"))
     treating_provider = db.relationship("Provider", back_populates="reports")
+
+    # Approved Treating Provider(s) (supports multiple providers per report)
+    approved_provider_links = db.relationship(
+        "ReportApprovedProvider",
+        back_populates="report",
+        cascade="all, delete-orphan",
+        order_by="ReportApprovedProvider.sort_order",
+    )
+
+    @property
+    def approved_treating_providers(self):
+        """Convenience list of Provider objects in display order."""
+        return [link.provider for link in (self.approved_provider_links or [])]
 
     # Shared long-text fields (roll-forward candidates)
     status_treatment_plan = db.Column(db.Text)
@@ -479,6 +514,7 @@ class Settings(db.Model):
 
     # Branding / appearance
     logo_path = db.Column(db.String(255))  # relative to static/, e.g. "logos/abcd_logo.png"
+    signature_path = db.Column(db.String(255))  # relative to static/, e.g. "signatures/abcd_sig.png"
     accent_color = db.Column(db.String(20))
     report_footer_text = db.Column(db.Text)
     invoice_footer_text = db.Column(db.Text)

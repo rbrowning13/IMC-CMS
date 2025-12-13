@@ -125,6 +125,24 @@ def create_app():
     app.jinja_env.filters["format_datetime"] = format_datetime
     app.jinja_env.filters["nl2br"] = nl2br
 
+    def _format_phone(value):
+        """Format US phone numbers as (###) ###-#### when possible; otherwise return original."""
+        if value is None:
+            return ""
+        s = str(value).strip()
+        if not s:
+            return ""
+        digits = "".join(ch for ch in s if ch.isdigit())
+        # Handle leading country code '1'
+        if len(digits) == 11 and digits.startswith("1"):
+            digits = digits[1:]
+        if len(digits) == 10:
+            return f"({digits[0:3]}) {digits[3:6]}-{digits[6:10]}"
+        return s
+
+    app.jinja_env.filters["format_phone"] = _format_phone
+    app.jinja_env.filters["format_fax"] = _format_phone
+
     # Basic configuration
     app.config["SECRET_KEY"] = app.config.get("SECRET_KEY") or "dev-secret-key-change-me"
 
