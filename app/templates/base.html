@@ -104,6 +104,10 @@
                  href="{{ url_for('main.providers_list') }}">Providers</a>
             </li>
             <li class="nav-item">
+              <a class="nav-link {% if active_page == 'forms' %}active{% endif %}"
+                 href="{{ url_for('main.forms_index') }}">Forms</a>
+            </li>
+            <li class="nav-item">
               <a class="nav-link {% if active_page == 'reporting' %}active{% endif %}"
                  href="{{ url_for('main.reporting_dashboard') }}">Reporting</a>
             </li>

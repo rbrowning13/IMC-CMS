@@ -13,7 +13,7 @@
   .rp-card {
     background: #fff;
     color: var(--ink) !important; /* force dark text inside the print card */
-    border: 1px solid var(--rule);
+    border: 2px solid var(--rule);
     border-radius: 10px;
     color-scheme: light; /* prevent dark-mode UA theming inside the print card */
   }
@@ -91,7 +91,7 @@
 
   .rp-provider {
     background: #fff;
-    border: 1px solid var(--rule);
+    border: 2px solid var(--rule);
     border-radius: 8px;
     padding: 10px 10px;
     font-size: 0.86rem;
@@ -214,9 +214,37 @@
     font-size: 0.92rem;
   }
   .rp-signature .rp-sigline {
-    border-top: 1px solid var(--rule);
+    border-top: 2px solid var(--rule);
     margin-top: 8px;
     max-width: 360px;
+  }
+
+  /* Face sheet page break (cover page before the report) */
+  .rp-pagebreak {
+    height: 1px;
+    background: transparent;
+    margin: 0;
+  }
+
+  @media print {
+    .rp-pagebreak {
+      page-break-after: always;
+      break-after: page;
+      height: 0;
+    }
+  }
+
+  .rp-facesheet-title {
+    margin: 0;
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: var(--ink);
+  }
+
+  .rp-facesheet-sub {
+    margin-top: 6px;
+    font-size: 0.95rem;
+    color: var(--muted) !important;
   }
 
   .avoid-break { break-inside: avoid; page-break-inside: avoid; }
@@ -241,6 +269,166 @@
 </div>
 
 <div class="rp-wrap">
+
+  <!-- Face Sheet (Cover Page) -->
+  <div class="rp-card rp-pad">
+
+    <div class="rp-letterhead">
+      <div class="rp-logo">
+        {% if settings and settings.logo_path %}
+          <img
+            src="{{ url_for('static', filename=settings.logo_path) }}"
+            alt="{{ settings.business_name or 'Business Logo' }}"
+          >
+        {% endif %}
+
+        <div class="rp-biz">{{ settings.business_name or 'Impact Medical Consulting' }}</div>
+        <div class="rp-bizmeta">
+          {% if settings.address1 %}{{ settings.address1 }}{% endif %}
+          {% if settings.address2 %}<br>{{ settings.address2 }}{% endif %}
+          {% if settings.city or settings.state or settings.postal_code %}
+            <br>
+            {{ settings.city or '' }}{% if settings.city and (settings.state or settings.postal_code) %}, {% endif %}{{ settings.state or '' }} {{ settings.postal_code or '' }}
+          {% endif %}
+          {% if settings.phone %}<br>{{ settings.phone }}{% endif %}
+          {% if settings.email %}<br>{{ settings.email }}{% endif %}
+        </div>
+      </div>
+
+      <div class="rp-title">
+        <h1 class="rp-facesheet-title">Face Sheet</h1>
+        <div class="rp-facesheet-sub">Prepared {{ report.updated_at|format_datetime('%m/%d/%Y %H:%M') }}</div>
+      </div>
+    </div>
+
+    <div class="rp-rule"></div>
+
+    <div class="rp-claimbox avoid-break">
+      <p class="rp-patient">{{ claim.claimant_name }}</p>
+
+      <div class="rp-grid">
+        <dl class="rp-dl">
+          <dt>Claim #</dt>
+          <dd>{{ claim.claim_number or '—' }}</dd>
+
+          <dt>Date of Birth</dt>
+          <dd>{{ claim.dob|format_date('%m/%d/%Y') }}</dd>
+
+          <dt>Date of Injury</dt>
+          <dd>{{ claim.doi|format_date('%m/%d/%Y') }}</dd>
+
+          <dt>Claim State</dt>
+          <dd>{{ claim.claim_state or '—' }}</dd>
+
+          {% if claim.carrier %}
+            <dt>Carrier</dt>
+            <dd>{{ claim.carrier.name }}</dd>
+          {% endif %}
+
+          {% if claim.employer %}
+            <dt>Employer</dt>
+            <dd>{{ claim.employer.name }}</dd>
+          {% endif %}
+        </dl>
+
+        <dl class="rp-dl">
+          <dt>Report Type</dt>
+          <dd>{{ report.report_type|capitalize }} Report</dd>
+
+          <dt>Date of Service</dt>
+          <dd>{{ report.dos_start|format_date('%m/%d/%Y') }} – {{ report.dos_end|format_date('%m/%d/%Y') }}</dd>
+
+          {% if report.next_report_due %}
+            <dt>Next report due</dt>
+            <dd>{{ report.next_report_due|format_date('%m/%d/%Y') }}</dd>
+          {% endif %}
+
+          {% if report.referral_date %}
+            <dt>Referral Date</dt>
+            <dd>{{ report.referral_date|format_date('%m/%d/%Y') }}</dd>
+          {% endif %}
+
+          {% if report.initial_next_appt_datetime %}
+            <dt>Next Appointment</dt>
+            <dd>
+              {{ report.initial_next_appt_datetime|format_datetime('%m/%d/%Y %H:%M') }}
+              {% if report.initial_next_appt_provider_name %}
+                &nbsp;with {{ report.initial_next_appt_provider_name }}
+              {% endif %}
+            </dd>
+          {% endif %}
+
+          {% if settings and settings.responsible_case_manager %}
+            <dt>Case Manager</dt>
+            <dd>{{ settings.responsible_case_manager }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+
+    {% set _providers = [] %}
+    {% if report.approved_treating_providers is defined and report.approved_treating_providers and report.approved_treating_providers|length > 0 %}
+      {% set _providers = report.approved_treating_providers %}
+    {% elif report.treating_provider %}
+      {% set _providers = [report.treating_provider] %}
+    {% endif %}
+
+    {% if _providers and _providers|length > 0 %}
+      <div class="rp-providerbox avoid-break">
+        <div class="rp-provider-title">Treating Provider(s)</div>
+
+        <div class="rp-providergrid">
+          {% for p in _providers %}
+            <div class="rp-provider">
+              <p class="rp-pname">{{ p.name or '—' }}</p>
+
+              {% if p.address1 or p.address2 or p.city or p.state or p.postal_code %}
+                <p class="rp-pline">
+                  {% if p.address1 %}{{ p.address1 }}{% endif %}
+                  {% if p.address2 %}<br>{{ p.address2 }}{% endif %}
+                  {% if p.city or p.state or p.postal_code %}
+                    <br>
+                    {{ p.city or '' }}{% if p.city and (p.state or p.postal_code) %}, {% endif %}{{ p.state or '' }} {{ p.postal_code or '' }}
+                  {% endif %}
+                </p>
+              {% endif %}
+
+              {% if p.phone %}
+                <p class="rp-pline">{{ p.phone }}</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if settings and (settings.signature_path or settings.responsible_case_manager) %}
+      <div class="rp-signature avoid-break">
+        <div class="rp-siglabel">Signature</div>
+
+        {% if settings.signature_path %}
+          <img
+            class="rp-sigimg"
+            src="{{ url_for('static', filename=settings.signature_path) }}"
+            alt="Signature"
+          >
+        {% endif %}
+
+        {% if settings.responsible_case_manager %}
+          <p class="rp-signame">{{ settings.responsible_case_manager }}</p>
+          <p class="rp-sigtitle">Case Manager</p>
+          <div class="rp-sigline"></div>
+        {% else %}
+          <div class="rp-sigline"></div>
+        {% endif %}
+      </div>
+    {% endif %}
+
+  </div>
+
+  <div class="rp-pagebreak"></div>
+
+  <!-- Existing report (Page 2+) -->
   <div class="rp-card rp-pad">
 
     <div class="rp-letterhead">

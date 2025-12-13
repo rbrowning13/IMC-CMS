@@ -497,7 +497,9 @@ class Settings(db.Model):
     state = db.Column(db.String(10))
     postal_code = db.Column(db.String(20))
     phone = db.Column(db.String(50))
+    fax = db.Column(db.String(50))
     email = db.Column(db.String(255))
+    ein = db.Column(db.String(50))
     responsible_case_manager = db.Column(db.String(255))
 
     # Billing rates

@@ -2,7 +2,7 @@
 {% block title %}Print Invoice {{ invoice.invoice_number or "Draft" }} - Impact CMS{% endblock %}
 
 {% block content %}
-<div class="container mt-3" id="invoice-print-root">
+<div class="container mt-3" id="invoice-print-root" style="--accent: {{ settings.accent_color or '#0d6efd' }};">
   <div class="d-print-none mb-3">
     <div class="d-flex justify-content-end gap-2">
       <a href="{{ url_for('main.invoice_detail', invoice_id=invoice.id) }}"
@@ -21,7 +21,6 @@
 
   <div class="card shadow-sm">
     <div class="card-body">
-      <div class="mb-3" style="height: 4px; background-color: {{ settings.accent_color or '#0d6efd' }};"></div>
       <div class="row pb-2 mb-2 align-items-center">
         <!-- Business info with optional logo -->
         <div class="col-md-6">
@@ -49,6 +48,9 @@
               {% if settings.email %}
                 Email: {{ settings.email }}<br>
               {% endif %}
+              {% if settings.ein %}
+                EIN: {{ settings.ein }}<br>
+              {% endif %}
             </p>
           </div>
         </div>
@@ -72,7 +74,7 @@
         </div>
       </div>
 
-      <hr>
+      <hr class="ip-hr">
 
       <!-- Bill to -->
       <div class="row mb-3">
@@ -118,8 +120,8 @@
 
       <!-- Line items table -->
       <div class="table-responsive">
-        <table class="table table-sm table-bordered align-middle mb-3">
-          <thead style="background-color: {{ settings.accent_color or '#0d6efd' }}; color: #ffffff;">
+        <table class="table table-sm table-bordered align-middle mb-3 ip-items">
+          <thead style="background-color: {{ settings.accent_color or '#0d6efd' }}; color: #ffffff; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
             <tr>
               <th style="width: 9rem;">Service Date</th>
               <th style="width: 6rem;">Code</th>
@@ -160,17 +162,13 @@
         </table>
       </div>
 
-      <!-- Totals -->
-      <div class="row">
+      <!-- Totals (keep together on one printed page) -->
+      <div class="row ip-bottom">
         <div class="col-md-6">
-          {% if settings.invoice_footer_text %}
-            <p class="small text-muted mb-0">
-              {{ settings.invoice_footer_text }}
-            </p>
-          {% endif %}
+          <!-- intentionally blank: footer text is shown beneath totals -->
         </div>
         <div class="col-md-6">
-          <table class="table table-sm mb-0">
+          <table class="table table-sm mb-0 ip-totals">
             <tbody class="small">
               <tr>
                 <th class="text-end">Billable hours</th>
@@ -201,11 +199,59 @@
         </div>
       </div>
 
+      {% if settings.invoice_footer_text %}
+        <hr class="ip-hr">
+        <div class="small text-muted" style="white-space: pre-wrap;">
+          {{ settings.invoice_footer_text }}
+        </div>
+      {% endif %}
+
     </div>
   </div>
 </div>
 
 <style>
+  /* Invoice print styling: match report/fax clean look */
+  #invoice-print-root .card {
+    border: 0;
+    background: transparent;
+  }
+
+  #invoice-print-root .card-body {
+    background: #ffffff;
+    border: 2px solid rgba(0,0,0,0.15);
+    border-radius: 12px;
+    padding: 22px 22px;
+
+    /* Kill any inherited/inset accent bar at the top */
+    box-shadow: none !important;
+    background-image: none !important;
+  }
+
+  /* Some themes implement the top accent as a pseudo-element; disable it */
+  #invoice-print-root .card-body::before,
+  #invoice-print-root .card-body::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  .ip-hr {
+    border: 0;
+    border-top: 2px solid rgba(0,0,0,0.12);
+    margin: 14px 0;
+  }
+
+  /* Make subtle boxes/lines a touch more visible */
+  #invoice-print-root .table-bordered > :not(caption) > * {
+    border-color: rgba(0,0,0,0.28);
+  }
+
+  .ip-items thead {
+    background-color: {{ settings.accent_color or '#0d6efd' }} !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
   @media print {
     body {
       background: #ffffff !important;
@@ -216,6 +262,26 @@
     }
     #invoice-print-root {
       margin-top: 0 !important;
+    }
+
+    /* Better page splitting: repeat table header and avoid orphan totals */
+    .ip-items thead {
+      display: table-header-group;
+    }
+    .ip-items tfoot {
+      display: table-footer-group;
+    }
+    .ip-items tr,
+    .ip-bottom,
+    .ip-totals {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    /* Remove shadows/extra rounding artifacts in print */
+    #invoice-print-root .card-body {
+      box-shadow: none !important;
+      background-image: none !important;
     }
   }
 </style>

@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from flask import (
     Blueprint,
     render_template,
+    render_template_string,
     request,
     redirect,
     url_for,
@@ -553,6 +554,225 @@ def _get_barrier_options_grouped():
         grouped[category].append(opt)
     return grouped
 
+# ---- Forms helpers and endpoints ----
+
+def _clean_text(v: str | None) -> str:
+    return (v or "").strip()
+
+
+def _best_contact_payload(
+    *,
+    kind: str,
+    display_name: str,
+    fax: str | None = None,
+    phone: str | None = None,
+    email: str | None = None,
+    address1: str | None = None,
+    address2: str | None = None,
+    city: str | None = None,
+    state: str | None = None,
+    postal_code: str | None = None,
+    source_id: int | None = None,
+) -> dict:
+    """Normalize different entity/contact types into one payload for typeahead."""
+    parts = []
+    if _clean_text(address1):
+        parts.append(_clean_text(address1))
+    if _clean_text(address2):
+        parts.append(_clean_text(address2))
+
+    city_state_zip = " ".join([p for p in [
+        _clean_text(city),
+        _clean_text(state),
+        _clean_text(postal_code),
+    ] if p])
+    if city_state_zip:
+        parts.append(city_state_zip)
+
+    return {
+        "kind": kind,
+        "id": source_id,
+        "label": _clean_text(display_name),
+        "fax": _clean_text(fax),
+        "phone": _clean_text(phone),
+        "email": _clean_text(email),
+        "address": "\n".join(parts),
+    }
+
+
+def _like(q: str) -> str:
+    # Safe-ish LIKE pattern for basic typeahead.
+    return f"%{q}%"
+
+
+@bp.route("/api/contact-search", methods=["GET"])
+def api_contact_search():
+    """Unified search for typeahead fields (forms, etc.).
+
+    Searches:
+      - Contact rows (carrier/employer/provider contacts)
+      - Carrier rows
+      - Employer rows
+      - Provider rows
+
+    Returns a JSON list of normalized payloads.
+    """
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"results": []})
+
+    # Keep it responsive
+    limit = 20
+
+    results: list[dict] = []
+
+    # --- Contacts ---
+    contacts = (
+        Contact.query
+        .filter(
+            (Contact.name.ilike(_like(q)))
+            | (Contact.role.ilike(_like(q)))
+            | (Contact.phone.ilike(_like(q)))
+            | (Contact.fax.ilike(_like(q)))
+            | (Contact.email.ilike(_like(q)))
+        )
+        .order_by(Contact.name.asc())
+        .limit(limit)
+        .all()
+    )
+
+    for c in contacts:
+        # Build a friendly “Contact — Parent” label if possible
+        parent = None
+        if getattr(c, "carrier", None):
+            parent = c.carrier.name
+        elif getattr(c, "employer", None):
+            parent = c.employer.name
+        elif getattr(c, "provider", None):
+            parent = c.provider.name
+
+        label = c.name or "Contact"
+        if parent:
+            label = f"{label} — {parent}"
+
+        results.append(
+            _best_contact_payload(
+                kind="contact",
+                display_name=label,
+                fax=getattr(c, "fax", None),
+                phone=getattr(c, "phone", None),
+                email=getattr(c, "email", None),
+                address1=getattr(c, "address1", None),
+                address2=getattr(c, "address2", None),
+                city=getattr(c, "city", None),
+                state=getattr(c, "state", None),
+                postal_code=getattr(c, "postal_code", None),
+                source_id=c.id,
+            )
+        )
+
+    # --- Carriers ---
+    carriers = (
+        Carrier.query
+        .filter(
+            (Carrier.name.ilike(_like(q)))
+            | (Carrier.phone.ilike(_like(q)))
+            | (Carrier.fax.ilike(_like(q)))
+            | (Carrier.email.ilike(_like(q)))
+        )
+        .order_by(Carrier.name.asc())
+        .limit(limit)
+        .all()
+    )
+    for c in carriers:
+        results.append(
+            _best_contact_payload(
+                kind="carrier",
+                display_name=c.name or "Carrier",
+                fax=getattr(c, "fax", None),
+                phone=getattr(c, "phone", None),
+                email=getattr(c, "email", None),
+                address1=getattr(c, "address1", None),
+                address2=getattr(c, "address2", None),
+                city=getattr(c, "city", None),
+                state=getattr(c, "state", None),
+                postal_code=getattr(c, "postal_code", None),
+                source_id=c.id,
+            )
+        )
+
+    # --- Employers ---
+    employers = (
+        Employer.query
+        .filter(
+            (Employer.name.ilike(_like(q)))
+            | (Employer.phone.ilike(_like(q)))
+            | (Employer.fax.ilike(_like(q)))
+            | (Employer.email.ilike(_like(q)))
+        )
+        .order_by(Employer.name.asc())
+        .limit(limit)
+        .all()
+    )
+    for e in employers:
+        results.append(
+            _best_contact_payload(
+                kind="employer",
+                display_name=e.name or "Employer",
+                fax=getattr(e, "fax", None),
+                phone=getattr(e, "phone", None),
+                email=getattr(e, "email", None),
+                address1=getattr(e, "address1", None),
+                address2=getattr(e, "address2", None),
+                city=getattr(e, "city", None),
+                state=getattr(e, "state", None),
+                postal_code=getattr(e, "postal_code", None),
+                source_id=e.id,
+            )
+        )
+
+    # --- Providers ---
+    providers = (
+        Provider.query
+        .filter(
+            (Provider.name.ilike(_like(q)))
+            | (Provider.phone.ilike(_like(q)))
+            | (Provider.fax.ilike(_like(q)))
+            | (Provider.email.ilike(_like(q)))
+        )
+        .order_by(Provider.name.asc())
+        .limit(limit)
+        .all()
+    )
+    for p in providers:
+        results.append(
+            _best_contact_payload(
+                kind="provider",
+                display_name=p.name or "Provider",
+                fax=getattr(p, "fax", None),
+                phone=getattr(p, "phone", None),
+                email=getattr(p, "email", None),
+                address1=getattr(p, "address1", None),
+                address2=getattr(p, "address2", None),
+                city=getattr(p, "city", None),
+                state=getattr(p, "state", None),
+                postal_code=getattr(p, "postal_code", None),
+                source_id=p.id,
+            )
+        )
+
+    # De-dupe by (kind,id,label) while preserving order
+    seen = set()
+    deduped = []
+    for r in results:
+        key = (r.get("kind"), r.get("id"), r.get("label"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(r)
+
+    return jsonify({"results": deduped[:limit]})
+
 # ---- Settings: Billable Activity Codes management ----
 @bp.route("/settings/billables", methods=["GET", "POST"])
 def settings_billables():
@@ -714,7 +934,462 @@ def settings_billable_toggle(code_id):
     flash("Billable activity code status updated.", "success")
     return redirect(url_for("main.settings_billables"))
 
+
 # ---------- basic pages ----------
+
+
+# ---- Forms landing and Fax Cover Sheet ----
+
+@bp.route("/forms")
+def forms_index():
+    settings = _ensure_settings()
+
+    html = """
+    {% extends "base.html" %}
+    {% block content %}
+    <div class=\"container py-4\" style=\"max-width: 980px;\">
+      <div class=\"d-flex align-items-center justify-content-between gap-3 mb-3\">
+        <div>
+          <h1 class=\"h3 mb-1\">Forms</h1>
+          <div class=\"text-body-secondary\">Select a form. (More coming soon.)</div>
+        </div>
+      </div>
+
+      <div class=\"card\">
+        <div class=\"card-body\">
+          <ul class=\"mb-0\">
+            <li><a href=\"{{ url_for('main.forms_fax_cover') }}\">Fax Cover Sheet</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    {% endblock %}
+    """
+
+    return render_template_string(html, settings=settings, active_page="forms")
+
+
+@bp.route("/forms/fax-cover", methods=["GET", "POST"])
+def forms_fax_cover():
+    settings = _ensure_settings()
+
+    # Defaults from Settings (editable in UI)
+    from_name_default = settings.business_name or ""
+    from_phone_default = settings.phone or ""
+    from_email_default = settings.email or ""
+    from_fax_default = settings.fax or ""
+
+    # If you want case manager name available, try it (it’s optional)
+    case_manager_name_default = getattr(settings, "responsible_case_manager", "") or ""
+
+    # Form values (POST overrides)
+    to_name = (request.form.get("to_name") or "").strip()
+    to_fax = (request.form.get("to_fax") or "").strip()
+    to_phone = (request.form.get("to_phone") or "").strip()
+    to_email = (request.form.get("to_email") or "").strip()
+    to_address = (request.form.get("to_address") or "").strip()
+
+    from_name = (request.form.get("from_name") or from_name_default).strip()
+    from_phone = (request.form.get("from_phone") or from_phone_default).strip()
+    from_fax = (request.form.get("from_fax") or from_fax_default).strip()
+    from_email = (request.form.get("from_email") or from_email_default).strip()
+    from_case_manager = (request.form.get("from_case_manager") or case_manager_name_default).strip()
+
+    subject = (request.form.get("subject") or "").strip()
+    pages = (request.form.get("pages") or "").strip()
+    contents = (request.form.get("contents") or "").strip()
+
+    mode = (request.form.get("mode") or "edit").strip().lower()
+
+    # Print/preview mode
+    if request.method == "POST" and mode == "preview":
+        preview_html = """
+        {% extends "base.html" %}
+        {% block content %}
+        <style>
+          /* Default (light mode): subtle gray */
+          .fax-label { color: #6c757d !important; }
+
+          /* Dark mode: labels must be light enough to read */
+          [data-bs-theme="dark"] .fax-label { color: rgba(255,255,255,0.70) !important; }
+
+          /* Make preview spacing a bit tighter */
+          .fax-card .card-body { padding: 0.9rem; }
+          .fax-tight .row { --bs-gutter-y: .35rem; }
+          .fax-tight .row > * { margin-top: .35rem; }
+
+          /* Print rules */
+          @media print {
+            /* IMPORTANT: browser print "Headers and footers" are not controllable via CSS.
+               If you see an extra blank page with only date/page #, disable them in the print dialog. */
+
+            @page {
+              size: letter;
+              margin: 0.45in; /* leave room for Safari margins + printer non-printable area */
+            }
+
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #fff !important;
+              color: #000 !important;
+            }
+
+            /* Force labels + text to black in print */
+            .fax-label { color: #000 !important; }
+
+            /* Hide buttons in print */
+            .fax-actions { display: none !important; }
+
+            /* Prevent awkward splitting */
+            .fax-card, .fax-card .card-body { break-inside: avoid; page-break-inside: avoid; }
+
+            /* Tighter print typography so it stays on one page */
+            h1, .h3 { margin: 0 !important; }
+            .fax-card .card-body { padding: 0.55rem !important; }
+            .fax-tight .row { --bs-gutter-y: .2rem; }
+            .fax-tight .row > * { margin-top: .2rem !important; }
+            .fax-print-small { font-size: 12px !important; line-height: 1.25 !important; }
+          }
+        </style>
+        <div class=\"container\" style=\"max-width: 980px;\">
+          <div class=\"d-flex align-items-center gap-3 fax-print-small\">
+            {% if settings.logo_path %}
+              <img src=\"{{ url_for('static', filename=settings.logo_path) }}\" alt=\"Logo\" style=\"height:64px; object-fit:contain;\" />
+            {% endif %}
+            <div>
+              <h1 class=\"h3 mb-0\">Fax Cover Sheet</h1>
+              <div class=\"fax-label small\">{{ now }}</div>
+            </div>
+          </div>
+
+          <hr class=\"my-3\" />
+
+          <div class=\"card fax-card\">
+            <div class=\"card-body\">
+              <div class=\"row g-2 fax-tight fax-print-small\">
+                <div class=\"col-12\">
+                  <div class=\"fw-bold\">To</div>
+                </div>
+
+                <div class=\"col-12 col-md-6\">
+                  <div class=\"fax-label small\">Name</div>
+                  <div>{{ to_name }}</div>
+                </div>
+                <div class=\"col-12 col-md-6\">
+                  <div class=\"fax-label small\">Fax</div>
+                  <div>{{ to_fax }}</div>
+                </div>
+                <div class=\"col-12 col-md-6\">
+                  <div class=\"fax-label small\">Phone</div>
+                  <div>{{ to_phone }}</div>
+                </div>
+                <div class=\"col-12 col-md-6\">
+                  <div class=\"fax-label small\">Email</div>
+                  <div>{{ to_email }}</div>
+                </div>
+                <div class=\"col-12\">
+                  <div class=\"fax-label small\">Address</div>
+                  <div style=\"white-space:pre-wrap;\">{{ to_address }}</div>
+                </div>
+
+                <div class=\"col-12\"><hr class=\"my-2\" /></div>
+
+                <div class=\"col-12\">
+                  <div class=\"fw-bold\">From</div>
+                </div>
+
+                <div class=\"col-12 col-md-6\">
+                  <div class=\"fax-label small\">Business</div>
+                  <div>{{ from_name }}</div>
+                </div>
+                <div class=\"col-12 col-md-6\">
+                  <div class=\"fax-label small\">Case Manager</div>
+                  <div>{{ from_case_manager }}</div>
+                </div>
+                <div class=\"col-12 col-md-6\">
+                  <div class=\"fax-label small\">Phone</div>
+                  <div>{{ from_phone }}</div>
+                </div>
+                <div class=\"col-12 col-md-6\">
+                  <div class=\"fax-label small\">Fax</div>
+                  <div>{{ from_fax }}</div>
+                </div>
+                <div class=\"col-12 col-md-6\">
+                  <div class=\"fax-label small\">Email</div>
+                  <div>{{ from_email }}</div>
+                </div>
+
+                <div class=\"col-12\"><hr class=\"my-2\" /></div>
+
+                <div class=\"col-12 col-md-8\">
+                  <div class=\"fax-label small\">Re / Subject</div>
+                  <div>{{ subject }}</div>
+                </div>
+                <div class=\"col-12 col-md-4\">
+                  <div class=\"fax-label small\">Pages</div>
+                  <div>{{ pages }}</div>
+                </div>
+                <div class=\"col-12\">
+                  <div class=\"fax-label small\">Description of contents</div>
+                  <div style=\"white-space:pre-wrap;\">{{ contents }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class=\"mt-3 d-flex gap-2 fax-actions\">
+            <button class=\"btn btn-primary\" onclick=\"window.print()\">Print</button>
+            <form method=\"post\" class=\"d-inline\">
+              <input type=\"hidden\" name=\"mode\" value=\"edit\" />
+              <input type=\"hidden\" name=\"to_name\" value=\"{{ to_name }}\" />
+              <input type=\"hidden\" name=\"to_fax\" value=\"{{ to_fax }}\" />
+              <input type=\"hidden\" name=\"to_phone\" value=\"{{ to_phone }}\" />
+              <input type=\"hidden\" name=\"to_email\" value=\"{{ to_email }}\" />
+              <input type=\"hidden\" name=\"to_address\" value=\"{{ to_address }}\" />
+              <input type=\"hidden\" name=\"from_name\" value=\"{{ from_name }}\" />
+              <input type=\"hidden\" name=\"from_case_manager\" value=\"{{ from_case_manager }}\" />
+              <input type=\"hidden\" name=\"from_phone\" value=\"{{ from_phone }}\" />
+              <input type=\"hidden\" name=\"from_fax\" value=\"{{ from_fax }}\" />
+              <input type=\"hidden\" name=\"from_email\" value=\"{{ from_email }}\" />
+              <input type=\"hidden\" name=\"subject\" value=\"{{ subject }}\" />
+              <input type=\"hidden\" name=\"pages\" value=\"{{ pages }}\" />
+              <textarea name=\"contents\" style=\"display:none;\">{{ contents }}</textarea>
+              <button class=\"btn btn-outline-secondary\" type=\"submit\">Back to Edit</button>
+            </form>
+          </div>
+        </div>
+        {% endblock %}
+        """
+
+        return render_template_string(
+            preview_html,
+            active_page="forms",
+            settings=settings,
+            now=datetime.now().strftime("%m/%d/%Y %I:%M %p"),
+            to_name=to_name,
+            to_fax=to_fax,
+            to_phone=to_phone,
+            to_email=to_email,
+            to_address=to_address,
+            from_name=from_name,
+            from_case_manager=from_case_manager,
+            from_phone=from_phone,
+            from_fax=from_fax,
+            from_email=from_email,
+            subject=subject,
+            pages=pages,
+            contents=contents,
+        )
+
+    # Edit mode
+    edit_html = """
+    {% extends "base.html" %}
+    {% block content %}
+    <style>
+      /* Minimal, bootstrap-friendly typeahead dropdown */
+      .typeahead-results { position: relative; }
+      .typeahead-menu {
+        position: absolute;
+        z-index: 1050;
+        width: 100%;
+        max-height: 260px;
+        overflow: auto;
+      }
+    </style>
+
+    <div class=\"container py-4\" style=\"max-width: 980px;\">
+      <div class=\"d-flex align-items-center justify-content-between gap-3 mb-2\">
+        <h1 class=\"h3 mb-0\">Fax Cover Sheet</h1>
+        <a class=\"link-secondary\" href=\"{{ url_for('main.forms_index') }}\">← Back to Forms</a>
+      </div>
+
+      <p class=\"text-body-secondary\">Start typing a name to search Contacts, Carriers, Employers, and Providers. Or just type in whatever you need.</p>
+
+      <form method=\"post\" autocomplete=\"off\">
+        <input type=\"hidden\" name=\"mode\" value=\"preview\" />
+
+        <div class=\"card mb-3\">
+          <div class=\"card-body\">
+            <div class=\"fw-bold mb-2\">To</div>
+
+            <label class=\"form-label fw-semibold\">Search</label>
+            <div class=\"typeahead-results\">
+              <input id=\"toSearch\" type=\"text\" class=\"form-control\" placeholder=\"Type to search…\" />
+              <div id=\"toResults\" class=\"typeahead-menu list-group shadow-sm\" style=\"display:none;\"></div>
+            </div>
+
+            <div class=\"row g-3 mt-1\">
+              <div class=\"col-12 col-md-6\">
+                <label class=\"form-label fw-semibold\">To (Name)</label>
+                <input name=\"to_name\" id=\"to_name\" value=\"{{ to_name }}\" class=\"form-control\" />
+              </div>
+              <div class=\"col-12 col-md-6\">
+                <label class=\"form-label fw-semibold\">Fax</label>
+                <input name=\"to_fax\" id=\"to_fax\" value=\"{{ to_fax }}\" class=\"form-control\" />
+              </div>
+              <div class=\"col-12 col-md-6\">
+                <label class=\"form-label fw-semibold\">Phone</label>
+                <input name=\"to_phone\" id=\"to_phone\" value=\"{{ to_phone }}\" class=\"form-control\" />
+              </div>
+              <div class=\"col-12 col-md-6\">
+                <label class=\"form-label fw-semibold\">Email</label>
+                <input name=\"to_email\" id=\"to_email\" value=\"{{ to_email }}\" class=\"form-control\" />
+              </div>
+              <div class=\"col-12\">
+                <label class=\"form-label fw-semibold\">Address</label>
+                <textarea name=\"to_address\" id=\"to_address\" rows=\"3\" class=\"form-control\">{{ to_address }}</textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class=\"card mb-3\">
+          <div class=\"card-body\">
+            <div class=\"fw-bold mb-2\">From</div>
+            <div class=\"row g-3\">
+              <div class=\"col-12 col-md-6\">
+                <label class=\"form-label fw-semibold\">From (Business)</label>
+                <input name=\"from_name\" value=\"{{ from_name }}\" class=\"form-control\" />
+              </div>
+              <div class=\"col-12 col-md-6\">
+                <label class=\"form-label fw-semibold\">Case Manager</label>
+                <input name=\"from_case_manager\" value=\"{{ from_case_manager }}\" class=\"form-control\" />
+              </div>
+              <div class=\"col-12 col-md-6\">
+                <label class=\"form-label fw-semibold\">Phone</label>
+                <input name=\"from_phone\" value=\"{{ from_phone }}\" class=\"form-control\" />
+              </div>
+              <div class=\"col-12 col-md-6\">
+                <label class=\"form-label fw-semibold\">Fax</label>
+                <input name=\"from_fax\" value=\"{{ from_fax }}\" class=\"form-control\" />
+              </div>
+              <div class=\"col-12 col-md-6\">
+                <label class=\"form-label fw-semibold\">Email</label>
+                <input name=\"from_email\" value=\"{{ from_email }}\" class=\"form-control\" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class=\"card mb-3\">
+          <div class=\"card-body\">
+            <div class=\"fw-bold mb-2\">Details</div>
+            <div class=\"row g-3\">
+              <div class=\"col-12 col-md-8\">
+                <label class=\"form-label fw-semibold\">Re / Subject</label>
+                <input name=\"subject\" value=\"{{ subject }}\" class=\"form-control\" />
+              </div>
+              <div class=\"col-12 col-md-4\">
+                <label class=\"form-label fw-semibold\">Pages</label>
+                <input name=\"pages\" value=\"{{ pages }}\" class=\"form-control\" />
+              </div>
+              <div class=\"col-12\">
+                <label class=\"form-label fw-semibold\">Description of contents</label>
+                <textarea name=\"contents\" rows=\"5\" class=\"form-control\">{{ contents }}</textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class=\"d-flex gap-2 align-items-center\">
+          <button class=\"btn btn-primary\" type=\"submit\">Preview / Print</button>
+        </div>
+      </form>
+    </div>
+
+    <script>
+    (function(){
+      const input = document.getElementById('toSearch');
+      const resultsEl = document.getElementById('toResults');
+
+      function hide(){
+        resultsEl.style.display = 'none';
+        resultsEl.innerHTML = '';
+      }
+
+      function renderResults(items){
+        resultsEl.innerHTML = '';
+        if (!items || !items.length){
+          hide();
+          return;
+        }
+        resultsEl.style.display = 'block';
+
+        for (const it of items){
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.className = 'list-group-item list-group-item-action';
+
+          const small = [];
+          if (it.fax) small.push('Fax: ' + it.fax);
+          if (it.phone) small.push('Phone: ' + it.phone);
+          if (it.email) small.push(it.email);
+
+          row.innerHTML = '<div class="fw-semibold">' + (it.label || '') + '</div>'
+                        + '<div class="small text-body-secondary">' + small.join(' · ') + '</div>';
+
+          row.addEventListener('click', function(){
+            document.getElementById('to_name').value = it.label || '';
+            document.getElementById('to_fax').value = it.fax || '';
+            document.getElementById('to_phone').value = it.phone || '';
+            document.getElementById('to_email').value = it.email || '';
+            document.getElementById('to_address').value = it.address || '';
+            input.value = '';
+            hide();
+          });
+
+          resultsEl.appendChild(row);
+        }
+      }
+
+      let timer = null;
+      input.addEventListener('input', function(){
+        const q = (input.value || '').trim();
+        if (timer) clearTimeout(timer);
+        if (!q){
+          hide();
+          return;
+        }
+        timer = setTimeout(async function(){
+          try{
+            const resp = await fetch('{{ url_for('main.api_contact_search') }}?q=' + encodeURIComponent(q));
+            const data = await resp.json();
+            renderResults((data && data.results) ? data.results : []);
+          }catch(e){
+            hide();
+          }
+        }, 150);
+      });
+
+      document.addEventListener('click', function(e){
+        if (!resultsEl.contains(e.target) && e.target !== input){
+          hide();
+        }
+      });
+    })();
+    </script>
+    {% endblock %}
+    """
+
+    return render_template_string(
+        edit_html,
+        active_page="forms",
+        settings=settings,
+        to_name=to_name,
+        to_fax=to_fax,
+        to_phone=to_phone,
+        to_email=to_email,
+        to_address=to_address,
+        from_name=from_name,
+        from_case_manager=from_case_manager,
+        from_phone=from_phone,
+        from_fax=from_fax,
+        from_email=from_email,
+        subject=subject,
+        pages=pages,
+        contents=contents,
+    )
 
 
 @bp.route("/")
@@ -3472,7 +4147,8 @@ def settings_view():
         settings.phone = (request.form.get("phone") or "").strip() or None
         settings.email = (request.form.get("email") or "").strip() or None
         settings.responsible_case_manager = (request.form.get("responsible_case_manager") or "").strip() or None
-
+        settings.fax = (request.form.get("fax") or "").strip() or None
+        settings.ein = (request.form.get("ein") or "").strip()
         # --- Rates ---
         try:
             settings.hourly_rate = float(request.form.get("hourly_rate") or 0) or None
