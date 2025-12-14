@@ -149,6 +149,10 @@ class Claim(db.Model):
     dob = db.Column(db.Date)   # Date of birth
     doi = db.Column(db.Date)   # Date of injury
 
+    # Additional claim-level context shown in claim + report headers
+    injured_body_part = db.Column(db.String(255))
+    surgery_date = db.Column(db.Date)
+
     claim_state = db.Column(db.String(10))  # e.g. "ID"
 
     # Claimant contact info (from existing UI/routes)

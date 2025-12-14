@@ -1,5 +1,16 @@
 {% extends "base.html" %}
+
 {% block content %}
+{% set carrier_filter = carrier_filter|default('') %}
+{% set bucket_filter = bucket_filter|default('') %}
+{% set total_claims = total_claims|default(0) %}
+{% set total_invoices = total_invoices|default(0) %}
+{% set open_invoices = open_invoices|default(0) %}
+{% set total_open_amount = total_open_amount|default(0) %}
+{% set aging_buckets = aging_buckets|default({}) %}
+{% set ar_by_carrier = ar_by_carrier|default({}) %}
+{% set open_invoice_rows = open_invoice_rows|default([]) %}
+
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2 class="mb-0">Reporting Dashboard</h2>
@@ -60,20 +71,22 @@
             </tr>
         </thead>
         <tbody>
-            {% for bucket, amount in aging_buckets.items() %}
-            <tr>
-                <td>
-                    <a href="{{ url_for('main.reporting_dashboard', bucket=bucket) }}">
-                        {{ bucket }}
-                    </a>
-                </td>
-                <td>
-                    <a href="{{ url_for('main.reporting_dashboard', bucket=bucket) }}">
-                        ${{ "%.2f"|format(amount) }}
-                    </a>
-                </td>
-            </tr>
-            {% endfor %}
+            {% if aging_buckets %}
+                {% for bucket, amount in aging_buckets.items() %}
+                <tr>
+                    <td>
+                        <a href="{{ url_for('main.reporting_dashboard', bucket=bucket) }}">{{ bucket }}</a>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('main.reporting_dashboard', bucket=bucket) }}">${{ "%.2f"|format(amount or 0) }}</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="2" class="text-muted">No aging data available.</td>
+                </tr>
+            {% endif %}
         </tbody>
     </table>
 
@@ -87,20 +100,22 @@
             </tr>
         </thead>
         <tbody>
-            {% for carrier_name, total in ar_by_carrier.items() %}
-            <tr>
-                <td>
-                    <a href="{{ url_for('main.reporting_dashboard', carrier=carrier_name) }}">
-                        {{ carrier_name }}
-                    </a>
-                </td>
-                <td>
-                    <a href="{{ url_for('main.reporting_dashboard', carrier=carrier_name) }}">
-                        ${{ "%.2f"|format(total) }}
-                    </a>
-                </td>
-            </tr>
-            {% endfor %}
+            {% if ar_by_carrier %}
+                {% for carrier_name, total in ar_by_carrier.items() %}
+                <tr>
+                    <td>
+                        <a href="{{ url_for('main.reporting_dashboard', carrier=carrier_name) }}">{{ carrier_name }}</a>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('main.reporting_dashboard', carrier=carrier_name) }}">${{ "%.2f"|format(total or 0) }}</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="2" class="text-muted">No carrier receivables data available.</td>
+                </tr>
+            {% endif %}
         </tbody>
     </table>
 
@@ -130,7 +145,7 @@
                 <td>{{ row.claim.claimant_name }}</td>
                 <td>{{ row.carrier_name }}</td>
                 <td>{{ row.age_days if row.age_days is not none else '—' }}</td>
-                <td>${{ "%.2f"|format(row.amount) }}</td>
+                <td>${{ "%.2f"|format(row.amount or 0) }}</td>
                 <td>{{ row.invoice.status or 'Draft' }}</td>
             </tr>
             {% endfor %}

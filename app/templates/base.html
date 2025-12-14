@@ -67,9 +67,20 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
       <div class="container-fluid">
         <!-- Brand / Logo -->
-        {% set brand_name = settings.business_name if settings and settings.business_name else 'Impact Medical CMS' %}
+        {% set brand_name_raw = settings.business_name if settings and settings.business_name else 'Impact Medical CMS' %}
+        {#
+          Defensive: if Settings.business_name accidentally contains pasted code (newlines, decorators, imports),
+          don’t render it across every page.
+        #}
+        {% set brand_name_clean = (brand_name_raw or '') | replace('\r', ' ') | replace('\n', ' ') | trim %}
+        {% if ('from flask import' in brand_name_clean) or ('@app.route' in brand_name_clean) or ('def ' in brand_name_clean and 'route' in brand_name_clean) %}
+          {% set brand_name_clean = 'Impact Medical CMS' %}
+        {% endif %}
+        {% if brand_name_clean|length > 80 %}
+          {% set brand_name_clean = brand_name_clean[:77] ~ '…' %}
+        {% endif %}
         <a class="navbar-brand d-flex flex-column align-items-center" href="{{ url_for('main.claims_list') }}">
-          <span style="line-height: 1.1;">{{ brand_name }}</span>
+          <span style="line-height: 1.1;">{{ brand_name_clean }}</span>
         </a>
 
         <!-- Mobile nav toggle -->
@@ -87,9 +98,7 @@
             </li>
             <li class="nav-item">
               <a class="nav-link {% if active_page == 'billing' %}active{% endif %}"
-                 href="{{ url_for('main.billing_list') }}">
-                Billing
-              </a>
+                 href="{{ url_for('main.billing_list') }}">Billing</a>
             </li>
             <li class="nav-item">
               <a class="nav-link {% if active_page == 'carriers' %}active{% endif %}"
@@ -103,17 +112,19 @@
               <a class="nav-link {% if active_page == 'providers' %}active{% endif %}"
                  href="{{ url_for('main.providers_list') }}">Providers</a>
             </li>
+
             <li class="nav-item">
               <a class="nav-link {% if active_page == 'forms' %}active{% endif %}"
                  href="{{ url_for('main.forms_index') }}">Forms</a>
             </li>
+
             <li class="nav-item">
               <a class="nav-link {% if active_page == 'reporting' %}active{% endif %}"
                  href="{{ url_for('main.reporting_dashboard') }}">Reporting</a>
             </li>
             <li class="nav-item">
               <a class="nav-link {% if active_page == 'analysis' %}active{% endif %}"
-                 href="{{ url_for('main.analysis_dashboard') }}">Analysis</a>
+                 href="{{ url_for('main.analysis_view') }}">Analysis</a>
             </li>
             <li class="nav-item">
               <a class="nav-link {% if active_page == 'settings' %}active{% endif %}"

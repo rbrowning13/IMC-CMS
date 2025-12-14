@@ -41,6 +41,19 @@
   </div>
 
   <div class="col-md-3">
+    <label class="form-label form-label-sm">Surgery Date</label>
+    <input
+      type="text"
+      name="surgery_date"
+      class="form-control form-control-sm"
+      placeholder="MM/DD/YYYY"
+      inputmode="numeric"
+      data-auto-date="1"
+      value="{{ claim.surgery_date.strftime('%m/%d/%Y') if claim and claim.surgery_date else '' }}"
+    >
+  </div>
+
+  <div class="col-md-3">
     <label class="form-label form-label-sm">Claim State</label>
     <select name="claim_state" class="form-select form-select-sm">
       {{ state_options(claim.claim_state if claim else "ID") }}
@@ -105,10 +118,10 @@
   </div>
 
   <div class="col-md-4">
-    <label class="form-label form-label-sm">Primary Care Provider</label>
-    <input type="text" name="primary_care_provider" class="form-control form-control-sm"
-           placeholder="PCP / treating physician"
-           value="{{ claim.primary_care_provider if claim and claim.primary_care_provider and claim.primary_care_provider != 'None' else '' }}">
+    <label class="form-label form-label-sm">Injured Body Part</label>
+    <input type="text" name="injured_body_part" class="form-control form-control-sm"
+           placeholder="e.g., right shoulder, low back, knee"
+           value="{{ claim.injured_body_part if claim and claim.injured_body_part and claim.injured_body_part != 'None' else '' }}">
   </div>
 </div>
 
