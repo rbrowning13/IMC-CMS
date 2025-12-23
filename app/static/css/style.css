@@ -275,13 +275,78 @@ select {
   border: 3px solid #333 !important;
 }
 
-html.dark-mode .form-control,
+/* -------------------------------------------------------------------------
+   Light mode: force readable inputs (prevents OS-level dark scheme overrides)
+   ------------------------------------------------------------------------- */
+html:not(.dark-mode) .form-control,
+html:not(.dark-mode) .form-select,
+html:not(.dark-mode) input,
+html:not(.dark-mode) textarea,
+html:not(.dark-mode) select {
+  background-color: #ffffff !important;
+  color: #212529 !important;
+}
+
+html:not(.dark-mode) .form-control::placeholder,
+html:not(.dark-mode) input::placeholder,
+html:not(.dark-mode) textarea::placeholder {
+  color: #6c757d !important;
+  opacity: 1;
+}
+
+html:not(.dark-mode) .form-control:focus,
+html:not(.dark-mode) .form-select:focus,
+html:not(.dark-mode) input:focus,
+html:not(.dark-mode) textarea:focus,
+html:not(.dark-mode) select:focus {
+  background-color: #ffffff !important;
+  color: #212529 !important;
+  border: 3px solid var(--accent-color) !important;
+}
+
+/* -------------------------------------------------------------------------
+   Dark mode: form controls (inputs, selects, textareas)
+   ------------------------------------------------------------------------- */
 html.dark-mode input,
 html.dark-mode textarea,
 html.dark-mode select {
-  background-color: #2a2a2a !important;
-  color: #e5e5e5 !important;
-  border: 3px solid #666666 !important;
+  color-scheme: dark;
+}
+
+html.dark-mode .form-control,
+html.dark-mode .form-select,
+html.dark-mode input[type="text"],
+html.dark-mode input[type="email"],
+html.dark-mode input[type="tel"],
+html.dark-mode input[type="number"],
+html.dark-mode input[type="search"],
+html.dark-mode input[type="date"],
+html.dark-mode textarea,
+html.dark-mode select {
+  background-color: #1e1e1e !important;
+  color: #f1f1f1 !important;
+  border-color: #3a3a3a !important;
+}
+
+html.dark-mode .form-control:focus,
+html.dark-mode .form-select:focus,
+html.dark-mode textarea:focus,
+html.dark-mode select:focus,
+html.dark-mode input:focus {
+  background-color: #1e1e1e !important;
+  color: #f1f1f1 !important;
+  border: 3px solid var(--accent-color) !important;
+  box-shadow: 0 0 0 0.2rem rgba(255, 255, 255, 0.12);
+}
+
+/* Option styling support varies by OS/browser, but helps where supported */
+html.dark-mode select option {
+  background-color: #1e1e1e;
+  color: #f1f1f1;
+}
+
+html.dark-mode ::placeholder {
+  color: rgba(241, 241, 241, 0.55);
 }
 
 /* Dark-mode placeholders */
@@ -431,95 +496,193 @@ html.dark-mode .accordion-button::after {
   transform: rotate(180deg);
 }
 
-
 /* -------------------------------------------------------------------------
-   Dark mode: form controls (inputs, selects, textareas)
+   Checkbox visual styling (light & dark mode)
+
+   Bootstrap checkboxes can look “unchecked” in light mode if our global input
+   styling overrides their checked background. Force the checked state to use
+   the accent color and a visible checkmark in BOTH themes.
    ------------------------------------------------------------------------- */
-@media (prefers-color-scheme: dark) {
-  /* Keep native controls readable in dark mode */
-  input, textarea, select {
-    color-scheme: dark;
-  }
 
-  .form-control,
-  .form-select,
-  input[type="text"],
-  input[type="email"],
-  input[type="tel"],
-  input[type="number"],
-  input[type="search"],
-  input[type="date"],
-  textarea,
-  select {
-    background-color: #1e1e1e;
-    color: #f1f1f1;
-    border-color: #3a3a3a;
-  }
+/* Base checkbox appearance */
+.form-check-input {
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 2px solid var(--accent-color) !important;
+  background-color: #ffffff !important;
+}
 
-  .form-control:focus,
-  .form-select:focus,
-  textarea:focus,
-  select:focus {
-    background-color: #1e1e1e;
-    color: #f1f1f1;
-    border-color: #6b6b6b;
-    box-shadow: 0 0 0 0.2rem rgba(255, 255, 255, 0.12);
-  }
+/* Checked state (light + dark) */
+.form-check-input:checked {
+  background-color: var(--accent-color) !important;
+  border-color: var(--accent-color) !important;
+}
 
-  /* Option styling support varies by OS/browser, but helps where supported */
-  select option {
-    background-color: #1e1e1e;
-    color: #f1f1f1;
-  }
+/* Ensure the checkmark is visible (Bootstrap uses a background-image SVG) */
+.form-check-input:checked {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3 6-7'/%3e%3c/svg%3e") !important;
+}
 
-  ::placeholder {
-    color: rgba(241, 241, 241, 0.55);
-  }
+/* Focus ring uses accent */
+.form-check-input:focus {
+  border-color: var(--accent-color) !important;
+  box-shadow: 0 0 0 0.2rem rgba(0, 0, 0, 0.08) !important;
+}
+
+html.dark-mode .form-check-input {
+  background-color: #1e1e1e !important;
+}
+
+html.dark-mode .form-check-input:focus {
+  box-shadow: 0 0 0 0.2rem rgba(255, 255, 255, 0.12) !important;
 }
 
 /* -------------------------------------------------------------------------
-   Validation styling (Bootstrap-compatible) — keeps errors obvious
-   NOTE: preventing form data from clearing is handled in routes/templates.
-   These styles only make validation feedback consistent, incl. dark mode.
+   Checkbox clickability fixes (Report Edit: Treating Providers + Barriers)
+
+   We have a few scroll/card layouts where an overlay (or stacking context)
+   can unintentionally intercept pointer events. These rules ensure checkbox
+   inputs/labels remain clickable.
    ------------------------------------------------------------------------- */
 
-/* Inputs/selects/textareas flagged invalid */
-.is-invalid,
-.was-validated .form-control:invalid,
-.was-validated .form-select:invalid,
-.was-validated input:invalid,
-.was-validated textarea:invalid,
-.was-validated select:invalid {
-  border-color: #dc3545 !important; /* bootstrap danger */
+/* Ensure checkbox rows remain interactive even inside scroll/positioned cards */
+.form-check,
+.form-check-input,
+.form-check-label {
+  pointer-events: auto;
 }
 
-/* Inputs/selects/textareas flagged valid */
-.is-valid,
-.was-validated .form-control:valid,
-.was-validated .form-select:valid,
-.was-validated input:valid,
-.was-validated textarea:valid,
-.was-validated select:valid {
-  border-color: #198754 !important; /* bootstrap success */
+/* Give the actual checkbox a small stacking priority so it isn't "under" an overlay */
+.form-check-input {
+  position: relative;
+  z-index: 2;
 }
 
-/* Feedback text */
-.invalid-feedback,
-.valid-feedback {
-  font-weight: 600;
+/* Make sure labels are also clickable */
+.form-check-label {
+  position: relative;
+  z-index: 1;
+  cursor: pointer;
 }
 
-/* Make invalid feedback readable on dark mode */
-html.dark-mode .invalid-feedback {
-  color: #ff6b6b !important;
+/* If a container was accidentally given pointer-events: none elsewhere, override it */
+.scroll-area,
+.card,
+.card-body {
+  pointer-events: auto;
 }
 
-html.dark-mode .valid-feedback {
-  color: #63e6be !important;
+/* --------------------------------------------------
+   HARD OVERRIDE: ensure checkbox interactivity
+   -------------------------------------------------- */
+
+/* Never allow parent containers to swallow clicks */
+.card *,
+.card-body *,
+.scroll-area *,
+.accordion *,
+.accordion-body * {
+  pointer-events: auto !important;
 }
 
-/* Ensure browser-native <select> dropdown arrow remains visible in dark mode */
-html.dark-mode select.form-select,
-html.dark-mode select {
-  color-scheme: dark;
+/* Explicit checkbox + label behavior */
+input[type="checkbox"] {
+  position: relative;
+  z-index: 5;
+  pointer-events: auto !important;
+}
+
+label,
+.form-check-label {
+  cursor: pointer;
+  pointer-events: auto !important;
+}
+
+/* Prevent accordion arrows or headers from overlaying form controls */
+.accordion-button::after {
+  pointer-events: none !important;
+}
+
+/* -------------------------------------------------------------------------
+   Success message box styling (roll-forward + flash success)
+
+   Spec:
+   - Border: 10px solid accent color (both themes)
+   - Light: white interior + black text
+   - Dark: black interior + white text
+   ------------------------------------------------------------------------- */
+
+/* Light mode */
+html:not(.dark-mode) .alert.alert-success {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+  border: 10px solid var(--accent-color) !important;
+}
+
+/* Dark mode */
+html.dark-mode .alert.alert-success {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border: 10px solid var(--accent-color) !important;
+}
+
+/* Links inside success alerts should follow the alert foreground color */
+html:not(.dark-mode) .alert.alert-success a {
+  color: #111111 !important;
+  text-decoration: underline;
+}
+
+html.dark-mode .alert.alert-success a {
+  color: #ffffff !important;
+  text-decoration: underline;
+}
+
+/* Ensure close button is visible in dark mode */
+html.dark-mode .alert.alert-success .btn-close {
+  filter: invert(1) grayscale(1);
+  opacity: 0.9;
+}
+
+/* Keep the close button visible against white background too */
+html:not(.dark-mode) .alert.alert-success .btn-close {
+  opacity: 0.85;
+}
+/* -------------------------------------------------------------------------
+   Light mode: accordion/section headers should be white fill
+   ------------------------------------------------------------------------- */
+html:not(.dark-mode) .accordion-button,
+html:not(.dark-mode) .accordion-button:not(.collapsed),
+html:not(.dark-mode) .accordion-header {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+}
+
+/* Keep borders clean in light mode */
+html:not(.dark-mode) .accordion-item {
+  border-color: #d0d0d0 !important;
+}
+
+/* Hover state: subtle light gray */
+html:not(.dark-mode) .accordion-button:hover {
+  background-color: #f6f6f6 !important;
+}
+
+/* Remove Bootstrap focus glow; use accent border instead */
+html:not(.dark-mode) .accordion-button:focus {
+  box-shadow: none !important;
+  border-color: var(--accent-color) !important;
+}
+
+/* -------------------------------------------------------------------------
+   Accordion / expandable sections: stronger outer border
+   ------------------------------------------------------------------------- */
+.accordion-item {
+  border: 5px solid #000000 !important;
+  border-radius: 0.5rem;
+  overflow: hidden; /* keeps header fill clipped to rounded corners */
+}
+
+/* Keep adjacent items spaced so borders don't visually merge */
+.accordion-item + .accordion-item {
+  margin-top: 0.75rem;
 }

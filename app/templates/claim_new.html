@@ -37,6 +37,16 @@
 {% block scripts %}
   {{ super() }}
   <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.flatpickr) {
+        flatpickr('input[type="date"], input[data-date]', {
+          allowInput: true,
+          dateFormat: 'm/d/Y'
+        });
+      }
+    });
+  </script>
+  <script>
     (function() {
       const carrierSelect = document.querySelector('select[name="carrier_id"]');
       function ensureClaimantPhoneExtField() {

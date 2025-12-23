@@ -12,10 +12,10 @@ Notes during transition:
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from flask import redirect, render_template, request, url_for, flash
-from sqlalchemy import text
+from sqlalchemy import bindparam, inspect, text, select
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
@@ -73,6 +73,55 @@ def _ensure_settings() -> Settings:
         db.session.commit()
     return settings
 
+
+
+def _table_exists(table_name: str) -> bool:
+    """Return True if the given table exists in the current DB."""
+
+    try:
+        return inspect(db.engine).has_table(table_name)
+    except Exception:
+        # If inspection fails for any reason, be conservative and assume it exists
+        # so we don't silently skip deletes.
+        return True
+
+
+# ---- carry-forward helper ----
+
+def _apply_report_carry_forward(*, claim_id: int, new_report: Report) -> None:
+    """Carry forward barriers + approved providers from the most recent prior report.
+
+    - Barriers are stored on Report.barriers_json.
+    - Treating providers are stored in the `report_approved_provider` join table.
+    """
+
+    prev = (
+        Report.query.filter_by(claim_id=claim_id)
+        .order_by(Report.created_at.desc())
+        .first()
+    )
+    if not prev:
+        return
+
+    # Carry forward barriers
+    if (not (new_report.barriers_json or "").strip()) and (prev.barriers_json or "").strip():
+        new_report.barriers_json = prev.barriers_json
+
+    # Carry forward approved providers (join table)
+    if _table_exists("report_approved_provider"):
+        # Copy rows from prev.report_id -> new_report.id, preserving sort_order
+        db.session.execute(
+            text(
+                """
+                INSERT INTO report_approved_provider (report_id, provider_id, sort_order)
+                SELECT :new_report_id, provider_id, sort_order
+                FROM report_approved_provider
+                WHERE report_id = :prev_report_id
+                ORDER BY sort_order
+                """
+            ),
+            {"new_report_id": new_report.id, "prev_report_id": prev.id},
+        )
 
 # ---- routes ----
 
@@ -570,42 +619,139 @@ def claim_delete(claim_id: int):
         try:
             # --- Delete children in a FK-safe order ---
 
-            # 1) Reports: clear join-table rows that reference Report first.
-            report_ids = [rid for (rid,) in db.session.query(Report.id).filter_by(claim_id=claim.id).all()]
-            if report_ids:
-                db.session.execute(
-                    text("DELETE FROM report_approved_provider WHERE report_id = ANY(:report_ids)"),
-                    {"report_ids": report_ids},
-                )
+            # Collect report IDs for this claim
+            report_ids = [rid for (rid,) in (
+                db.session.query(Report.id).filter_by(claim_id=claim.id).all()
+            )]
 
-            # 2) Claim-level children
+            if report_ids:
+                # Report join tables / children that reference report.id
+                if _table_exists("report_approved_provider"):
+                    db.session.execute(
+                        text("DELETE FROM report_approved_provider WHERE report_id IN :report_ids")
+                        .bindparams(bindparam("report_ids", expanding=True)),
+                        {"report_ids": report_ids},
+                    )
+
+                # Report-level documents (route name: report_document_*)
+                if _table_exists("report_document"):
+                    db.session.execute(
+                        text("DELETE FROM report_document WHERE report_id IN :report_ids")
+                        .bindparams(bindparam("report_ids", expanding=True)),
+                        {"report_ids": report_ids},
+                    )
+
+            # Collect invoice IDs for this claim
+            invoice_ids = [iid for (iid,) in (
+                db.session.query(Invoice.id).filter_by(claim_id=claim.id).all()
+            )]
+
+            if invoice_ids:
+                # Invoice items table (used by invoice add/remove item routes)
+                if _table_exists("invoice_item"):
+                    db.session.execute(
+                        text("DELETE FROM invoice_item WHERE invoice_id IN :invoice_ids")
+                        .bindparams(bindparam("invoice_ids", expanding=True)),
+                        {"invoice_ids": invoice_ids},
+                    )
+
+            # Claim-level children
             BillableItem.query.filter_by(claim_id=claim.id).delete(synchronize_session=False)
             ClaimDocument.query.filter_by(claim_id=claim.id).delete(synchronize_session=False)
 
-            # 3) Report rows (after join-table cleanup)
+            # Reports (after report-level cleanup)
             Report.query.filter_by(claim_id=claim.id).delete(synchronize_session=False)
 
-            # 4) Invoices (claim-level)
+            # Invoices (after invoice_item cleanup)
             Invoice.query.filter_by(claim_id=claim.id).delete(synchronize_session=False)
 
-            # 5) Finally the claim
+            # Finally the claim
             db.session.delete(claim)
             db.session.commit()
 
             flash("Claim deleted.", "success")
             return redirect(url_for("main.claims_list"))
 
-        except IntegrityError as e:
+        except IntegrityError:
             db.session.rollback()
             flash(
                 "Could not delete claim because related records still exist (FK constraint). "
                 "See server logs for details.",
                 "error",
             )
-            raise
+            return redirect(url_for("main.claim_delete", claim_id=claim.id))
 
     return render_template(
         "claim_delete_confirm.html",
         active_page="claims",
         claim=claim,
     )
+@bp.route("/claims/<int:claim_id>/reports/new", methods=["POST"])
+def report_new_from_claim(claim_id: int):
+    """Create a new Report from the Claim Detail page.
+
+    This is the backend for the report-type dropdown + “New Report” button.
+    It must:
+      - create the report with sensible default DOS dates
+      - carry forward barriers + approved providers from the most recent prior report
+      - redirect to the report edit screen
+    """
+
+    claim = Claim.query.get_or_404(claim_id)
+
+    report_type = (request.form.get("report_type") or request.form.get("type") or "").strip().lower()
+    if report_type not in ("initial", "progress", "closure"):
+        flash("Select a report type before creating a new report.", "error")
+        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+    today = date.today()
+
+    # Find the most recent report for DOS defaults and carry-forward
+    last = (
+        Report.query.filter_by(claim_id=claim.id)
+        .order_by(Report.created_at.desc())
+        .first()
+    )
+
+    # DOS defaults
+    if report_type == "initial":
+        dos_start = claim.referral_date or today
+        dos_end = today
+    else:
+        # progress/closure: start = day after last DOS end (fallback to today)
+        if last and last.dos_end:
+            dos_start = last.dos_end + timedelta(days=1)  # type: ignore[attr-defined]
+        else:
+            dos_start = today
+        dos_end = today
+
+    # Create
+    rpt = Report(
+        claim_id=claim.id,
+        report_type=report_type,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+        referral_date=claim.referral_date,
+        dos_start=dos_start,
+        dos_end=dos_end,
+    )
+
+    db.session.add(rpt)
+    db.session.flush()  # ensures rpt.id exists for join-table inserts
+
+    _apply_report_carry_forward(claim_id=claim.id, new_report=rpt)
+
+    db.session.commit()
+
+    # If closure is created, mark claim closed (can be reopened elsewhere)
+    if report_type == "closure":
+        try:
+            claim.is_closed = True  # tolerate old/new schema
+        except Exception:
+            pass
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    return redirect(url_for("main.report_edit", claim_id=claim.id, report_id=rpt.id))

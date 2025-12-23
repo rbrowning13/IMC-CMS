@@ -17,10 +17,10 @@
     <input
       type="text"
       name="dob"
-      class="form-control form-control-sm"
+      class="form-control form-control-sm js-date"
       placeholder="MM/DD/YYYY"
       inputmode="numeric"
-      data-auto-date="1"
+      data-flatpickr="1"
       value="{{ claim.dob.strftime('%m/%d/%Y') if claim and claim.dob else '' }}"
     >
   </div>
@@ -30,10 +30,10 @@
     <input
       type="text"
       name="doi"
-      class="form-control form-control-sm"
+      class="form-control form-control-sm js-date"
       placeholder="MM/DD/YYYY"
       inputmode="numeric"
-      data-auto-date="1"
+      data-flatpickr="1"
       value="{{ claim.doi.strftime('%m/%d/%Y') if claim and claim.doi else '' }}"
     >
   </div>
@@ -43,10 +43,10 @@
     <input
       type="text"
       name="surgery_date"
-      class="form-control form-control-sm"
+      class="form-control form-control-sm js-date"
       placeholder="MM/DD/YYYY"
       inputmode="numeric"
-      data-auto-date="1"
+      data-flatpickr="1"
       value="{{ claim.surgery_date.strftime('%m/%d/%Y') if claim and claim.surgery_date else '' }}"
     >
   </div>

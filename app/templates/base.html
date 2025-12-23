@@ -12,6 +12,9 @@
     crossorigin="anonymous"
   >
 
+  <!-- Flatpickr date picker CSS (CDN) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
   <!-- App stylesheet -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <style>
@@ -47,6 +50,50 @@
       0%   { outline-color: rgba(220, 53, 69, 0.15); }
       50%  { outline-color: rgba(220, 53, 69, 0.75); }
       100% { outline-color: rgba(220, 53, 69, 0.15); }
+    }
+
+    /* Global floating alert (used for save confirmations + validation notices) */
+    .floating-alert-host {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1090;
+      width: min(720px, calc(100vw - 2rem));
+      pointer-events: none;
+    }
+
+    .floating-alert-host .alert {
+      pointer-events: auto;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+      border-width: 2px;
+    }
+
+    /* Save confirmation styling (success)
+       Apply to BOTH the floating alert (preferred) and regular flashed success alerts.
+       Use !important to reliably override Bootstrap defaults.
+    */
+    .floating-alert-host .alert-success,
+    .flash-container .alert-success {
+      background-color: #ffffff !important;
+      color: #111111 !important;
+      border: 10px solid var(--accent-color, #198754) !important;
+    }
+
+    .dark-mode .floating-alert-host .alert-success,
+    .dark-mode .flash-container .alert-success {
+      background-color: #000000 !important;
+      color: #ffffff !important;
+      border: 10px solid var(--accent-color, #198754) !important;
+    }
+
+    /* Accent-aware styling (works in light & dark if --accent-color is defined in CSS) */
+    .floating-alert-host .alert-accent {
+      border-color: var(--accent-color, #0d6efd);
+    }
+
+    .floating-alert-host .alert-danger {
+      border-color: var(--accent-color, #dc3545);
     }
   </style>
 </head>
@@ -142,6 +189,9 @@
   <!-- Page content -->
   <main class="container-fluid py-3">
 
+    <!-- Global floating alert host (JS-managed) -->
+    <div id="floatingAlertHost" class="floating-alert-host" aria-live="polite" aria-atomic="true"></div>
+
     {# Flash messages #}
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
@@ -173,7 +223,161 @@
     crossorigin="anonymous"
   ></script>
 
+  <script>
+    // Global floating alert helper.
+    // Usage: window.showFloatingAlert('Changes saved', 'success')
+    // Levels: success | info | warning | danger | primary | secondary | light | dark
+    (function () {
+      function normalizeLevel(level) {
+        var allowed = ['success','info','warning','danger','primary','secondary','light','dark'];
+        if (!level) return 'info';
+        level = String(level).toLowerCase();
+        return allowed.indexOf(level) !== -1 ? level : 'info';
+      }
+
+      function getHost() {
+        return document.getElementById('floatingAlertHost');
+      }
+
+      function removeHostChildren(host) {
+        if (!host) return;
+        while (host.firstChild) host.removeChild(host.firstChild);
+      }
+
+      function detachDismissListeners(state) {
+        if (!state) return;
+        if (state.onDismiss) {
+          document.removeEventListener('click', state.onDismiss, true);
+          document.removeEventListener('keydown', state.onDismiss, true);
+          state.onDismiss = null;
+        }
+      }
+
+      var _state = { onDismiss: null };
+
+      window.clearFloatingAlert = function () {
+        var host = getHost();
+        detachDismissListeners(_state);
+        removeHostChildren(host);
+      };
+
+      function textIncludesAny(t, arr) {
+        if (!t) return false;
+        t = String(t).toLowerCase();
+        for (var i = 0; i < arr.length; i++) {
+          if (t.indexOf(arr[i]) !== -1) return true;
+        }
+        return false;
+      }
+
+      window.showFloatingAlert = function (message, level, opts) {
+        try {
+          var host = getHost();
+          if (!host) return;
+
+          opts = opts || {};
+          var bsLevel = normalizeLevel(level);
+          var msgText = message || '';
+
+          // Default policy: auto-dismiss most things.
+          // Persist only for explicit saves/deletes (or when opts.persistent is true).
+          var defaultKeywords = ['saved', 'changes saved', 'deleted', 'removed'];
+          var persistent = !!opts.persistent || (bsLevel === 'success' && textIncludesAny(msgText, defaultKeywords));
+          var autoMs = (typeof opts.autoDismissMs === 'number') ? opts.autoDismissMs : (bsLevel === 'success' ? 2500 : 3000);
+
+          // Clear any previous floating alert
+          window.clearFloatingAlert();
+
+          var alertEl = document.createElement('div');
+          alertEl.className = 'alert alert-' + bsLevel + ' alert-dismissible fade show alert-accent';
+          alertEl.setAttribute('role', 'alert');
+
+          var msgSpan = document.createElement('span');
+          msgSpan.textContent = msgText;
+          alertEl.appendChild(msgSpan);
+
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn-close';
+          btn.setAttribute('data-bs-dismiss', 'alert');
+          btn.setAttribute('aria-label', 'Close');
+          alertEl.appendChild(btn);
+
+          host.appendChild(alertEl);
+
+          function dismiss() {
+            try {
+              if (window.bootstrap && window.bootstrap.Alert) {
+                var inst = window.bootstrap.Alert.getOrCreateInstance(alertEl);
+                inst.close();
+              } else {
+                alertEl.classList.remove('show');
+                alertEl.remove();
+              }
+            } finally {
+              detachDismissListeners(_state);
+              removeHostChildren(host);
+            }
+          }
+
+          // Close button works as normal
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            dismiss();
+          });
+
+          // Allow click on alert to dismiss
+          alertEl.addEventListener('click', function (e) {
+            e.stopPropagation();
+          });
+
+          if (persistent) {
+            _state.onDismiss = function () { dismiss(); };
+            document.addEventListener('click', _state.onDismiss, true);
+            document.addEventListener('keydown', _state.onDismiss, true);
+          } else {
+            // Auto-dismiss
+            window.setTimeout(function () {
+              dismiss();
+            }, autoMs);
+          }
+
+        } catch (e) {
+          // Silent fail (alerts shouldn't break pages)
+        }
+      };
+    })();
+  </script>
+
+  <!-- Flatpickr date picker JS (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script>
+    // Global Flatpickr init. Use on inputs with: class="js-date" or data-flatpickr="1".
+    // Standard format: MM/DD/YYYY, allow typed entry, and use an explicit calendar button on supported pages.
+    document.addEventListener('DOMContentLoaded', function () {
+      if (!window.flatpickr) return;
+
+      // Attach Flatpickr to our standard selectors.
+      var dateInputs = document.querySelectorAll('input.js-date, input[data-flatpickr="1"]');
+      if (!dateInputs || !dateInputs.length) return;
+
+      dateInputs.forEach(function (el) {
+        // Avoid double-init if pages re-run scripts.
+        if (el._flatpickr) return;
+
+        window.flatpickr(el, {
+          allowInput: true,
+          dateFormat: 'm/d/Y',
+          // Keep behavior consistent with our UI expectations
+          // (no time selection here; we can enable time per-field later).
+          enableTime: false,
+        });
+      });
+    });
+  </script>
+
   <!-- Simple reusable table search helper -->
+
   <script>
     /**
      * Attach simple text filter to a table.
@@ -196,6 +400,91 @@
         });
       });
     }
+  </script>
+
+  <script>
+    // Global textarea auto-grow (min 2 rows, max 10 rows).
+    // Applies to all <textarea> by default.
+    // Opt-out with: data-autogrow="0" or class "js-no-autogrow".
+    // Per-field overrides:
+    //   data-autogrow-min="2" data-autogrow-max="10"
+    (function () {
+      function clamp(n, lo, hi) {
+        return Math.max(lo, Math.min(hi, n));
+      }
+
+      function parseIntSafe(v, fallback) {
+        var n = parseInt(v, 10);
+        return isNaN(n) ? fallback : n;
+      }
+
+      function getLineHeightPx(el) {
+        try {
+          var style = window.getComputedStyle(el);
+          var lh = parseFloat(style.lineHeight);
+          if (lh && !isNaN(lh)) return lh;
+          var fs = parseFloat(style.fontSize) || 14;
+          return fs * 1.35;
+        } catch (e) {
+          return 18;
+        }
+      }
+
+      function shouldAutoGrow(el) {
+        if (!el || el.tagName !== 'TEXTAREA') return false;
+        if (el.classList && el.classList.contains('js-no-autogrow')) return false;
+        var flag = el.getAttribute('data-autogrow');
+        if (flag === '0' || flag === 'false' || flag === 'off') return false;
+        return true;
+      }
+
+      function autoGrowTextarea(el) {
+        if (!shouldAutoGrow(el)) return;
+
+        var minRows = parseIntSafe(el.getAttribute('data-autogrow-min'), 2);
+        var maxRows = parseIntSafe(el.getAttribute('data-autogrow-max'), 10);
+        minRows = clamp(minRows, 1, 50);
+        maxRows = clamp(maxRows, minRows, 200);
+
+        var lineHeight = getLineHeightPx(el);
+
+        // Reset to min rows so scrollHeight reflects full content.
+        el.rows = minRows;
+
+        // Compute rows needed from height.
+        var rowsNeeded = Math.ceil((el.scrollHeight || 0) / lineHeight);
+        el.rows = clamp(rowsNeeded, minRows, maxRows);
+      }
+
+      function wireTextarea(el) {
+        if (!shouldAutoGrow(el)) return;
+        if (el.dataset && el.dataset.autogrowWired === '1') return;
+
+        // Initial sizing (for saved content after reload)
+        autoGrowTextarea(el);
+
+        // Resize while typing
+        el.addEventListener('input', function () {
+          autoGrowTextarea(el);
+        });
+
+        if (el.dataset) el.dataset.autogrowWired = '1';
+      }
+
+      function initAutoGrowTextareas() {
+        var areas = document.querySelectorAll('textarea');
+        if (!areas || !areas.length) return;
+        areas.forEach(function (ta) {
+          wireTextarea(ta);
+        });
+      }
+
+      document.addEventListener('DOMContentLoaded', initAutoGrowTextareas);
+
+      // Expose for pages that dynamically add textareas.
+      window.impactInitAutoGrowTextareas = initAutoGrowTextareas;
+      window.impactAutoGrowTextarea = autoGrowTextarea;
+    })();
   </script>
 
   <script>
@@ -331,6 +620,14 @@
       }
 
       var dateInputs = document.querySelectorAll('input[data-auto-date="1"], input.js-date-autofmt');
+
+      // Skip fields that are using Flatpickr (js-date or data-flatpickr)
+      dateInputs = Array.prototype.filter.call(dateInputs, function (el) {
+        if (!el) return false;
+        if (el.classList && el.classList.contains('js-date')) return false;
+        if (el.getAttribute && el.getAttribute('data-flatpickr') === '1') return false;
+        return true;
+      });
       Array.prototype.forEach.call(dateInputs, function (input) {
         setupAutoDate(input);
       });
@@ -404,10 +701,78 @@
   </script>
 
   <script>
-  // Dismiss flash messages on first click anywhere or any keypress.
+  // Flash alert behavior:
+  // - Persistent until first click/keypress: validation/errors (danger/warning)
+  // - Floating persistent: explicit saves/deletes (success containing keywords)
+  // - Auto-dismiss: everything else
   document.addEventListener('DOMContentLoaded', function () {
     try {
       var alerts = document.querySelectorAll('.js-auto-dismiss');
+
+      function normalizeText(el) {
+        try {
+          var msgEl = el ? el.querySelector('.js-flash-msg') : null;
+          var raw = msgEl ? (msgEl.textContent || '') : (el.textContent || '');
+          return String(raw || '').toLowerCase().trim();
+        } catch (e) {
+          return '';
+        }
+      }
+
+      function textIncludesAny(t, arr) {
+        if (!t) return false;
+        t = String(t).toLowerCase();
+        for (var i = 0; i < arr.length; i++) {
+          if (t.indexOf(arr[i]) !== -1) return true;
+        }
+        return false;
+      }
+
+      function bsClose(el) {
+        try {
+          if (window.bootstrap && window.bootstrap.Alert) {
+            var inst = window.bootstrap.Alert.getOrCreateInstance(el);
+            inst.close();
+          } else {
+            el.remove();
+          }
+        } catch (e) {
+          try { el.remove(); } catch (e2) {}
+        }
+      }
+
+      function wirePersistent(el) {
+        function dismissOnce() {
+          bsClose(el);
+          document.removeEventListener('click', dismissOnce, true);
+          document.removeEventListener('keydown', dismissOnce, true);
+          document.removeEventListener('touchstart', dismissOnce, true);
+        }
+
+        // Clicking the alert itself dismisses immediately
+        el.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dismissOnce();
+        });
+
+        document.addEventListener('click', dismissOnce, true);
+        document.addEventListener('touchstart', dismissOnce, true);
+        document.addEventListener('keydown', dismissOnce, true);
+      }
+
+      function wireAuto(el, ms) {
+        // Click-to-dismiss
+        el.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          bsClose(el);
+        });
+
+        window.setTimeout(function () {
+          bsClose(el);
+        }, ms);
+      }
 
       // Optional: highlight a specific field if the message includes a token like: [field=phone]
       alerts.forEach(function (alertEl) {
@@ -425,14 +790,12 @@
           // Remove token from displayed message
           msgEl.textContent = raw.replace(m[0], '');
 
-          // Try to find input by name or id
           var target = document.querySelector('[name="' + CSS.escape(fieldName) + '"]') ||
                        document.getElementById(fieldName);
 
           if (target) {
             target.classList.add('is-invalid');
             target.classList.add('flash-field-highlight');
-            // Remove the extra highlight after a moment (keep is-invalid)
             window.setTimeout(function () {
               target.classList.remove('flash-field-highlight');
             }, 2500);
@@ -442,34 +805,63 @@
         }
       });
 
-      if (!alerts || !alerts.length) return;
+      // Promote ONLY "save/delete" success flashes into the floating alert.
+      // Everything else stays in the normal flash stack and auto-dismisses.
+      try {
+        var successAlerts = document.querySelectorAll('.flash-container .alert-success');
+        if (successAlerts && successAlerts.length && window.showFloatingAlert) {
+          var keepKeywords = ['saved', 'changes saved', 'deleted', 'removed'];
+          var promoted = [];
 
-      function dismissAll() {
-        try {
-          alerts.forEach(function (el) {
-            try {
-              if (window.bootstrap && window.bootstrap.Alert) {
-                var inst = window.bootstrap.Alert.getOrCreateInstance(el);
-                inst.close();
-              } else {
-                el.classList.remove('show');
-                el.classList.add('hide');
-                el.remove();
-              }
-            } catch (e) {
-              // ignore
+          successAlerts.forEach(function (el) {
+            var txt = normalizeText(el);
+            if (textIncludesAny(txt, keepKeywords)) {
+              // Keep original casing in floating alert
+              var msgEl = el.querySelector('.js-flash-msg');
+              var raw = msgEl ? (msgEl.textContent || '').trim() : (el.textContent || '').trim();
+              if (raw) promoted.push(raw);
+
+              // Remove from regular flashes to avoid duplicates
+              bsClose(el);
             }
           });
-        } finally {
-          // Only dismiss once
-          document.removeEventListener('click', dismissAll, true);
-          document.removeEventListener('keydown', dismissAll, true);
+
+          if (promoted.length) {
+            window.showFloatingAlert(promoted.join('\n'), 'success', { persistent: true });
+          }
         }
+      } catch (e) {
+        // ignore
       }
 
-      // Dismiss when user interacts anywhere (click or keystroke)
-      document.addEventListener('click', dismissAll, true);
-      document.addEventListener('keydown', dismissAll, true);
+      // Recompute after promotions
+      alerts = document.querySelectorAll('.js-auto-dismiss');
+      if (!alerts || !alerts.length) return;
+
+      alerts.forEach(function (el) {
+        var isDanger = el.classList.contains('alert-danger');
+        var isWarn = el.classList.contains('alert-warning');
+        var isSuccess = el.classList.contains('alert-success');
+
+        // Validation/errors: persistent until interaction
+        if (isDanger || isWarn) {
+          wirePersistent(el);
+          return;
+        }
+
+        // Everything else auto-dismiss
+        if (isSuccess) {
+          wireAuto(el, 2500);
+          return;
+        }
+
+        if (el.classList.contains('alert-info') || el.classList.contains('alert-primary') || el.classList.contains('alert-secondary')) {
+          wireAuto(el, 3000);
+          return;
+        }
+
+        wireAuto(el, 3000);
+      });
 
     } catch (e) {
       // ignore

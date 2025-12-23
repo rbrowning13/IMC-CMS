@@ -270,163 +270,6 @@
 
 <div class="rp-wrap">
 
-  <!-- Face Sheet (Cover Page) -->
-  <div class="rp-card rp-pad">
-
-    <div class="rp-letterhead">
-      <div class="rp-logo">
-        {% if settings and settings.logo_path %}
-          <img
-            src="{{ url_for('static', filename=settings.logo_path) }}"
-            alt="{{ settings.business_name or 'Business Logo' }}"
-          >
-        {% endif %}
-
-        <div class="rp-biz">{{ settings.business_name or 'Impact Medical Consulting' }}</div>
-        <div class="rp-bizmeta">
-          {% if settings.address1 %}{{ settings.address1 }}{% endif %}
-          {% if settings.address2 %}<br>{{ settings.address2 }}{% endif %}
-          {% if settings.city or settings.state or settings.postal_code %}
-            <br>
-            {{ settings.city or '' }}{% if settings.city and (settings.state or settings.postal_code) %}, {% endif %}{{ settings.state or '' }} {{ settings.postal_code or '' }}
-          {% endif %}
-          {% if settings.phone %}<br>{{ settings.phone }}{% if settings.phone_ext %} x{{ settings.phone_ext }}{% endif %}{% endif %}
-          {% if settings.email %}<br>{{ settings.email }}{% endif %}
-        </div>
-      </div>
-
-      <div class="rp-title">
-        <h1 class="rp-facesheet-title">Face Sheet</h1>
-        <div class="rp-facesheet-sub">Prepared {{ report.updated_at|format_datetime('%m/%d/%Y %H:%M') }}</div>
-      </div>
-    </div>
-
-    <div class="rp-rule"></div>
-
-    <div class="rp-claimbox avoid-break">
-      <p class="rp-patient">{{ claim.claimant_name }}</p>
-
-      <div class="rp-grid">
-        <dl class="rp-dl">
-          <dt>Claim #</dt>
-          <dd>{{ claim.claim_number or '—' }}</dd>
-
-          <dt>Date of Birth</dt>
-          <dd>{{ claim.dob|format_date('%m/%d/%Y') }}</dd>
-
-          <dt>Date of Injury</dt>
-          <dd>{{ claim.doi|format_date('%m/%d/%Y') }}</dd>
-
-          <dt>Claim State</dt>
-          <dd>{{ claim.claim_state or '—' }}</dd>
-
-          {% if claim.carrier %}
-            <dt>Carrier</dt>
-            <dd>{{ claim.carrier.name }}</dd>
-          {% endif %}
-
-          {% if claim.employer %}
-            <dt>Employer</dt>
-            <dd>{{ claim.employer.name }}</dd>
-          {% endif %}
-        </dl>
-
-        <dl class="rp-dl">
-          <dt>Report Type</dt>
-          <dd>{{ report.report_type|capitalize }} Report</dd>
-
-          <dt>Date of Service</dt>
-          <dd>{{ report.dos_start|format_date('%m/%d/%Y') }} – {{ report.dos_end|format_date('%m/%d/%Y') }}</dd>
-
-          {% if report.next_report_due %}
-            <dt>Next report due</dt>
-            <dd>{{ report.next_report_due|format_date('%m/%d/%Y') }}</dd>
-          {% endif %}
-
-          {% if report.referral_date %}
-            <dt>Referral Date</dt>
-            <dd>{{ report.referral_date|format_date('%m/%d/%Y') }}</dd>
-          {% endif %}
-
-          {% if report.initial_next_appt_datetime %}
-            <dt>Next Appointment</dt>
-            <dd>
-              {{ report.initial_next_appt_datetime|format_datetime('%m/%d/%Y %H:%M') }}
-              {% if report.initial_next_appt_provider_name %}
-                &nbsp;with {{ report.initial_next_appt_provider_name }}
-              {% endif %}
-            </dd>
-          {% endif %}
-
-          {% if settings and settings.responsible_case_manager %}
-            <dt>Case Manager</dt>
-            <dd>{{ settings.responsible_case_manager }}</dd>
-          {% endif %}
-        </dl>
-      </div>
-    </div>
-
-    {% set _providers = [] %}
-    {% if report.approved_treating_providers is defined and report.approved_treating_providers and report.approved_treating_providers|length > 0 %}
-      {% set _providers = report.approved_treating_providers %}
-    {% elif report.treating_provider %}
-      {% set _providers = [report.treating_provider] %}
-    {% endif %}
-
-    {% if _providers and _providers|length > 0 %}
-      <div class="rp-providerbox avoid-break">
-        <div class="rp-provider-title">Treating Provider(s)</div>
-
-        <div class="rp-providergrid">
-          {% for p in _providers %}
-            <div class="rp-provider">
-              <p class="rp-pname">{{ p.name or '—' }}</p>
-
-              {% if p.address1 or p.address2 or p.city or p.state or p.postal_code %}
-                <p class="rp-pline">
-                  {% if p.address1 %}{{ p.address1 }}{% endif %}
-                  {% if p.address2 %}<br>{{ p.address2 }}{% endif %}
-                  {% if p.city or p.state or p.postal_code %}
-                    <br>
-                    {{ p.city or '' }}{% if p.city and (p.state or p.postal_code) %}, {% endif %}{{ p.state or '' }} {{ p.postal_code or '' }}
-                  {% endif %}
-                </p>
-              {% endif %}
-
-              {% if p.phone %}
-                <p class="rp-pline">{{ p.phone }}</p>
-              {% endif %}
-            </div>
-          {% endfor %}
-        </div>
-      </div>
-    {% endif %}
-
-    {% if settings and (settings.signature_path or settings.responsible_case_manager) %}
-      <div class="rp-signature avoid-break">
-        <div class="rp-siglabel">Signature</div>
-
-        {% if settings.signature_path %}
-          <img
-            class="rp-sigimg"
-            src="{{ url_for('static', filename=settings.signature_path) }}"
-            alt="Signature"
-          >
-        {% endif %}
-
-        {% if settings.responsible_case_manager %}
-          <p class="rp-signame">{{ settings.responsible_case_manager }}</p>
-          <p class="rp-sigtitle">Case Manager</p>
-          <div class="rp-sigline"></div>
-        {% else %}
-          <div class="rp-sigline"></div>
-        {% endif %}
-      </div>
-    {% endif %}
-
-  </div>
-
-  <div class="rp-pagebreak"></div>
 
   <!-- Existing report (Page 2+) -->
   <div class="rp-card rp-pad">
@@ -453,15 +296,20 @@
         </div>
       </div>
 
-      <div class="rp-title">
-        <h1>{{ report.report_type|capitalize }} Report</h1>
-        <div class="rp-sub">
-          Date of Service: {{ report.dos_start|format_date('%m/%d/%Y') }} – {{ report.dos_end|format_date('%m/%d/%Y') }}
-        </div>
-        {% if report.next_report_due %}
-          <div class="rp-sub">Next report due: {{ report.next_report_due|format_date('%m/%d/%Y') }}</div>
-        {% endif %}
+    <div class="rp-title">
+      <h1>{{ report.report_type|capitalize }} Report</h1>
+      {% if report.report_type == 'progress' and display_report_number %}
+        <div class="rp-sub">Report #: {{ display_report_number }}</div>
+      {% endif %}
+      <div class="rp-sub">
+        Date of Service: {{ report.dos_start|format_date('%m/%d/%Y') }} – {{ report.dos_end|format_date('%m/%d/%Y') }}
       </div>
+      {% if report.report_type in ['initial', 'progress'] %}
+        <div class="rp-sub">
+          Next report due: {% if report.next_report_due %}{{ report.next_report_due|format_date('%m/%d/%Y') }}{% else %}—{% endif %}
+        </div>
+      {% endif %}
+    </div>
     </div>
 
     <div class="rp-rule"></div>
@@ -482,40 +330,39 @@
 
           <dt>Claim State</dt>
           <dd>{{ claim.claim_state or '—' }}</dd>
+        </dl>
 
+        <dl class="rp-dl">
           {% if claim.carrier %}
             <dt>Carrier</dt>
             <dd>{{ claim.carrier.name }}</dd>
+          {% endif %}
+
+          {% if claim.carrier_contact %}
+            <dt>Adjuster</dt>
+            <dd>{{ claim.carrier_contact.name or '—' }}</dd>
           {% endif %}
 
           {% if claim.employer %}
             <dt>Employer</dt>
             <dd>{{ claim.employer.name }}</dd>
           {% endif %}
-        </dl>
 
-        <dl class="rp-dl">
+          {% if settings and settings.responsible_case_manager %}
+            <dt>Case Manager</dt>
+            <dd>{{ settings.responsible_case_manager }}</dd>
+          {% endif %}
+
+
           {% if report.referral_date %}
             <dt>Referral Date</dt>
             <dd>{{ report.referral_date|format_date('%m/%d/%Y') }}</dd>
           {% endif %}
 
-          {% if report.approved_treating_providers is defined and report.approved_treating_providers and report.approved_treating_providers|length > 0 %}
-            <dt>Approved Treating Provider(s)</dt>
-            <dd>
-              {% for p in report.approved_treating_providers %}
-                {{ p.name }}{% if not loop.last %}<br>{% endif %}
-              {% endfor %}
-            </dd>
-          {% elif report.treating_provider %}
-            <dt>Approved Treating Provider(s)</dt>
-            <dd>{{ report.treating_provider.name }}</dd>
-          {% endif %}
-
           {% if report.initial_next_appt_datetime %}
             <dt>Next Appointment</dt>
             <dd>
-              {{ report.initial_next_appt_datetime|format_datetime('%m/%d/%Y %H:%M') }}
+              {{ report.initial_next_appt_datetime|format_datetime('%m/%d/%Y %I:%M %p') }}
               {% if report.initial_next_appt_provider_name %}
                 &nbsp;with {{ report.initial_next_appt_provider_name }}
               {% endif %}
@@ -561,7 +408,20 @@
       </div>
     {% endif %}
 
-    <div class="rp-section avoid-break">
+    {% if report.report_type == 'initial' %}
+      <div class="rp-section">
+        <h3>Primary Care Provider / Family Doctor</h3>
+        <div class="rp-body">
+          {% if report.primary_care_provider %}
+            {{ report.primary_care_provider|nl2br }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="rp-section">
       <h3>Status / Treatment Plan</h3>
       <div class="rp-body">
         {% if report.status_treatment_plan %}
@@ -572,7 +432,7 @@
       </div>
     </div>
 
-    <div class="rp-section avoid-break">
+    <div class="rp-section">
       <h3>Work Status</h3>
       <div class="rp-body">
         {% if report.work_status %}
@@ -583,12 +443,12 @@
       </div>
     </div>
 
-    {% if report.employment_status is defined %}
-      <div class="rp-section avoid-break">
+    {% if report.report_type == 'initial' %}
+      <div class="rp-section">
         <h3>Employment Status</h3>
         <div class="rp-body">
           {% if report.employment_status %}
-            {{ report.employment_status }}
+            {{ report.employment_status|nl2br }}
           {% else %}
             <span class="rp-na">N/A</span>
           {% endif %}
@@ -596,35 +456,39 @@
       </div>
     {% endif %}
 
-    <div class="rp-section avoid-break">
-      <h3>Case Management Plan</h3>
-      <div class="rp-body">
-        {% if report.case_management_plan %}
-          {{ report.case_management_plan|nl2br }}
-        {% else %}
-          <span class="rp-na">N/A</span>
-        {% endif %}
+    {% if report.report_type != 'closure' %}
+      <div class="rp-section">
+        <h3>Case Management Plan / Recommendations</h3>
+        <div class="rp-body">
+          {% if report.case_management_plan %}
+            {{ report.case_management_plan|nl2br }}
+          {% else %}
+            <span class="rp-na">N/A</span>
+          {% endif %}
+        </div>
       </div>
-    </div>
+    {% endif %}
 
-    <div class="rp-section avoid-break">
-      <h3>Barriers to Recovery</h3>
-      <div class="rp-body">
-        {% if barriers and barriers|length > 0 %}
-          <ul class="rp-list">
-            {% for b in barriers %}
-              <li>{{ b.label }}</li>
-            {% endfor %}
-          </ul>
-        {% else %}
-          <span class="rp-na">N/A – No significant barriers identified.</span>
-        {% endif %}
+    {% if report.report_type != 'closure' %}
+      <div class="rp-section">
+        <h3>Possible Barriers to Recovery</h3>
+        <div class="rp-body">
+          {% if barriers and barriers|length > 0 %}
+            <ul class="rp-list">
+              {% for b in barriers %}
+                <li>{{ b.label }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <span class="rp-na">N/A – No significant barriers identified.</span>
+          {% endif %}
+        </div>
       </div>
-    </div>
+    {% endif %}
 
     {# INITIAL-specific fields #}
     {% if report.report_type == 'initial' %}
-      <div class="rp-section avoid-break">
+      <div class="rp-section">
         <h3>Diagnosis</h3>
         <div class="rp-body">
           {% if report.initial_diagnosis %}
@@ -635,7 +499,7 @@
         </div>
       </div>
 
-      <div class="rp-section avoid-break">
+      <div class="rp-section">
         <h3>Mechanism of Injury</h3>
         <div class="rp-body">
           {% if report.initial_mechanism_of_injury %}
@@ -646,7 +510,7 @@
         </div>
       </div>
 
-      <div class="rp-section avoid-break">
+      <div class="rp-section">
         <h3>Concurrent Conditions</h3>
         <div class="rp-body">
           {% if report.initial_coexisting_conditions %}
@@ -657,7 +521,7 @@
         </div>
       </div>
 
-      <div class="rp-section avoid-break">
+      <div class="rp-section">
         <h3>Surgical History</h3>
         <div class="rp-body">
           {% if report.initial_surgical_history %}
@@ -668,7 +532,7 @@
         </div>
       </div>
 
-      <div class="rp-section avoid-break">
+      <div class="rp-section">
         <h3>Medications</h3>
         <div class="rp-body">
           {% if report.initial_medications %}
@@ -679,7 +543,7 @@
         </div>
       </div>
 
-      <div class="rp-section avoid-break">
+      <div class="rp-section">
         <h3>Diagnostics</h3>
         <div class="rp-body">
           {% if report.initial_diagnostics %}
@@ -693,7 +557,7 @@
 
     {# CLOSURE-specific fields #}
     {% if report.report_type == 'closure' %}
-      <div class="rp-section avoid-break">
+      <div class="rp-section">
         <h3>Closure Reason</h3>
         <div class="rp-body">
           {% if report.closure_reason %}
@@ -704,7 +568,7 @@
         </div>
       </div>
 
-      <div class="rp-section avoid-break">
+      <div class="rp-section">
         <h3>Closure Details</h3>
         <div class="rp-body">
           {% if report.closure_details %}
@@ -715,7 +579,7 @@
         </div>
       </div>
 
-      <div class="rp-section avoid-break">
+      <div class="rp-section">
         <h3>Case Management Impact</h3>
         <div class="rp-body">
           {% if report.closure_case_management_impact %}
@@ -730,7 +594,7 @@
     {% if cm_activities and cm_activities|length > 0 %}
       <div class="rp-rule" style="margin-top: 26px;"></div>
 
-      <div class="rp-section avoid-break">
+      <div class="rp-section">
         <h3>Case Manager Activities</h3>
         <table class="rp-table">
           <thead>

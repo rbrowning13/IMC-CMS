@@ -1,42 +1,47 @@
 # Project Roadmap
 
+_Last stabilization sweep completed: validation, contact persistence, and UX alerts are now standardized._
+
 ## 🔥 Current Stabilization Backlog (Authoritative Checklist)
 _This is the single source of truth for active bugs, regressions, and polish items.  
 Items here supersede older phase notes until checked off._
 
 ### A) Data safety and validation polish
-- [ ] Global phone/fax input masking across the entire app (auto ( ) -)  
+- [x] Global phone/fax input masking across the entire app (auto ( ) -)  
   _Test: type digits in every phone/fax field; confirm formatting + doesn’t fight cursor._
-- [ ] Phone/fax validation: allow blank; if not blank require correct digit count  
+- [x] Phone/fax validation: allow blank; if not blank require correct digit count  
   _Test: blank saves; 9 digits rejects; 10 digits saves._
-- [ ] Email validation: allow blank; if not blank must be valid  
+- [x] Email validation: allow blank; if not blank must be valid  
   _Test: blank saves; x@ rejects; x@y.com saves._
-- [ ] ZIP validation: allow blank; if not blank must be 5 or 5+4  
+- [x] ZIP validation: allow blank; if not blank must be 5 or 5+4  
   _Test: blank saves; 1234 rejects; 12345 saves; 12345-6789 saves._
-- [ ] No data loss on validation errors (forms re-render with typed data intact)  
+- [x] No data loss on validation errors (forms re-render with typed data intact)  
   _Test: intentionally fail validation and confirm fields retain values exactly._
+- [ ] Field-level error highlighting (red outline + message near field)  
+  _Future enhancement: used later for report DOS/date validation._
 
 ### H) Deletes / referential integrity
-- [ ] Delete Claim succeeds without FK crashes (report_approved_provider, etc.)  
-  _Known issue: FK violation from report_approved_provider when deleting reports via bulk delete._
-- [ ] Delete Provider/Employer/Carrier deletes related contacts safely (or blocks with clear message)
+- [x] Delete Claim succeeds without FK crashes
+  _Resolved: invoices, reports, and dependent records now cleanly handled._
+- [x] Delete Provider/Employer/Carrier contacts safely clears Claim references
+  _Behavior: if a contact is referenced by a Claim, the FK is cleared before delete (no replacement required)._ 
 
 ### C) Contacts: CRUD + roles (per parent type)
 #### Carrier contacts
-- [ ] Edit loads existing contact into form
-- [ ] Edit updates record (doesn’t create new)
-- [ ] Role/Title dropdown persists + reloads on edit  
-  _Status guess: Carrier ✅ working now, but verify._
+- [x] Edit loads existing contact into form
+- [x] Edit updates record (doesn’t create new)
+- [x] Role/Title dropdown persists + reloads on edit  
+  Status: ✅ confirmed working
 #### Employer contacts
-- [ ] Edit loads existing contact into form
-- [ ] Edit updates record (doesn’t create new)
-- [ ] Role/Title dropdown persists + reloads on edit  
-  _Status guess: fixed “twice” — verify._
+- [x] Edit loads existing contact into form
+- [x] Edit updates record (doesn’t create new)
+- [x] Role/Title dropdown persists + reloads on edit  
+  Status: ✅ confirmed working
 #### Provider contacts
-- [ ] Edit loads existing contact into form
-- [ ] Edit updates record (doesn’t create new)
-- [ ] Role/Title dropdown persists + reloads on edit  
-  _Status guess: ✅ working now, verify._
+- [x] Edit loads existing contact into form
+- [x] Edit updates record (doesn’t create new)
+- [x] Role/Title dropdown persists + reloads on edit  
+  Status: ✅ confirmed working
 _Test script for all 3: Create contact w/ role → save → refresh page → confirm role displays → click Edit → role is selected → change role → save → refresh → confirm changed._
 
 ### F) Billables + Billing Activity Codes
@@ -52,16 +57,44 @@ _Test script for all 3: Create contact w/ role → save → refresh page → con
 ### E) Claims / Reports workflow
 - [ ] “New Report” from Claim Detail works for Initial/Progress/Closure  
   _Test: click each type → new report created → lands on edit page._
-- [ ] Report fields save reliably (esp. Initial “Primary Care Provider / Family Doctor”)  
-  _Known issue: PCP wasn’t saving at one point → verify._
+- [x] Initial Report: "Primary Care Provider / Family Doctor" saves and persists  
+  _Status: column added, model + routes wired, persists correctly._
+- [x] Treating Provider checkboxes selectable + persist on save  
+  _Status: selectable, persists, and carries forward from previous report._
+- [x] Possible Barriers to Recovery checkboxes selectable + persist on save  
+  _Status: selectable, persists, and carries forward from previous report._
+- [x] Report numbering logic (Initial=0 not printed; Progress starts at 1; Closure not numbered)  
+  _Status: verified working; keep counting based on visible/non-deleted reports._
 - [ ] Report edit screen not spamming status updates / refresh loops  
   _Test: open report edit and watch top banner behavior._
 - [ ] Roll-forward per-field works (shared long text fields)  
   _Test: click roll-forward on a field with a previous report._
+- [ ] Roll-forward buttons not functioning on report edit screens  
+  _Note: Buttons render but do not populate fields. Likely similar fix to treating providers / barriers carry-forward, but defer until report field mapping is finalized._
 - [ ] ICS download works for Next Appointment  
   _Note: previously flagged to fix; verify current behavior._
+- [ ] Closure report print/layout tweaks (remove unused fields, update closure reasons, full-width Closure Details)  
+  _Priority: NEXT (blocker for shadowing). Do this before server cutover._
+- [ ] Report date auto-fill + non-overlap enforcement (DOS start/end logic prevents overlaps across reports)  
+  _Add rule: Initial DOS start = referral date; Progress/Closure DOS start = day after prior report DOS end; DOS end = today; validate overlap and warn._
+  _Priority: lower (after closure report + server go-live)._
+- [ ] Confirm/decide auto-billable creation for reports (Initial/Progress/Closure)  
+  _Status: currently unclear; verify with Gina and either implement or explicitly disable._
+  _Priority: lower (defer until Gina confirms desired behavior after shadowing starts)._
+- [x] Date picker standardized using Flatpickr on Claim New and Billable Item date fields  
+  _Status: Flatpickr initialized globally and verified working._
 
 ### G) Invoices
+
+### K) Go‑Live / Server Cutover (next week)
+- [ ] Bump app revision (minor tick) + commit + tag
+  _Rule: bump rev before pushing to git._
+- [ ] Push current stabilization build to git (main)
+- [ ] Server deployment: pull latest on server, install deps, restart service
+- [ ] Start with clean production DB on server (wipe OK) + confirm schema matches current models
+  _Gina will enter live data on server; we want a clean starting point._
+- [ ] Verify documents_root points to server storage (RAID later) and uploads work (claim + report)
+- [ ] Smoke test on server: create claim → create progress report → print/PDF → upload docs → invoice view
 - [ ] Invoice “Save” persists date (date doesn’t reset)
 - [ ] Invoice numbering format returns to INV-YY-### (e.g., INV-25-001)
 - [ ] “Add all uninvoiced complete items” works
@@ -86,7 +119,7 @@ _Test script for all 3: Create contact w/ role → save → refresh page → con
   _Test: carrier/employer/provider new/edit/detail/list._
 
 ### D) Phone extension fields everywhere
-- [ ] Phone extension fields exist on Carrier/Employer/Provider (new/edit/detail/list where appropriate)  
+- [x] Phone extension fields exist on Carrier/Employer/Provider (new/edit/detail/list where appropriate)  
   _Status guess: mostly done — verify._
 - [ ] Claimant phone extension exists on Claim New/Edit and shows on Claim Detail summary  
   _Known issue: was missing from claim summary at one point → verify._
@@ -94,16 +127,23 @@ _Test script for all 3: Create contact w/ role → save → refresh page → con
 - [ ] Invoice print/details show extensions where phone numbers appear
 
 ### I) Forms/Templates area
-- [ ] Fax cover sheet search works across contacts, claimants, employers, providers, carriers, with category + association  
+- [x] Fax cover sheet search works across contacts, claimants, employers, providers, carriers, with category + association  
   _Status guess: ✅ working now._
-- [ ] Fax cover sheet: remove address field  
+- [x] Fax cover sheet: remove address field  
   _Status guess: ✅ done, verify._
 - [ ] Forms.py will get big → plan to split later (note only)
 
 ### J) “Tomorrow notes” (explicit parking lot)
+- [ ] Finalize canonical Report field list + storage strategy before completing roll-forward logic  
+  _Note: Treating providers + barriers roll-forward confirmed working; per-field text roll-forward still pending._
+- [ ] Refactor core_data.py into smaller modules once stabilization backlog is clear
+- [ ] Standardized delete behavior: clear FK references instead of forcing replacement
+  _Applies to Contacts referenced by Claims._
 - [ ] Remove email column from carriers view, employers view, providers view (you flagged this)
 - [ ] Discuss/confirm extension strategy is “ext field everywhere” (we chose this)
 - [ ] Keep refactor plan: split big route files as forms expand
+- [ ] Live server update strategy: support wipe-at-will and/or migrate-at-will using Alembic baseline + repeatable seed/test data  
+  _Goal: safe updates while Gina shadows; ability to reset DB during rollout without losing docs storage layout._
 
 ---
 

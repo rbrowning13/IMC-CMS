@@ -338,7 +338,8 @@
                   <input type="text"
                          id="service_date"
                          name="service_date"
-                         class="form-control form-control-sm js-date-autofmt"
+                         class="form-control form-control-sm js-date"
+                         data-flatpickr="1"
                          inputmode="numeric"
                          maxlength="10"
                          placeholder="MM/DD/YYYY">
@@ -422,25 +423,54 @@
           <div class="card shadow-sm mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
               <h2 class="h6 mb-0">Reports</h2>
+
+              <form method="post"
+                    action="{{ url_for('main.claim_report_new', claim_id=claim.id) }}"
+                    class="d-flex align-items-center gap-2 mb-0">
+                <span class="small text-muted" style="white-space: nowrap;">New report:</span>
+                <label for="report_type" class="visually-hidden">Report Type</label>
+                <select id="report_type"
+                        name="report_type"
+                        class="form-select form-select-sm"
+                        required>
+                  <option value="">Select type…</option>
+                  <option value="initial">Initial</option>
+                  <option value="progress">Progress</option>
+                  <option value="closure">Closure</option>
+                </select>
+                <button type="submit" class="btn btn-primary btn-sm">
+                  New Report
+                </button>
+              </form>
             </div>
             <div class="card-body p-0">
               <table id="reports-table" class="table table-sm mb-0 align-middle">
                 <thead class="table-light">
                   <tr>
-                    <th style="width: 16%" class="sortable" data-sort-key="type"><span>Type</span> <span class="sort-indicator">↕</span></th>
-                    <th style="width: 24%" class="sortable" data-sort-key="dos"><span>DOS Range</span> <span class="sort-indicator">↕</span></th>
-                    <th style="width: 20%" class="sortable" data-sort-key="provider"><span>Treating Provider</span> <span class="sort-indicator">↕</span></th>
-                    <th style="width: 20%" class="sortable" data-sort-key="next_appt"><span>Next Appointment</span> <span class="sort-indicator">↕</span></th>
-                    <th style="width: 15%" class="sortable" data-sort-key="next_due"><span>Next Report Due</span> <span class="sort-indicator">↕</span></th>
+                    <th style="width: 10%" class="sortable" data-sort-key="type"><span>Type</span> <span class="sort-indicator">↕</span></th>
+                    <th style="width: 8%">Report #</th>
+                    <th style="width: 22%" class="sortable" data-sort-key="dos"><span>DOS Range</span> <span class="sort-indicator">↕</span></th>
+                    <th style="width: 30%" class="sortable" data-sort-key="provider"><span>Treating Provider</span> <span class="sort-indicator">↕</span></th>
+                    <th style="width: 18%" class="sortable" data-sort-key="next_appt"><span>Next Appointment</span> <span class="sort-indicator">↕</span></th>
+                    <th style="width: 12%" class="sortable" data-sort-key="next_due"><span>Next Report</span> <span class="sort-indicator">↕</span></th>
                     <th style="width: 15%" class="text-end">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                 {% if reports %}
+                  {% set progress_num = namespace(n=0) %}
                   {% for r in reports %}
                     <tr>
-                      <td class="small">
+                      <td class="small" style="white-space: normal; word-break: break-word;">
                         {{ (r.report_type or "—")|capitalize }}
+                      </td>
+                      <td class="small">
+                        {% if r.report_type == 'progress' %}
+                          {% set progress_num.n = progress_num.n + 1 %}
+                          {{ progress_num.n }}
+                        {% else %}
+                          —
+                        {% endif %}
                       </td>
                       <td class="small">
                         {% if r.dos_start or r.dos_end %}
@@ -449,9 +479,62 @@
                           —
                         {% endif %}
                       </td>
-                      <td class="small">
-                        {% if r.treating_provider %}
-                          {{ r.treating_provider.name }}
+                      <td class="small" style="white-space: normal; word-break: break-word;">
+                        {#
+                          Some installs use a true many-to-many relationship (e.g. approved_providers),
+                          others expose join rows (e.g. report_approved_providers) that point to Provider.
+                          Try multiple common attribute names and normalize into a list.
+                        #}
+                        {% set _names = [] %}
+
+                        {% set provs = None %}
+                        {% if r.approved_providers is defined %}
+                          {% set provs = r.approved_providers %}
+                        {% elif r.approved_treating_providers is defined %}
+                          {% set provs = r.approved_treating_providers %}
+                        {% elif r.treating_providers is defined %}
+                          {% set provs = r.treating_providers %}
+                        {% elif r.providers is defined %}
+                          {% set provs = r.providers %}
+                        {% elif r.report_approved_providers is defined %}
+                          {% set provs = r.report_approved_providers %}
+                        {% elif r.approved_provider_rows is defined %}
+                          {% set provs = r.approved_provider_rows %}
+                        {% elif r.report_approved_provider_rows is defined %}
+                          {% set provs = r.report_approved_provider_rows %}
+                        {% endif %}
+
+                        {# If it's a dynamic relationship/query, pull the list #}
+                        {% if provs is not none and provs.all is defined %}
+                          {% set provs = provs.all() %}
+                        {% endif %}
+
+                        {% if provs %}
+                          {% for p in provs %}
+                            {# Direct Provider object #}
+                            {% if p is not none and p.name is defined and p.name %}
+                              {% set _ = _names.append(p.name) %}
+                            {# Join row with provider relationship #}
+                            {% elif p is not none and p.provider is defined and p.provider and p.provider.name is defined and p.provider.name %}
+                              {% set _ = _names.append(p.provider.name) %}
+                            {# Join row with treating_provider relationship #}
+                            {% elif p is not none and p.treating_provider is defined and p.treating_provider and p.treating_provider.name is defined and p.treating_provider.name %}
+                              {% set _ = _names.append(p.treating_provider.name) %}
+                            {% endif %}
+                          {% endfor %}
+                        {% endif %}
+
+                        {# Fallback to single-field / legacy #}
+                        {% if _names|length == 0 and r.treating_provider %}
+                          {% if r.treating_provider.name is defined and r.treating_provider.name %}
+                            {% set _ = _names.append(r.treating_provider.name) %}
+                          {% else %}
+                            {% set _ = _names.append(r.treating_provider) %}
+                          {% endif %}
+                        {% endif %}
+
+                        {% if _names|length %}
+                          {{ _names|unique|join(', ') }}
                         {% else %}
                           —
                         {% endif %}
@@ -485,7 +568,7 @@
                   {% endfor %}
                 {% else %}
                   <tr>
-                    <td colspan="6" class="text-center text-muted small py-3">
+                    <td colspan="7" class="text-center text-muted small py-3">
                       No reports yet for this claim.
                     </td>
                   </tr>
@@ -495,40 +578,6 @@
             </div>
           </div>
 
-          <!-- New report form -->
-          <div class="card shadow-sm">
-            <div class="card-header">
-              <h3 class="h6 mb-0">Add Report</h3>
-            </div>
-            <div class="card-body small" id="report-new-form">
-              <form method="post"
-                    action="{{ url_for('main.claim_report_new', claim_id=claim.id) }}"
-                    class="row g-2 align-items-end mb-0">
-
-                <div class="col-auto">
-                  <label for="report_type" class="form-label form-label-sm mb-1">Report Type</label>
-                  <select id="report_type"
-                          name="report_type"
-                          class="form-select form-select-sm"
-                          required>
-                    <option value="">Select type…</option>
-                    <option value="initial">Initial</option>
-                    <option value="progress">Progress</option>
-                    <option value="closure">Closure</option>
-                  </select>
-                </div>
-
-                <div class="col-auto">
-                  <button type="submit" class="btn btn-primary btn-sm mt-4">
-                    New Report
-                  </button>
-                </div>
-              </form>
-              <p class="text-muted small mt-2 mb-0">
-                After selecting a type, you&#39;ll complete dates, status, barriers, and other details on the report screen.
-              </p>
-            </div>
-          </div>
 
         </div>
       </div>
@@ -592,13 +641,13 @@
                             {%- endif -%}
                           </td>
 <td class="text-end">
-  <a href="{{ url_for('main.document_download', claim_id=claim.id, doc_id=d.id) }}"
+  <a href="{{ url_for('main.claim_document_download', claim_id=claim.id, doc_id=d.id) }}"
      class="btn btn-outline-secondary btn-sm">
     Open
   </a>
 
   <form method="post"
-        action="{{ url_for('main.document_open_location', claim_id=claim.id, doc_id=d.id) }}"
+        action="{{ url_for('main.claim_document_open_location', claim_id=claim.id, doc_id=d.id) }}"
         class="d-inline ms-1">
     <button type="submit" class="btn btn-outline-secondary btn-sm">
       Open Location
@@ -606,7 +655,7 @@
   </form>
 
   <form method="post"
-        action="{{ url_for('main.document_delete', claim_id=claim.id, doc_id=d.id) }}"
+        action="{{ url_for('main.claim_document_delete', claim_id=claim.id, doc_id=d.id) }}"
         class="d-inline"
         onsubmit="return confirm('Delete this document? This cannot be undone.');">
     <button type="submit" class="btn btn-outline-danger btn-sm ms-1">
@@ -634,7 +683,7 @@
             </div>
             <div class="card-body small">
               <form method="post"
-                    action="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
+                    action="{{ url_for('main.claim_document_upload', claim_id=claim.id) }}"
                     enctype="multipart/form-data">
                 <input type="hidden" name="form_type" value="document_upload">
                 <div class="row g-2 align-items-end">
@@ -868,18 +917,18 @@ document.addEventListener('DOMContentLoaded', function () {
       case 'type':
         return (cells[0].innerText || '').trim();
       case 'dos': {
-        var txt = cells[1].innerText || '';
+        var txt = cells[2].innerText || '';
         var parts = txt.split('–');
         return dateTextToKey((parts[0] || '').trim());
       }
       case 'provider':
-        return (cells[2].innerText || '').trim();
+        return (cells[3].innerText || '').trim();
       case 'next_appt': {
-        var txtA = cells[3].innerText || '';
+        var txtA = cells[4].innerText || '';
         return dateTimeTextToKey(txtA);
       }
       case 'next_due': {
-        var txtD = cells[4].innerText || '';
+        var txtD = cells[5].innerText || '';
         return dateTextToKey(txtD);
       }
       default:

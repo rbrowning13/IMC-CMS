@@ -417,6 +417,9 @@ class Report(db.Model):
     employment_status = db.Column(db.String(255))
     case_management_plan = db.Column(db.Text)
 
+    # PCP captured on Initial Report only (free-text)
+    primary_care_provider = db.Column(db.String(255))
+
     # Barriers JSON (list of BarrierOption IDs)
     barriers_json = db.Column(db.Text)
 

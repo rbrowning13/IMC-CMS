@@ -3,6 +3,7 @@
 
 {% block content %}
 
+
 <div class="container-fluid">
 
   {# Flash messages (warnings/errors/success) #}
@@ -11,16 +12,16 @@
       {% for category, message in messages %}
         {% set _cat = category or 'info' %}
         {% if _cat == 'message' %}{% set _cat = 'info' %}{% endif %}
-        <div class="alert alert-{{ _cat }} small" role="alert">
-          {{ message }}
+        <div class="alert alert-{{ _cat }} small js-auto-dismiss" role="alert">
+          <span class="js-flash-msg">{{ message }}</span>
         </div>
       {% endfor %}
     {% endif %}
   {% endwith %}
 
   {% if error %}
-    <div class="alert alert-danger small" role="alert">
-      {{ error }}
+    <div class="alert alert-danger small js-auto-dismiss" role="alert">
+      <span class="js-flash-msg">{{ error }}</span>
     </div>
   {% endif %}
 
@@ -55,7 +56,7 @@
     </div>
   </div>
 
-  <form method="post" action="{{ url_for('main.report_edit', claim_id=claim.id, report_id=report.id) }}">
+  <form method="post" action="{{ url_for('main.report_edit', claim_id=claim.id, report_id=report.id) }}" enctype="multipart/form-data">
     {{ csrf_field() if csrf_field is defined }}
 
     <div class="row">
@@ -95,22 +96,31 @@
                 {% set _sel_ids = [report.treating_provider_id] %}
               {% endif %}
 
-              <div id="provider_list" class="border rounded p-2" style="max-height: 180px; overflow-y: auto;">
-                {% for provider in providers %}
-                  <div class="form-check mb-1">
-                    <input
-                      class="form-check-input"
-                      type="checkbox"
-                      name="approved_provider_ids"
-                      id="provider_{{ provider.id }}"
-                      value="{{ provider.id }}"
-                      {% if provider.id in _sel_ids %}checked{% endif %}
-                    >
-                    <label class="form-check-label" for="provider_{{ provider.id }}">
-                      {{ provider.name }}
-                    </label>
-                  </div>
-                {% endfor %}
+              <div class="border rounded p-2">
+                <div class="small text-muted mb-1">Selected</div>
+                <div id="provider_selected" class="mb-2">
+                  {# rows will be moved here by JS on load #}
+                </div>
+
+                <div class="small text-muted mb-1">Search results</div>
+                <div id="provider_results" style="max-height: 180px; overflow-y: auto;">
+                  {% for provider in providers %}
+                    <div class="form-check mb-1 provider-row" style="position: relative;">
+                      <input
+                        class="form-check-input js-accent-check provider-checkbox"
+                        type="checkbox"
+                        name="approved_provider_ids"
+                        id="provider_{{ provider.id }}"
+                        value="{{ provider.id }}"
+                        {% if provider.id in _sel_ids %}checked{% endif %}
+                        style="position: relative; z-index: 5; pointer-events: auto; accent-color: var(--accent-color);"
+                      >
+                      <label class="form-check-label provider-label" for="provider_{{ provider.id }}" style="position: relative; z-index: 5; pointer-events: auto; cursor: pointer;">
+                        {{ provider.name }}
+                      </label>
+                    </div>
+                  {% endfor %}
+                </div>
               </div>
             </div>
 
@@ -120,10 +130,7 @@
               <label class="form-label form-label-sm mb-0">DOS Start</label>
               <input type="text"
                      name="dos_start"
-                     class="form-control form-control-sm"
-                     data-auto-date="1"
-                     inputmode="numeric"
-                     maxlength="10"
+                     class="form-control form-control-sm js-date"
                      placeholder="MM/DD/YYYY"
                      value="{{ report.dos_start.strftime('%m/%d/%Y') if report and report.dos_start else '' }}">
             </div>
@@ -131,10 +138,7 @@
               <label class="form-label form-label-sm mb-0">DOS End</label>
               <input type="text"
                      name="dos_end"
-                     class="form-control form-control-sm"
-                     data-auto-date="1"
-                     inputmode="numeric"
-                     maxlength="10"
+                     class="form-control form-control-sm js-date"
                      placeholder="MM/DD/YYYY"
                      value="{{ report.dos_end.strftime('%m/%d/%Y') if report and report.dos_end else '' }}">
             </div>
@@ -144,10 +148,7 @@
               <label class="form-label form-label-sm mb-0">Next Report Due</label>
               <input type="text"
                      name="next_report_due"
-                     class="form-control form-control-sm"
-                     data-auto-date="1"
-                     inputmode="numeric"
-                     maxlength="10"
+                     class="form-control form-control-sm js-date"
                      placeholder="MM/DD/YYYY"
                      value="{{ report.next_report_due.strftime('%m/%d/%Y') if report and report.next_report_due else '' }}">
             </div>
@@ -226,27 +227,31 @@
             <div class="col-12">
               <div class="d-flex justify-content-between align-items-center">
                 <label class="form-label form-label-sm mb-0">Current Status / Treatment Plan</label>
+                {% if report.report_type != 'initial' %}
                 <button type="button"
                         class="btn btn-link btn-sm p-0"
                         onclick="rollForwardField('status_treatment_plan', 'status_treatment_plan_field')">
                   Roll forward from last report
                 </button>
+                {% endif %}
               </div>
               <textarea name="status_treatment_plan"
                         id="status_treatment_plan_field"
                         class="form-control form-control-sm"
-                        rows="3">{{ report.status_treatment_plan or "" }}</textarea>
+                        rows="2">{{ report.status_treatment_plan or "" }}</textarea>
             </div>
 
             <!-- Work status -->
             <div class="col-12">
               <div class="d-flex justify-content-between align-items-center">
                 <label class="form-label form-label-sm mb-0">Work Status</label>
+                {% if report.report_type != 'initial' %}
                 <button type="button"
                         class="btn btn-link btn-sm p-0"
                         onclick="rollForwardField('work_status', 'work_status_field')">
                   Roll forward from last report
                 </button>
+                {% endif %}
               </div>
               <textarea name="work_status"
                         id="work_status_field"
@@ -254,21 +259,36 @@
                         rows="2">{{ report.work_status or "" }}</textarea>
             </div>
 
+            {% if report.report_type == 'initial' %}
+            <!-- Employment status (Initial only) -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Employment Status</label>
+              <textarea name="employment_status"
+                        id="employment_status_field"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.employment_status or "" }}</textarea>
+            </div>
+            {% endif %}
+
+            {% if report.report_type != 'closure' %}
             <!-- Case management plan -->
             <div class="col-12">
               <div class="d-flex justify-content-between align-items-center">
                 <label class="form-label form-label-sm mb-0">Case Management Plan</label>
+                {% if report.report_type != 'initial' %}
                 <button type="button"
                         class="btn btn-link btn-sm p-0"
                         onclick="rollForwardField('case_management_plan', 'case_management_plan_field')">
                   Roll forward from last report
                 </button>
+                {% endif %}
               </div>
               <textarea name="case_management_plan"
                         id="case_management_plan_field"
                         class="form-control form-control-sm"
                         rows="2">{{ report.case_management_plan or "" }}</textarea>
             </div>
+            {% endif %}
             </div>
           </div>
         </div>
@@ -277,7 +297,7 @@
         <!-- Closure-only fields (they can stay empty for Initial/Progress) -->
         <div class="card shadow-sm mb-3">
           <div class="card-header">
-            <h2 class="h6 mb-0">Closure (if applicable)</h2>
+            <h2 class="h6 mb-0">Closure</h2>
           </div>
           <div class="card-body small">
             <div class="row g-3">
@@ -287,9 +307,18 @@
                 <option value="">— Not closed —</option>
                 {% set closure = report.closure_reason or "" %}
                 {% for opt in [
-                  "AMA", "Death", "MMI", "RTW", "Task Fulfilled",
-                  "Treatment completed", "Patient Non-compliance",
-                  "Lack of Contact", "Transferred care", "Claim Closure"
+                  "AMA",
+                  "Death",
+                  "MMI",
+                  "RTW",
+                  "RTW Modified Duty",
+                  "RTW FULL DUTY",
+                  "Task Fulfilled",
+                  "Treatment Completed",
+                  "Patient Non-compliance",
+                  "Lack of Contact",
+                  "Transferred care",
+                  "Claim Closure"
                 ] %}
                   <option value="{{ opt }}"
                           {% if closure == opt %}selected{% endif %}>
@@ -298,31 +327,15 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-md-6">
-              <div class="d-flex justify-content-between align-items-center">
-                <label class="form-label form-label-sm mb-0">Closure Details</label>
-                <button type="button"
-                        class="btn btn-link btn-sm p-0"
-                        onclick="rollForwardField('closure_details', 'closure_details_field')">
-                  Roll forward from last report
-                </button>
-              </div>
-              <input type="text"
-                     name="closure_details"
-                     id="closure_details_field"
-                     class="form-control form-control-sm"
-                     value="{{ report.closure_details or '' }}">
-            </div>
-
             <div class="col-12">
-              <div class="d-flex justify-content-between align-items-center">
-                <label class="form-label form-label-sm mb-0">Case Management Impact</label>
-                <button type="button"
-                        class="btn btn-link btn-sm p-0"
-                        onclick="rollForwardField('closure_case_management_impact', 'closure_case_management_impact_field')">
-                  Roll forward from last report
-                </button>
-              </div>
+              <label class="form-label form-label-sm mb-0">Closure Details</label>
+              <textarea name="closure_details"
+                        id="closure_details_field"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.closure_details or "" }}</textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Case Management Impact</label>
               <textarea name="closure_case_management_impact"
                         id="closure_case_management_impact_field"
                         class="form-control form-control-sm"
@@ -370,22 +383,24 @@
                                 Open
                               </a>
 
-                              <form method="post"
-                                    action="{{ url_for('main.report_document_open_location', report_document_id=d.id) }}"
-                                    class="d-inline me-1">
-                                {{ csrf_field() if csrf_field is defined }}
-                                <button type="submit" class="btn btn-sm btn-outline-secondary">
-                                  Open Location
-                                </button>
-                              </form>
+                              <button
+                                type="submit"
+                                class="btn btn-sm btn-outline-secondary me-1"
+                                formaction="{{ url_for('main.report_document_open_location', report_document_id=d.id) }}"
+                                formmethod="post"
+                              >
+                                Open Location
+                              </button>
 
-                              <form method="post"
-                                    action="{{ url_for('main.report_document_delete', report_document_id=d.id) }}"
-                                    class="d-inline"
-                                    onsubmit="return confirm('Delete this document? This cannot be undone.');">
-                                {{ csrf_field() if csrf_field is defined }}
-                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
-                              </form>
+                              <button
+                                type="submit"
+                                class="btn btn-sm btn-outline-danger"
+                                formaction="{{ url_for('main.report_document_delete', report_document_id=d.id) }}"
+                                formmethod="post"
+                                onclick="return confirm('Delete this document? This cannot be undone.');"
+                              >
+                                Delete
+                              </button>
                             </td>
                           </tr>
                         {% endfor %}
@@ -398,11 +413,7 @@
 
                 <hr class="my-2">
 
-                <form method="post"
-                      action="{{ url_for('main.report_document_upload', claim_id=claim.id, report_id=report.id) }}"
-                      enctype="multipart/form-data"
-                      class="row g-2 align-items-end">
-                  {{ csrf_field() if csrf_field is defined }}
+                <div class="row g-2 align-items-end">
                   <div class="col-md-6">
                     <label class="form-label form-label-sm mb-0">Select File</label>
                     <input type="file" name="file" class="form-control form-control-sm">
@@ -412,11 +423,17 @@
                     <input type="text" name="description" class="form-control form-control-sm" placeholder="e.g., Clinic notes, imaging, correspondence">
                   </div>
                   <div class="col-md-2 text-end">
-                    <button type="submit" class="btn btn-primary btn-sm w-100 mt-4 mt-md-2">
+                    <button
+                      type="submit"
+                      class="btn btn-primary btn-sm w-100 mt-4 mt-md-2"
+                      formaction="{{ url_for('main.report_document_upload', claim_id=claim.id, report_id=report.id) }}"
+                      formmethod="post"
+                      formenctype="multipart/form-data"
+                    >
                       Upload
                     </button>
                   </div>
-                </form>
+                </div>
               </div>
             </div>
           </div>
@@ -427,6 +444,7 @@
       <!-- Right column: barriers + next appointment + actions -->
       <div class="col-lg-4 mb-3">
 
+        {% if report.report_type != 'closure' %}
         <!-- Barriers -->
         <div class="card shadow-sm mb-3">
           <div class="card-header">
@@ -440,14 +458,15 @@
                 <div class="mb-2">
                   <div class="fw-semibold small">{{ cat }}</div>
                   {% for opt in options %}
-                    <div class="form-check mb-1">
-                      <input class="form-check-input"
+                    <div class="form-check mb-1" style="position: relative;">
+                      <input class="form-check-input js-accent-check"
                              type="checkbox"
                              name="barrier_ids"
                              id="barrier_{{ opt.id }}"
                              value="{{ opt.id }}"
-                             {% if opt.id in selected_ids %}checked{% endif %}>
-                      <label class="form-check-label" for="barrier_{{ opt.id }}">
+                             {% if opt.id in selected_ids %}checked{% endif %}
+                             style="position: relative; z-index: 5; pointer-events: auto; accent-color: var(--accent-color);">
+                      <label class="form-check-label" for="barrier_{{ opt.id }}" style="position: relative; z-index: 5; pointer-events: auto; cursor: pointer;">
                         {{ opt.label }}
                       </label>
                     </div>
@@ -459,6 +478,7 @@
             {% endif %}
           </div>
         </div>
+        {% endif %}
 
         <!-- Next appointment -->
         <div class="card shadow-sm mb-3">
@@ -542,23 +562,144 @@
   (function () {
     const baseUrl = "{{ url_for('main.report_roll_forward', claim_id=claim.id, report_id=report.id, field_name='__FIELD__') }}";
 
+    function showNotice(message, level) {
+      if (!message) return;
+
+      // Remove any previous roll-forward notice.
+      const existing = document.getElementById("rf-floating-alert");
+      if (existing) existing.remove();
+
+      // Build a lightweight floating alert.
+      const el = document.createElement("div");
+      el.id = "rf-floating-alert";
+      el.setAttribute("role", "alert");
+
+      const lvl = (level || "info").toLowerCase();
+      const bsClass =
+        lvl === "success" ? "alert-success" :
+        lvl === "warning" ? "alert-warning" :
+        lvl === "danger" ? "alert-danger" :
+        "alert-info";
+
+      el.className = "alert " + bsClass + " small";
+      // Inline positioning so this works even if the global helper isn't available.
+      el.style.position = "fixed";
+      el.style.left = "50%";
+      el.style.top = "20px";
+      el.style.transform = "translateX(-50%)";
+      el.style.zIndex = "9999";
+      el.style.maxWidth = "min(720px, calc(100vw - 24px))";
+      el.style.width = "fit-content";
+      el.style.boxShadow = "0 10px 30px rgba(0,0,0,0.15)";
+
+      el.textContent = message;
+      document.body.appendChild(el);
+
+      const lvl2 = (level || "info").toLowerCase();
+
+      // Dismiss behavior:
+      // - danger/warning: dismiss on first interaction (sticky)
+      // - success/info: auto-dismiss quickly (less noisy)
+      const dismiss = function () {
+        const cur = document.getElementById("rf-floating-alert");
+        if (cur) cur.remove();
+        document.removeEventListener("mousedown", dismiss, true);
+        document.removeEventListener("keydown", dismiss, true);
+        document.removeEventListener("touchstart", dismiss, true);
+      };
+
+      if (lvl2 === "danger" || lvl2 === "warning") {
+        document.addEventListener("mousedown", dismiss, true);
+        document.addEventListener("touchstart", dismiss, true);
+        document.addEventListener("keydown", dismiss, true);
+      } else {
+        window.setTimeout(dismiss, 2200);
+      }
+    }
+
+    function setFieldValue(el, value) {
+      if (!el) return;
+
+      const v = (value === null || value === undefined) ? "" : String(value);
+
+      // Standard inputs / textarea
+      if ("value" in el) {
+        el.value = v;
+      }
+
+      // Fire events so any listeners (validation, enable/disable buttons, etc.) react.
+      try {
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      } catch (e) {
+        // ignore
+      }
+
+      // Visual cue + scroll
+      try {
+        el.classList.add("is-invalid");
+        setTimeout(function () {
+          el.classList.remove("is-invalid");
+        }, 800);
+      } catch (e) {
+        // ignore
+      }
+
+      try {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.focus({ preventScroll: true });
+      } catch (e) {
+        // ignore
+      }
+    }
+
     window.rollForwardField = function (fieldName, elementId) {
       const url = baseUrl.replace("__FIELD__", fieldName);
-      fetch(url, { method: "GET" })
+      const el = document.getElementById(elementId);
+
+      if (!el) {
+        showNotice("Roll forward failed: field not found on page.", "danger");
+        return;
+      }
+
+      fetch(url, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json"
+        }
+      })
         .then(function (response) {
+          // If we got redirected to HTML (login page, error page, etc.), JSON parsing will fail.
+          const ct = (response.headers.get("content-type") || "").toLowerCase();
           if (!response.ok) {
-            throw new Error("Network response was not ok");
+            throw new Error("Request failed (" + response.status + ")");
+          }
+          if (ct.indexOf("application/json") === -1) {
+            throw new Error("Unexpected response type");
           }
           return response.json();
         })
         .then(function (data) {
-          const el = document.getElementById(elementId);
-          if (el && data && typeof data.value === "string") {
-            el.value = data.value;
+          // Backend returns: { value: <string|null> }
+          if (!data || !("value" in data)) {
+            showNotice("Nothing to roll forward.", "warning");
+            return;
           }
+
+          const v = data.value;
+          if (v === null || v === undefined || String(v).trim() === "") {
+            // Clear the field (explicitly) and notify.
+            setFieldValue(el, "");
+            showNotice("No prior value found for that field.", "warning");
+            return;
+          }
+
+          setFieldValue(el, String(v));
+          showNotice("Rolled forward from last report.", "success");
         })
         .catch(function (error) {
           console.error("Roll forward failed:", error);
+          showNotice("Roll forward failed. Try refreshing the page.", "danger");
         });
     };
 
@@ -586,41 +727,128 @@
 </script>
 <script>
   (function () {
-    // Treating Provider(s) search filter (find-as-you-type)
+    // Treating Provider(s) UX:
+    // - Selected providers persist in a dedicated list
+    // - Search shows matching unselected providers
+    // - By default (no search), hide unselected providers
+
     const providerSearch = document.getElementById("provider_search");
-    const providerList = document.getElementById("provider_list");
+    const selectedBox = document.getElementById("provider_selected");
+    const resultsBox = document.getElementById("provider_results");
 
     function normalize(str) {
       return (str || "").toString().toLowerCase().trim();
     }
 
-    function filterProviders() {
-      if (!providerSearch || !providerList) return;
-      const q = normalize(providerSearch.value);
-      const rows = providerList.querySelectorAll(".form-check");
+    function rowLabelText(row) {
+      const label = row ? row.querySelector(".provider-label") : null;
+      return normalize(label ? label.textContent : "");
+    }
 
+    function isChecked(row) {
+      const cb = row ? row.querySelector(".provider-checkbox") : null;
+      return !!(cb && cb.checked);
+    }
+
+    function ensureSelectedPlaceholder() {
+      if (!selectedBox) return;
+      let ph = selectedBox.querySelector(".provider-selected-empty");
+      const anySelected = selectedBox.querySelectorAll(".provider-row").length > 0;
+      if (anySelected) {
+        if (ph) ph.remove();
+        return;
+      }
+      if (!ph) {
+        ph = document.createElement("div");
+        ph.className = "text-muted small provider-selected-empty";
+        ph.textContent = "No providers selected.";
+        selectedBox.appendChild(ph);
+      }
+    }
+
+    function moveRows() {
+      if (!selectedBox || !resultsBox) return;
+      const rows = resultsBox.querySelectorAll(".provider-row");
+
+      // Move checked rows into selectedBox.
       rows.forEach(function (row) {
-        const label = row.querySelector("label");
-        const text = normalize(label ? label.textContent : "");
-        row.style.display = q === "" || text.includes(q) ? "" : "none";
+        if (isChecked(row)) {
+          selectedBox.appendChild(row);
+        }
+      });
+
+      // Also check selectedBox in case something was there already.
+      const selectedRows = selectedBox.querySelectorAll(".provider-row");
+      selectedRows.forEach(function (row) {
+        // If unchecked, move back to results.
+        if (!isChecked(row)) {
+          resultsBox.appendChild(row);
+        }
+      });
+
+      ensureSelectedPlaceholder();
+    }
+
+    function applyFilter() {
+      if (!providerSearch || !resultsBox) return;
+      const q = normalize(providerSearch.value);
+
+      // Always keep selected list visible; only filter results list.
+      const rows = resultsBox.querySelectorAll(".provider-row");
+      rows.forEach(function (row) {
+        if (isChecked(row)) {
+          // Shouldn't happen (checked rows should be moved), but be safe.
+          row.style.display = "";
+          return;
+        }
+
+        if (!q) {
+          // Default view: hide unselected providers.
+          row.style.display = "none";
+          return;
+        }
+
+        // Searching: show matches.
+        const text = rowLabelText(row);
+        row.style.display = text.includes(q) ? "" : "none";
+      });
+    }
+
+    function wireCheckboxes() {
+      if (!resultsBox || !selectedBox) return;
+      const allRows = document.querySelectorAll(".provider-row");
+      allRows.forEach(function (row) {
+        const cb = row.querySelector(".provider-checkbox");
+        if (!cb || cb.dataset.wired === "1") return;
+        cb.dataset.wired = "1";
+        cb.addEventListener("change", function () {
+          moveRows();
+          applyFilter();
+        });
       });
     }
 
     if (providerSearch) {
-      providerSearch.addEventListener("input", filterProviders);
+      providerSearch.addEventListener("input", function () {
+        // On first search keystroke, ensure any checked items are moved.
+        moveRows();
+        applyFilter();
+      });
 
-      // Esc clears search
       providerSearch.addEventListener("keydown", function (e) {
         if (e.key === "Escape") {
           providerSearch.value = "";
-          filterProviders();
+          moveRows();
+          applyFilter();
           providerSearch.blur();
         }
       });
-
-      // Run once on load
-      filterProviders();
     }
+
+    // Init on load
+    wireCheckboxes();
+    moveRows();
+    applyFilter();
   })();
 </script>
 {% endblock %}

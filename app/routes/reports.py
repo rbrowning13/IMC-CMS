@@ -85,6 +85,7 @@ def _safe_segment(text: str) -> str:
     return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in (text or ""))
 
 
+
 def _open_in_file_manager(path: Path) -> None:
     """Open the given folder in the host OS file manager."""
     folder = Path(path).resolve()
@@ -97,6 +98,33 @@ def _open_in_file_manager(path: Path) -> None:
             os.startfile(str(folder))  # type: ignore[attr-defined]
         else:
             subprocess.Popen(["xdg-open", str(folder)])
+    except Exception:
+        pass
+
+
+# Reveal a specific file in the host OS file manager when supported.
+def _reveal_in_file_manager(file_path: Path) -> None:
+    """Reveal a specific file in the host OS file manager when supported.
+
+    Falls back to opening the containing folder.
+    """
+    p = Path(file_path).resolve()
+    if p.exists() and p.is_file():
+        try:
+            if sys.platform.startswith("darwin"):
+                # Reveal in Finder
+                subprocess.Popen(["open", "-R", str(p)])
+                return
+            elif os.name == "nt":
+                # Reveal in Explorer
+                subprocess.Popen(["explorer", "/select,", str(p)])
+                return
+        except Exception:
+            pass
+
+    # Fallback: open containing folder
+    try:
+        _open_in_file_manager(p.parent if p.exists() else Path(file_path).parent)
     except Exception:
         pass
 
@@ -200,6 +228,7 @@ def _get_report_folder(report: Report) -> Path:
     return report_root
 
 
+
 def _get_barrier_options_grouped():
     """Return active BarrierOption rows grouped by category."""
     options = (
@@ -212,6 +241,78 @@ def _get_barrier_options_grouped():
         category = opt.category or "General"
         grouped[category].append(opt)
     return grouped
+
+
+# Helper: return selected BarrierOption rows for a report, ordered for display.
+def _get_selected_barriers(report: Report) -> list[BarrierOption]:
+    """Return selected BarrierOption rows for a report, ordered for display."""
+    raw = getattr(report, "barriers_json", None)
+    if not raw:
+        return []
+
+    ids: list[int] = []
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        parsed = None
+
+    if isinstance(parsed, list):
+        for x in parsed:
+            try:
+                i = int(x)
+            except (TypeError, ValueError):
+                continue
+            if i not in ids:
+                ids.append(i)
+
+    if not ids:
+        return []
+
+    # Fetch active options for selected IDs.
+    rows = (
+        BarrierOption.query.filter(BarrierOption.id.in_(ids))
+        .filter_by(is_active=True)
+        .all()
+    )
+
+    # Preserve the user's selection order when possible; fall back to sort_order/label.
+    by_id = {b.id: b for b in rows}
+    ordered = [by_id[i] for i in ids if i in by_id]
+
+    # Append any remaining (shouldn't happen often) in stable display order.
+    remaining = [b for b in rows if b.id not in set(ids)]
+    remaining.sort(key=lambda b: (b.sort_order or 0, b.label or ""))
+    ordered.extend(remaining)
+
+    return ordered
+
+
+# Helper: compute 1-based sequence number for progress reports within a claim.
+def _compute_progress_report_number(claim_id: int, report_id: int) -> int | None:
+    """Return 1-based sequence number for a progress report within a claim.
+
+    Sequence is based on chronological order (DOS start, then created_at, then id).
+    Returns None if the report is not found among progress reports.
+    """
+    q = Report.query.filter_by(claim_id=claim_id, report_type="progress")
+
+    # Optional soft-delete guards (only applied if fields exist).
+    if hasattr(Report, "is_deleted"):
+        q = q.filter(Report.is_deleted.is_(False))
+    if hasattr(Report, "deleted_at"):
+        q = q.filter(Report.deleted_at.is_(None))
+
+    progress_reports = q.order_by(
+        Report.dos_start.asc().nullslast(),
+        Report.created_at.asc().nullslast(),
+        Report.id.asc(),
+    ).all()
+
+    for idx, r in enumerate(progress_reports, start=1):
+        if r.id == report_id:
+            return idx
+
+    return None
 
 
 # ------------------------
@@ -278,12 +379,74 @@ def report_new(claim_id):
         dos_end=dos_end,
     )
 
-    # Carry forward barriers selection to new reports
-    if last_report and getattr(last_report, "barriers_json", None):
-        report.barriers_json = last_report.barriers_json
+    # Carry forward barriers selection to new reports.
+    # IMPORTANT: do NOT assume the immediate last report has barriers selected.
+    # Find the most recent prior report (any type) with a non-empty, valid selection.
+    source_report_for_barriers = None
+    recent_reports = (
+        Report.query.filter_by(claim_id=claim.id)
+        .order_by(Report.created_at.desc())
+        .all()
+    )
+
+    for r in recent_reports:
+        raw = getattr(r, "barriers_json", None)
+        if not raw:
+            continue
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            continue
+        if isinstance(parsed, list) and len(parsed) > 0:
+            source_report_for_barriers = r
+            break
+
+    if source_report_for_barriers:
+        report.barriers_json = source_report_for_barriers.barriers_json
 
     db.session.add(report)
     db.session.flush()  # ensure report.id exists
+
+    # Carry forward Treating Provider(s) selections to new reports.
+    # IMPORTANT: do NOT assume the immediate last report has selections.
+    # Prefer join-table rows from the most recent report that has them; fall back to the most recent
+    # legacy treating_provider_id if no join rows exist anywhere.
+    prev_provider_ids: list[int] = []
+
+    source_report_for_providers = None
+    for r in recent_reports:
+        ids = (
+            db.session.query(ReportApprovedProvider.provider_id)
+            .filter(ReportApprovedProvider.report_id == r.id)
+            .order_by(ReportApprovedProvider.sort_order.asc())
+            .all()
+        )
+        row_ids = [pid for (pid,) in ids]
+        if row_ids:
+            source_report_for_providers = r
+            prev_provider_ids = row_ids
+            break
+
+    if not prev_provider_ids:
+        # Back-compat: fall back to the most recent legacy single treating provider
+        for r in recent_reports:
+            legacy = getattr(r, "treating_provider_id", None)
+            if legacy:
+                prev_provider_ids = [legacy]
+                break
+
+    if prev_provider_ids:
+        for idx, pid in enumerate(prev_provider_ids):
+            db.session.add(
+                ReportApprovedProvider(
+                    report_id=report.id,
+                    provider_id=pid,
+                    sort_order=idx,
+                )
+            )
+
+        # Back-compat: keep legacy single provider pointing to first selection
+        report.treating_provider_id = prev_provider_ids[0]
 
     # Auto-create report-writing billable (editable later)
     qty = 1.0 if report_type_raw == "initial" else 0.5
@@ -470,6 +633,16 @@ def report_edit(claim_id, report_id):
     claim = Claim.query.get_or_404(claim_id)
     report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
 
+    # --- PCP / Family Doctor field back-compat ---
+    # DB/schema may store this as `initial_primary_care_provider` (preferred) but
+    # older templates/logic may still reference `primary_care_provider`.
+    if hasattr(report, "initial_primary_care_provider"):
+        try:
+            # Provide a runtime alias for templates expecting `report.primary_care_provider`
+            setattr(report, "primary_care_provider", getattr(report, "initial_primary_care_provider") or None)
+        except Exception:
+            pass
+
     providers = Provider.query.order_by(Provider.name).all()
     error = None
 
@@ -485,6 +658,114 @@ def report_edit(claim_id, report_id):
     # Back-compat: if none yet, fall back to legacy single treating provider
     if not approved_provider_ids and getattr(report, "treating_provider_id", None):
         approved_provider_ids = [report.treating_provider_id]
+
+    # ---------------------------------------------------------------------
+    # Carry-forward safety net (GET only)
+    #
+    # Sometimes the "new report" flow can be routed through older/alternate
+    # endpoints. If the newly-created report ends up with empty selections,
+    # we still want the edit screen to auto-populate from the most recent
+    # prior report on the same claim.
+    #
+    # This is intentionally conservative:
+    # - Only runs on GET
+    # - Only fills providers if there are no join-table rows yet
+    # - Only fills barriers if current barriers_json is empty/invalid/[]
+    # - Persists the copied selections so subsequent loads remain stable
+    # ---------------------------------------------------------------------
+    if request.method == "GET":
+        did_change = False
+
+        # ---- Providers carry-forward (join table) ----
+        has_join_rows = (
+            db.session.query(ReportApprovedProvider.id)
+            .filter(ReportApprovedProvider.report_id == report.id)
+            .first()
+            is not None
+        )
+
+        if not has_join_rows:
+            # Find the most recent prior report that has approved provider rows
+            source_provider_ids: list[int] = []
+            prior_reports = (
+                Report.query.filter(Report.claim_id == claim.id, Report.id != report.id)
+                .order_by(Report.created_at.desc())
+                .all()
+            )
+
+            for r in prior_reports:
+                ids = (
+                    db.session.query(ReportApprovedProvider.provider_id)
+                    .filter(ReportApprovedProvider.report_id == r.id)
+                    .order_by(ReportApprovedProvider.sort_order.asc())
+                    .all()
+                )
+                row_ids = [pid for (pid,) in ids]
+                if row_ids:
+                    source_provider_ids = row_ids
+                    break
+
+            if not source_provider_ids:
+                # Back-compat: fall back to most recent legacy treating_provider_id
+                for r in prior_reports:
+                    legacy = getattr(r, "treating_provider_id", None)
+                    if legacy:
+                        source_provider_ids = [legacy]
+                        break
+
+            if source_provider_ids:
+                # Populate join rows on the current report
+                for idx, pid in enumerate(source_provider_ids):
+                    db.session.add(
+                        ReportApprovedProvider(
+                            report_id=report.id,
+                            provider_id=pid,
+                            sort_order=idx,
+                        )
+                    )
+
+                # Keep legacy field aligned
+                report.treating_provider_id = source_provider_ids[0]
+
+                approved_provider_ids = source_provider_ids
+                did_change = True
+
+        # ---- Barriers carry-forward ----
+        current_barrier_ids: list[int] = []
+        if report.barriers_json:
+            try:
+                parsed = json.loads(report.barriers_json)
+                if isinstance(parsed, list):
+                    current_barrier_ids = [int(x) for x in parsed if str(x).strip()]
+            except Exception:
+                current_barrier_ids = []
+
+        if not current_barrier_ids:
+            prior_reports = (
+                Report.query.filter(Report.claim_id == claim.id, Report.id != report.id)
+                .order_by(Report.created_at.desc())
+                .all()
+            )
+
+            source_barriers_json = None
+            for r in prior_reports:
+                raw = getattr(r, "barriers_json", None)
+                if not raw:
+                    continue
+                try:
+                    parsed = json.loads(raw)
+                except Exception:
+                    continue
+                if isinstance(parsed, list) and len(parsed) > 0:
+                    source_barriers_json = raw
+                    break
+
+            if source_barriers_json:
+                report.barriers_json = source_barriers_json
+                did_change = True
+
+        if did_change:
+            db.session.commit()
 
     if request.method == "POST":
         report_type_raw = (request.form.get("report_type") or "").strip().lower()
@@ -635,11 +916,21 @@ def report_edit(claim_id, report_id):
 
             # PCP / Family Doctor is report-only (Initial Report). Do not write to Claim.
             # Persist only for Initial reports; clear it for other types.
+            pcp_value = primary_care_provider if (report.report_type or "").lower() == "initial" else None
+
+            # Preferred schema field name
+            if hasattr(report, "initial_primary_care_provider"):
+                report.initial_primary_care_provider = pcp_value
+
+            # Back-compat schema field name (if present)
             if hasattr(report, "primary_care_provider"):
-                if (report.report_type or "").lower() == "initial":
-                    report.primary_care_provider = primary_care_provider
-                else:
-                    report.primary_care_provider = None
+                report.primary_care_provider = pcp_value
+
+            # Keep runtime alias in sync for templates
+            try:
+                setattr(report, "primary_care_provider", pcp_value)
+            except Exception:
+                pass
 
             db.session.commit()
             flash("Saved.", "success")
@@ -720,9 +1011,10 @@ def report_document_delete(report_document_id):
     return redirect(url_for("main.claims_list"))
 
 
+
 @bp.route("/reports/documents/<int:report_document_id>/open-location", methods=["POST"])
 def report_document_open_location(report_document_id):
-    """Open the folder containing this report-level document in the OS file manager."""
+    """Reveal this report-level document in the OS file manager."""
     doc = ReportDocument.query.get_or_404(report_document_id)
     report = doc.report
 
@@ -730,9 +1022,18 @@ def report_document_open_location(report_document_id):
         flash("Document is not linked to a valid report/claim.", "danger")
         return redirect(url_for("main.claims_list"))
 
-    folder = _get_report_folder(report)
-    _open_in_file_manager(folder)
+    if not getattr(doc, "stored_path", None):
+        flash("Document record is missing a stored filename.", "danger")
+        return redirect(url_for("main.report_edit", claim_id=report.claim.id, report_id=report.id))
 
+    report_folder = _get_report_folder(report)
+    file_path = report_folder / doc.stored_path
+
+    if not file_path.exists():
+        flash("File not found on disk.", "danger")
+        return redirect(url_for("main.report_edit", claim_id=report.claim.id, report_id=report.id))
+
+    _reveal_in_file_manager(file_path)
     return redirect(url_for("main.report_edit", claim_id=report.claim.id, report_id=report.id))
 
 
@@ -817,6 +1118,18 @@ def report_print(claim_id, report_id):
     report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
     settings = _ensure_settings()
 
+    barriers = _get_selected_barriers(report)
+
+    display_report_number = None
+    if (report.report_type or "").lower() == "progress":
+        display_report_number = _compute_progress_report_number(claim.id, report.id)
+
+    # Convenience for templates that prefer attribute access
+    try:
+        setattr(report, "display_report_number", display_report_number)
+    except Exception:
+        pass
+
     cm_activities: list[dict] = []
     if report.dos_start and report.dos_end:
         q = (
@@ -855,6 +1168,8 @@ def report_print(claim_id, report_id):
         report=report,
         cm_activities=cm_activities,
         cm_items=cm_items,
+        barriers=barriers,
+        display_report_number=display_report_number,
     )
 
 
@@ -871,6 +1186,17 @@ def report_pdf(claim_id, report_id):
     )
 
     settings = _ensure_settings()
+
+    barriers = _get_selected_barriers(report)
+
+    display_report_number = None
+    if (report.report_type or "").lower() == "progress":
+        display_report_number = _compute_progress_report_number(claim.id, report.id)
+
+    try:
+        setattr(report, "display_report_number", display_report_number)
+    except Exception:
+        pass
 
     if HTML is None:
         flash("PDF generation is not available (WeasyPrint is not installed).", "danger")
@@ -916,6 +1242,8 @@ def report_pdf(claim_id, report_id):
         documents=documents,
         cm_activities=cm_activities,
         cm_items=cm_items,
+        barriers=barriers,
+        display_report_number=display_report_number,
     )
 
     pdf_bytes = HTML(string=html, base_url=current_app.root_path).write_pdf()

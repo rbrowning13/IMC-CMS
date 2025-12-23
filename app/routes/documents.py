@@ -1,5 +1,3 @@
-
-
 """Document-related routes.
 
 This module currently hosts *claim-level* document actions (download/delete/open-location).
@@ -16,6 +14,10 @@ import subprocess
 from pathlib import Path
 
 from flask import current_app, flash, redirect, request, send_file, url_for
+
+from datetime import datetime
+
+from werkzeug.utils import secure_filename
 
 from app import db
 from app.models import Claim, ClaimDocument, Settings
@@ -63,6 +65,104 @@ def _get_claim_folder(claim: Claim) -> Path:
     folder = root / f"{claim.id}_{claimant_segment}"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
+
+
+@bp.route("/claims/<int:claim_id>/documents/upload", methods=["POST"])
+def claim_document_upload(claim_id: int):
+    """Upload a claim-level document and create its DB record.
+
+    This is intentionally separate from claim_detail POST handling so uploads
+    never collide with billable-item validation.
+    """
+    claim = Claim.query.get_or_404(claim_id)
+
+    uploaded = (
+        request.files.get("file")
+        or request.files.get("document")
+        or request.files.get("upload")
+    )
+
+    doc_type = (
+        (request.form.get("doc_type") or "")
+        or (request.form.get("type") or "")
+        or (request.form.get("document_type") or "")
+    ).strip() or None
+
+    description = (
+        (request.form.get("description") or "")
+        or (request.form.get("doc_description") or "")
+    ).strip() or None
+
+    if not uploaded or not getattr(uploaded, "filename", ""):
+        flash("Choose a file to upload.", "danger")
+        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+    if not doc_type:
+        flash("Document type is required.", "danger")
+        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+    # Ensure docs root exists / is configured (mirrors app behavior)
+    root = _get_documents_root()
+    if not root.exists():
+        flash("Documents root folder could not be created.", "danger")
+        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+    claim_folder = _get_claim_folder(claim)
+
+    original_name = uploaded.filename
+    safe_name = secure_filename(original_name) or "upload"
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    stored_name = f"{ts}_{safe_name}"
+
+    file_path = Path(claim_folder) / stored_name
+
+    try:
+        uploaded.save(file_path)
+    except Exception:
+        current_app.logger.exception("Failed to save uploaded document")
+        flash("Upload failed while saving the file.", "danger")
+        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+    doc = ClaimDocument(claim_id=claim.id)
+
+    # Defensive field mapping (schema has evolved).
+    if hasattr(doc, "doc_type"):
+        setattr(doc, "doc_type", doc_type)
+    elif hasattr(doc, "type"):
+        setattr(doc, "type", doc_type)
+
+    if hasattr(doc, "description"):
+        setattr(doc, "description", description)
+
+    if hasattr(doc, "filename_stored"):
+        setattr(doc, "filename_stored", stored_name)
+    elif hasattr(doc, "stored_filename"):
+        setattr(doc, "stored_filename", stored_name)
+    elif hasattr(doc, "filename"):
+        setattr(doc, "filename", stored_name)
+
+    if hasattr(doc, "original_filename"):
+        setattr(doc, "original_filename", original_name)
+
+    if hasattr(doc, "uploaded_at") and getattr(doc, "uploaded_at", None) is None:
+        setattr(doc, "uploaded_at", datetime.utcnow())
+
+    db.session.add(doc)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        # Avoid orphan files if DB write fails.
+        try:
+            if file_path.exists():
+                file_path.unlink()
+        except Exception:
+            pass
+        flash("Upload failed while saving to the database.", "danger")
+        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+    flash("Document uploaded.", "success")
+    return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
 
 @bp.route("/claims/<int:claim_id>/documents/<int:doc_id>/download")

@@ -1416,9 +1416,75 @@ def contact_delete(contact_id: int):
             parent_type = parent_type or "carrier"
             parent_id = parent_id or getattr(contact, "carrier_id")
 
+    # ------------------------------------------------------------------
+    # IMPORTANT: Some claims can reference a Contact (e.g. carrier_contact_id).
+    # If we delete the contact without clearing those references, Postgres will
+    # raise a FK violation. Our chosen behavior is: auto-clear the reference(s)
+    # and proceed with deletion. Users can re-select a replacement later.
+    # ------------------------------------------------------------------
+
+    cleared_any = False
+
+    try:
+        # Common / known FK on Claim
+        if hasattr(Claim, "carrier_contact_id"):
+            cleared = (
+                db.session.query(Claim)
+                .filter(Claim.carrier_contact_id == contact.id)
+                .update({Claim.carrier_contact_id: None}, synchronize_session=False)
+            )
+            if cleared:
+                cleared_any = True
+
+        # Future-proofing: if other claim contact FK columns exist, clear them too.
+        if hasattr(Claim, "employer_contact_id"):
+            cleared = (
+                db.session.query(Claim)
+                .filter(Claim.employer_contact_id == contact.id)
+                .update({Claim.employer_contact_id: None}, synchronize_session=False)
+            )
+            if cleared:
+                cleared_any = True
+
+        if hasattr(Claim, "provider_contact_id"):
+            cleared = (
+                db.session.query(Claim)
+                .filter(Claim.provider_contact_id == contact.id)
+                .update({Claim.provider_contact_id: None}, synchronize_session=False)
+            )
+            if cleared:
+                cleared_any = True
+
+        # If any references were cleared, flush so the delete won't violate FKs.
+        if cleared_any:
+            db.session.flush()
+
+    except Exception:
+        # If anything goes sideways, rollback and show a safe message.
+        db.session.rollback()
+        flash(
+            "Could not delete that contact because it is still referenced by one or more claims.",
+            "danger",
+        )
+        # Best-effort: return to where the user was.
+        if parent_type == "carrier" and parent_id:
+            return redirect(url_for("main.carrier_detail", carrier_id=parent_id))
+        if parent_type == "employer" and parent_id:
+            return redirect(url_for("main.employer_detail", employer_id=parent_id))
+        if parent_type == "provider" and parent_id:
+            return redirect(url_for("main.provider_detail", provider_id=parent_id))
+        ref = request.referrer
+        if ref:
+            return redirect(ref)
+        return redirect(url_for("main.claims_list"))
+
     db.session.delete(contact)
     db.session.commit()
-    flash("Contact deleted.", "success")
+
+    if cleared_any:
+        flash("Contact deleted. Any claim references to that contact were cleared.", "success")
+    else:
+        flash("Contact deleted.", "success")
 
     # Best-effort: return to where the user was.
     if parent_type == "carrier" and parent_id:
