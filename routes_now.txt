@@ -1,0 +1,76 @@
+Endpoint                            Methods    Rule                                                                           
+----------------------------------  ---------  -------------------------------------------------------------------------------
+main.analysis_view                  GET        /analysis                                                                      
+main.api_contact_search             GET        /api/contact-search                                                            
+main.billable_delete                GET, POST  /claims/<int:claim_id>/billable/<int:item_id>/delete                           
+main.billable_edit                  GET, POST  /claims/<int:claim_id>/billable/<int:item_id>/edit                             
+main.billing_list                   GET        /billing                                                                       
+main.carrier_delete                 POST       /carriers/<int:carrier_id>/delete                                              
+main.carrier_detail                 GET        /carriers/<int:carrier_id>                                                     
+main.carrier_edit                   GET, POST  /carriers/<int:carrier_id>/edit                                                
+main.carrier_new                    GET, POST  /carriers/new                                                                  
+main.carriers_list                  GET        /carriers                                                                      
+main.claim_delete                   GET, POST  /claims/<int:claim_id>/delete                                                  
+main.claim_detail                   GET, POST  /claims/<int:claim_id>                                                         
+main.claim_document_delete          POST       /claims/<int:claim_id>/documents/<int:doc_id>/delete                           
+main.claim_document_download        GET        /claims/<int:claim_id>/documents/<int:doc_id>/download                         
+main.claim_document_open_location   POST       /claims/<int:claim_id>/documents/<int:doc_id>/open-location                    
+main.claim_edit                     GET, POST  /claims/<int:claim_id>/edit                                                    
+main.claim_report_new               GET, POST  /claims/<int:claim_id>/reports/create                                          
+main.claim_report_new               GET, POST  /claims/<int:claim_id>/report/new                                              
+main.claim_report_new               GET, POST  /claims/<int:claim_id>/reports/new                                             
+main.claims_list                    GET        /claims                                                                        
+main.claims_list                    GET        /                                                                              
+main.contact_delete                 POST       /contacts/<int:contact_id>/delete                                              
+main.contact_new                    POST       /contacts/new/<string:parent_type>/<int:parent_id>                             
+main.contact_update                 POST       /contacts/<int:contact_id>/update/<string:parent_type>/<int:parent_id>         
+main.employer_delete                POST       /employers/<int:employer_id>/delete                                            
+main.employer_detail                GET        /employers/<int:employer_id>                                                   
+main.employer_edit                  GET, POST  /employers/<int:employer_id>/edit                                              
+main.employer_new                   GET, POST  /employers/new                                                                 
+main.employers_list                 GET        /employers                                                                     
+main.forms_fax_cover                GET, POST  /forms/fax-cover                                                               
+main.forms_index                    GET        /forms                                                                         
+main.invoice_add_uninvoiced         POST       /billing/<int:invoice_id>/add-uninvoiced                                       
+main.invoice_delete                 POST       /billing/<int:invoice_id>/delete                                               
+main.invoice_detail                 GET        /billing/<int:invoice_id>                                                      
+main.invoice_new_for_claim          GET        /claims/<int:claim_id>/invoice/new                                             
+main.invoice_new_for_report         GET        /claims/<int:claim_id>/reports/<int:report_id>/invoice/new                     
+main.invoice_print                  GET        /billing/<int:invoice_id>/print                                                
+main.invoice_remove_item            POST       /billing/<int:invoice_id>/items/<int:item_id>/remove                           
+main.invoice_update                 POST       /billing/<int:invoice_id>/update                                               
+main.new_claim                      GET, POST  /claims/new                                                                    
+main.provider_delete                POST       /providers/<int:provider_id>/delete                                            
+main.provider_detail                GET        /providers/<int:provider_id>                                                   
+main.provider_edit                  GET, POST  /providers/<int:provider_id>/edit                                              
+main.provider_new                   GET, POST  /providers/new                                                                 
+main.providers_list                 GET        /providers                                                                     
+main.report_append_field            GET        /claims/<int:claim_id>/reports/append-field                                    
+main.report_delete                  GET, POST  /claims/<int:claim_id>/reports/<int:report_id>/delete                          
+main.report_detail                  GET        /claims/<int:claim_id>/reports/<int:report_id>                                 
+main.report_document_delete         POST       /reports/documents/<int:report_document_id>/delete                             
+main.report_document_download       GET        /reports/documents/<int:report_document_id>/download                           
+main.report_document_open_location  POST       /reports/documents/<int:report_document_id>/open-location                      
+main.report_document_upload         POST       /claims/<int:claim_id>/reports/<int:report_id>/documents/upload                
+main.report_edit                    GET, POST  /claims/<int:claim_id>/reports/<int:report_id>/edit                            
+main.report_new                     GET, POST  /claims/<int:claim_id>/reports/new                                             
+main.report_next_appointment_ics    GET        /claims/<int:claim_id>/reports/<int:report_id>/next-appointment.ics            
+main.report_pdf                     GET        /claims/<int:claim_id>/reports/<int:report_id>/pdf                             
+main.report_print                   GET        /claims/<int:claim_id>/reports/<int:report_id>/print                           
+main.report_roll_forward            GET        /claims/<int:claim_id>/reports/<int:report_id>/roll-forward/<string:field_name>
+main.reporting_dashboard            GET        /reporting                                                                     
+main.reporting_view                 GET        /reporting                                                                     
+main.settings_barrier_edit          GET, POST  /settings/barriers/<int:barrier_id>/edit                                       
+main.settings_barrier_toggle        POST       /settings/barriers/<int:barrier_id>/toggle                                     
+main.settings_barriers              GET, POST  /settings/barriers                                                             
+main.settings_billable_edit         GET, POST  /settings/billables/<int:code_id>/edit                                         
+main.settings_billable_toggle       POST       /settings/billables/<int:code_id>/toggle                                       
+main.settings_billables             GET, POST  /settings/billables                                                            
+main.settings_contact_role_edit     GET, POST  /settings/contact-roles/<int:role_id>/edit                                     
+main.settings_contact_role_toggle   POST       /settings/contact-roles/<int:role_id>/toggle                                   
+main.settings_contact_roles         GET, POST  /settings/contact-roles                                                        
+main.settings_view                  GET, POST  /settings                                                                      
+mobile.mobile_billable_new          GET, POST  /mobile/claims/<int:claim_id>/billable/new                                     
+mobile.mobile_claims                GET        /mobile/claims                                                                 
+mobile.mobile_home                  GET        /mobile/                                                                       
+static                              GET        /static/<path:filename>                                                        

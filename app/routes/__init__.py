@@ -9,8 +9,14 @@ not inside the routes package.
 
 from flask import Blueprint
 
+from .helpers import state_options
+
 # Primary site blueprint
 bp = Blueprint("main", __name__)
+
+# Template globals (used across many templates)
+# This restores the old behavior from the monolithic routes.py.
+bp.add_app_template_global(state_options, name="state_options")
 
 # Import route modules to register routes on the blueprint.
 # These imports must come AFTER `bp` is defined.

@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from flask import redirect, render_template, request, url_for
+from flask import redirect, render_template, request, url_for, flash
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
@@ -421,6 +422,82 @@ def claim_detail(claim_id: int):
     claim = Claim.query.get_or_404(claim_id)
     settings = _ensure_settings()
 
+    # Handle quick-add Billable Item form (POSTs back to this same page)
+    if request.method == "POST":
+        # Be tolerant of older/newer template field names
+        dos_raw = (
+            (request.form.get("date_of_service") or "")
+            or (request.form.get("service_date") or "")
+            or (request.form.get("date") or "")
+        ).strip()
+        activity_code = (
+            (request.form.get("activity_code") or "")
+            or (request.form.get("activity") or "")
+            or (request.form.get("code") or "")
+        ).strip()
+        description = (
+            (request.form.get("description") or "")
+            or (request.form.get("short_desc") or "")
+        ).strip() or None
+        qty_raw = (
+            (request.form.get("quantity") or "")
+            or (request.form.get("qty") or "")
+        ).strip()
+        notes = (
+            (request.form.get("notes") or "")
+            or (request.form.get("note") or "")
+        ).strip() or None
+
+        if not activity_code:
+            flash("Select an activity before adding a billable item.", "error")
+            return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+        dos = _parse_date(dos_raw)
+        qty = None
+        if qty_raw:
+            try:
+                qty = float(qty_raw)
+            except ValueError:
+                flash("Quantity must be a number.", "error")
+                return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+        item = BillableItem(claim_id=claim.id)
+
+        # Set attributes defensively (model field names changed during migrations)
+        if hasattr(item, "date_of_service"):
+            setattr(item, "date_of_service", dos)
+        elif hasattr(item, "service_date"):
+            setattr(item, "service_date", dos)
+
+        if hasattr(item, "activity_code"):
+            setattr(item, "activity_code", activity_code)
+        elif hasattr(item, "activity"):
+            setattr(item, "activity", activity_code)
+
+        if hasattr(item, "description"):
+            setattr(item, "description", description)
+        elif hasattr(item, "short_desc"):
+            setattr(item, "short_desc", description)
+
+        if hasattr(item, "quantity"):
+            setattr(item, "quantity", qty)
+        elif hasattr(item, "qty"):
+            setattr(item, "qty", qty)
+
+        if hasattr(item, "notes"):
+            setattr(item, "notes", notes)
+
+        db.session.add(item)
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            flash("Could not save billable item. Check required fields and try again.", "error")
+            return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+        flash("Billable item added.", "success")
+        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
     billable_items = (
         BillableItem.query.filter_by(claim_id=claim.id)
         .order_by(
@@ -490,15 +567,42 @@ def claim_delete(claim_id: int):
     claim = Claim.query.get_or_404(claim_id)
 
     if request.method == "POST":
-        BillableItem.query.filter_by(claim_id=claim.id).delete()
-        Report.query.filter_by(claim_id=claim.id).delete()
-        ClaimDocument.query.filter_by(claim_id=claim.id).delete()
-        Invoice.query.filter_by(claim_id=claim.id).delete()
+        try:
+            # --- Delete children in a FK-safe order ---
 
-        db.session.delete(claim)
-        db.session.commit()
+            # 1) Reports: clear join-table rows that reference Report first.
+            report_ids = [rid for (rid,) in db.session.query(Report.id).filter_by(claim_id=claim.id).all()]
+            if report_ids:
+                db.session.execute(
+                    text("DELETE FROM report_approved_provider WHERE report_id = ANY(:report_ids)"),
+                    {"report_ids": report_ids},
+                )
 
-        return redirect(url_for("main.claims_list"))
+            # 2) Claim-level children
+            BillableItem.query.filter_by(claim_id=claim.id).delete(synchronize_session=False)
+            ClaimDocument.query.filter_by(claim_id=claim.id).delete(synchronize_session=False)
+
+            # 3) Report rows (after join-table cleanup)
+            Report.query.filter_by(claim_id=claim.id).delete(synchronize_session=False)
+
+            # 4) Invoices (claim-level)
+            Invoice.query.filter_by(claim_id=claim.id).delete(synchronize_session=False)
+
+            # 5) Finally the claim
+            db.session.delete(claim)
+            db.session.commit()
+
+            flash("Claim deleted.", "success")
+            return redirect(url_for("main.claims_list"))
+
+        except IntegrityError as e:
+            db.session.rollback()
+            flash(
+                "Could not delete claim because related records still exist (FK constraint). "
+                "See server logs for details.",
+                "error",
+            )
+            raise
 
     return render_template(
         "claim_delete_confirm.html",

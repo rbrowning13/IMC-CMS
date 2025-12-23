@@ -1,141 +1,145 @@
 {% extends "base.html" %}
-{% block title %}Edit Provider - Impact CMS{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-      <h1 class="h4 mb-0">Edit Provider</h1>
-      <div class="text-muted small">
-        {{ provider.name }}
-      </div>
-    </div>
-    <a href="{{ url_for('main.provider_detail', provider_id=provider.id) }}" class="btn btn-outline-secondary btn-sm">
-      Back to Provider
-    </a>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2 class="mb-0">Edit Provider</h2>
+    <div class="text-muted">Update provider details and save.</div>
   </div>
-
-  {% if error %}
-    <div class="alert alert-danger py-2 small">
-      {{ error }}
-    </div>
-  {% endif %}
-
-  <div class="card shadow-sm">
-    <div class="card-header">
-      <h2 class="h6 mb-0">Provider Details</h2>
-    </div>
-    <div class="card-body">
-      <form method="post" action="{{ url_for('main.provider_edit', provider_id=provider.id) }}">
-        <div class="row g-3">
-          <div class="col-md-6">
-            <label class="form-label mb-1">Name</label>
-            <input
-              type="text"
-              name="name"
-              class="form-control form-control-sm"
-              value="{{ provider.name or '' }}"
-              required
-            >
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label mb-1">Phone</label>
-            <input
-              type="text"
-              name="phone"
-              class="form-control form-control-sm phone-input"
-              inputmode="numeric"
-              autocomplete="tel"
-              maxlength="14"
-              value="{{ provider.phone or '' }}"
-            >
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label mb-1">Fax</label>
-            <input
-              type="text"
-              name="fax"
-              class="form-control form-control-sm phone-input"
-              inputmode="numeric"
-              autocomplete="tel"
-              maxlength="14"
-              value="{{ provider.fax or '' }}"
-            >
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label mb-1">Email</label>
-            <input
-              type="email"
-              name="email"
-              class="form-control form-control-sm"
-              value="{{ provider.email or '' }}"
-            >
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label mb-1">Address 1</label>
-            <input
-              type="text"
-              name="address1"
-              class="form-control form-control-sm"
-              value="{{ provider.address1 or '' }}"
-            >
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label mb-1">Address 2</label>
-            <input
-              type="text"
-              name="address2"
-              class="form-control form-control-sm"
-              value="{{ provider.address2 or '' }}"
-            >
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label mb-1">City</label>
-            <input
-              type="text"
-              name="city"
-              class="form-control form-control-sm"
-              value="{{ provider.city or '' }}"
-            >
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label mb-1">State</label>
-            <select name="state" class="form-select form-select-sm">
-              {{ state_options(provider.state) }}
-            </select>
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label mb-1">Postal Code</label>
-            <input
-              type="text"
-              name="postal_code"
-              class="form-control form-control-sm"
-              value="{{ provider.postal_code or '' }}"
-            >
-          </div>
-        </div>
-
-        <div class="mt-3 d-flex justify-content-end gap-2">
-          <a
-            href="{{ url_for('main.provider_detail', provider_id=provider.id) }}"
-            class="btn btn-outline-secondary btn-sm"
-          >
-            Cancel
-          </a>
-          <button type="submit" class="btn btn-primary btn-sm">
-            Save Changes
-          </button>
-        </div>
-      </form>
-    </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('main.provider_detail', provider_id=provider.id) }}">Cancel</a>
   </div>
 </div>
+
+<form method="post" action="{{ url_for('main.provider_edit', provider_id=provider.id) }}" class="card card-body">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Name</label>
+      <input class="form-control" name="name" value="{{ form.get('name','') }}" required>
+    </div>
+
+    <div class="col-md-6">
+      <label class="form-label">Address 1</label>
+      <input class="form-control" name="address1" value="{{ form.get('address1','') }}">
+    </div>
+
+    <div class="col-md-6">
+      <label class="form-label">Address 2</label>
+      <input class="form-control" name="address2" value="{{ form.get('address2','') }}">
+    </div>
+
+    <div class="col-md-4">
+      <label class="form-label">City</label>
+      <input class="form-control" name="city" value="{{ form.get('city','') }}">
+    </div>
+
+    <div class="col-md-2">
+      <label class="form-label">State</label>
+      <select class="form-select" name="state">
+        {{ state_options(form.get('state') or 'ID') }}
+      </select>
+    </div>
+
+    <div class="col-md-2">
+      <label class="form-label">Zip Code</label>
+      <input class="form-control" name="postal_code" value="{{ form.get('postal_code','') }}">
+    </div>
+
+    <div class="col-md-3">
+      <label class="form-label">Phone</label>
+      <input class="form-control phone-input" name="phone" value="{{ form.get('phone','') }}">
+    </div>
+
+    <div class="col-md-1">
+      <label class="form-label">Ext</label>
+      <input class="form-control" name="phone_ext" value="{{ form.get('phone_ext','') }}">
+    </div>
+
+    <div class="col-md-4">
+      <label class="form-label">Fax</label>
+      <input class="form-control phone-input" name="fax" value="{{ form.get('fax','') }}">
+    </div>
+
+    <div class="col-md-4">
+      <label class="form-label">Email</label>
+      <input class="form-control" name="email" value="{{ form.get('email','') }}">
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-12">
+      <label class="form-label">Notes</label>
+      <textarea class="form-control" name="notes" rows="4">{{ form.get('notes','') }}</textarea>
+    </div>
+  </div>
+
+  <div class="mt-4 d-flex justify-content-end gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('main.provider_detail', provider_id=provider.id) }}">Cancel</a>
+    <button class="btn btn-primary" type="submit">Save</button>
+  </div>
+</form>
+<script>
+(function () {
+  function digitsOnly(s) {
+    return (s || '').replace(/\D/g, '').slice(0, 10);
+  }
+
+  function formatPhoneFromDigits(digits) {
+    if (!digits) return '';
+    if (digits.length < 4) return digits;
+    if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
+  // Given a formatted phone string, return the caret index that corresponds to
+  // having consumed `digitCount` digits.
+  function caretIndexForDigitCount(formatted, digitCount) {
+    if (digitCount <= 0) return 0;
+    let seen = 0;
+    for (let i = 0; i < formatted.length; i++) {
+      if (/\d/.test(formatted[i])) {
+        seen++;
+        if (seen === digitCount) return i + 1;
+      }
+    }
+    return formatted.length;
+  }
+
+  function applyPhoneMask(input) {
+    // Initial format (no caret concerns)
+    if (input.value) {
+      const d = digitsOnly(input.value);
+      input.value = formatPhoneFromDigits(d);
+    }
+
+    input.addEventListener('input', (e) => {
+      // If the user is in an IME composition, don't interfere.
+      if (e && e.isComposing) return;
+
+      const raw = input.value;
+      const caret = input.selectionStart ?? raw.length;
+
+      // Count digits to the left of caret in the *raw* value.
+      const leftDigits = digitsOnly(raw.slice(0, caret)).length;
+
+      const digits = digitsOnly(raw);
+      const formatted = formatPhoneFromDigits(digits);
+
+      // Only update + move caret if formatting changed the value.
+      if (formatted !== raw) {
+        input.value = formatted;
+      }
+
+      const newCaret = caretIndexForDigitCount(formatted, leftDigits);
+      try {
+        input.setSelectionRange(newCaret, newCaret);
+      } catch (_) {
+        // Some inputs/types may not support selection; ignore.
+      }
+    });
+  }
+
+  document.querySelectorAll('.phone-input').forEach(applyPhoneMask);
+})();
+</script>
 {% endblock %}

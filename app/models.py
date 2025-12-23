@@ -1,5 +1,26 @@
 from datetime import datetime, date
+
+from sqlalchemy.orm import synonym
+
+
 from .extensions import db
+
+
+# ============================================================
+#  HELPER: Phone number formatting with extension
+# ============================================================
+def _format_phone_with_ext(phone: str | None, ext: str | None) -> str | None:
+    """
+    Format a phone number with an optional extension.
+    Returns None if phone is falsy.
+    """
+    phone = (phone or "").strip()
+    ext = (ext or "").strip()
+    if not phone:
+        return None
+    if not ext:
+        return phone
+    return f"{phone} ext {ext}"
 
 
 # ============================================================
@@ -20,8 +41,13 @@ class Carrier(db.Model):
     postal_code = db.Column(db.String(20))
 
     phone = db.Column(db.String(50))
+    phone_ext = db.Column(db.String(20))
     fax = db.Column(db.String(50))
     email = db.Column(db.String(255))
+
+    @property
+    def phone_display(self):
+        return _format_phone_with_ext(self.phone, self.phone_ext)
 
     claims = db.relationship("Claim", back_populates="carrier")
     contacts = db.relationship(
@@ -49,10 +75,15 @@ class Employer(db.Model):
     postal_code = db.Column(db.String(20))
 
     phone = db.Column(db.String(50))
+    phone_ext = db.Column(db.String(20))
     fax = db.Column(db.String(50))
     email = db.Column(db.String(255))
     carrier_id = db.Column(db.Integer, db.ForeignKey("carrier.id"))
     carrier = db.relationship("Carrier", backref="employers")
+
+    @property
+    def phone_display(self):
+        return _format_phone_with_ext(self.phone, self.phone_ext)
 
     claims = db.relationship("Claim", back_populates="employer")
     contacts = db.relationship(
@@ -80,8 +111,14 @@ class Provider(db.Model):
     postal_code = db.Column(db.String(20))
 
     phone = db.Column(db.String(50))
+    phone_ext = db.Column(db.String(20))
     fax = db.Column(db.String(50))
     email = db.Column(db.String(255))
+    notes = db.Column(db.Text)
+
+    @property
+    def phone_display(self):
+        return _format_phone_with_ext(self.phone, self.phone_ext)
 
     # Claims where this provider is the PCP (future use)
     pcp_for_claims = db.relationship(
@@ -118,12 +155,30 @@ class Contact(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
     name = db.Column(db.String(255), nullable=False)
+
+    # Legacy free-text role (kept for backwards compatibility)
     role = db.Column(db.String(120))
 
+    # Settings-managed role/title dropdown
+    contact_role_id = db.Column(db.Integer, db.ForeignKey("contact_role.id"))
+    contact_role = db.relationship("ContactRole")
+
     phone = db.Column(db.String(50))
+    phone_ext = db.Column(db.String(20))
     fax = db.Column(db.String(50))
     email = db.Column(db.String(255))
     notes = db.Column(db.Text)
+
+    @property
+    def phone_display(self):
+        return _format_phone_with_ext(self.phone, self.phone_ext)
+
+    @property
+    def role_display(self) -> str | None:
+        """Best-effort display value for role/title."""
+        if self.contact_role is not None:
+            return self.contact_role.label
+        return (self.role or "").strip() or None
 
     carrier_id = db.Column(db.Integer, db.ForeignKey("carrier.id"))
     employer_id = db.Column(db.Integer, db.ForeignKey("employer.id"))
@@ -162,7 +217,12 @@ class Claim(db.Model):
     claimant_state = db.Column(db.String(10))
     claimant_postal_code = db.Column(db.String(20))
     claimant_phone = db.Column(db.String(50))
+    claimant_phone_ext = db.Column(db.String(20))
     claimant_email = db.Column(db.String(255))
+
+    @property
+    def claimant_phone_display(self):
+        return _format_phone_with_ext(self.claimant_phone, self.claimant_phone_ext)
 
     # Telephonic flag (used in some flows)
     is_telephonic = db.Column(db.Boolean, default=False)
@@ -501,10 +561,15 @@ class Settings(db.Model):
     state = db.Column(db.String(10))
     postal_code = db.Column(db.String(20))
     phone = db.Column(db.String(50))
+    phone_ext = db.Column(db.String(20))
     fax = db.Column(db.String(50))
     email = db.Column(db.String(255))
     ein = db.Column(db.String(50))
     responsible_case_manager = db.Column(db.String(255))
+
+    @property
+    def phone_display(self):
+        return _format_phone_with_ext(self.phone, self.phone_ext)
 
     # Billing rates
     hourly_rate = db.Column(db.Float)
@@ -537,3 +602,31 @@ class Settings(db.Model):
 
     def __repr__(self):
         return "<Settings>"
+
+
+# ============================================================
+#  CONTACT ROLES (Settings-managed list)
+# ============================================================
+
+class ContactRole(db.Model):
+    """Editable list of contact roles/titles shown in contact forms."""
+    __tablename__ = "contact_role"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # DB column (per schema): contact_role.label
+    # Examples: "Adjuster", "Nurse Case Manager"
+    label = db.Column(db.String(255), nullable=False)
+
+    # Backwards-compatible alias so older code can still do ContactRole(name="...")
+    # NOTE: this is a SQLAlchemy synonym (mapped attribute), not a Python @property.
+    name = synonym("label")
+
+    sort_order = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+
+    def __repr__(self):
+        return f"<ContactRole {self.label}>"
+
+    def __str__(self):
+        return self.label

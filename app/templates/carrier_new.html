@@ -17,52 +17,69 @@
         <div class="row g-3">
           <div class="col-md-6">
             <label for="name" class="form-label">Name</label>
-            <input type="text" name="name" id="name" class="form-control" required>
+            <input type="text" name="name" id="name" class="form-control" value="{{ form.get('name','') if form else '' }}" required>
+          </div>
+
+          <div class="col-md-6">
+            <label for="address1" class="form-label">Address 1</label>
+            <input type="text" name="address1" id="address1" class="form-control" value="{{ form.get('address1','') if form else '' }}">
+          </div>
+
+          <div class="col-md-6">
+            <label for="address2" class="form-label">Address 2</label>
+            <input type="text" name="address2" id="address2" class="form-control" value="{{ form.get('address2','') if form else '' }}">
           </div>
 
           <div class="col-md-4">
             <label for="city" class="form-label">City</label>
-            <input type="text" name="city" id="city" class="form-control">
+            <input type="text" name="city" id="city" class="form-control" value="{{ form.get('city','') if form else '' }}">
           </div>
 
           <div class="col-md-2">
             <label for="state" class="form-label">State</label>
-            <input type="text" name="state" id="state" class="form-control" maxlength="2" placeholder="ID">
+            <select name="state" id="state" class="form-select">
+              {{ state_options(form.get('state', 'ID'))|safe }}
+            </select>
           </div>
 
           <div class="col-md-3">
-            <label for="postal_code" class="form-label">Postal Code</label>
-            <input type="text" name="postal_code" id="postal_code" class="form-control">
+            <label for="postal_code" class="form-label">Zip Code</label>
+            <input type="text" name="postal_code" id="postal_code" class="form-control" value="{{ form.get('postal_code','') if form else '' }}">
           </div>
 
           <div class="col-md-3">
             <label for="phone" class="form-label">Phone</label>
-            <input type="text" name="phone" id="phone" class="form-control" data-auto-phone="1" inputmode="numeric">
+            <input type="text" name="phone" id="phone" class="form-control" value="{{ form.get('phone','') if form else '' }}" data-auto-phone="1" inputmode="numeric">
+          </div>
+
+          <div class="col-md-1">
+            <label for="phone_ext" class="form-label">Ext</label>
+            <input type="text" name="phone_ext" id="phone_ext" class="form-control" value="{{ form.get('phone_ext','') if form else '' }}" inputmode="numeric">
           </div>
 
           <div class="col-md-3">
             <label for="fax" class="form-label">Fax</label>
-            <input type="text" name="fax" id="fax" class="form-control" data-auto-phone="1" inputmode="numeric">
+            <input type="text" name="fax" id="fax" class="form-control" value="{{ form.get('fax','') if form else '' }}" data-auto-phone="1" inputmode="numeric">
           </div>
 
-          <div class="col-md-6">
+          <div class="col-md-3">
             <label for="email" class="form-label">Email</label>
-            <input type="email" name="email" id="email" class="form-control">
+            <input type="email" name="email" id="email" class="form-control" value="{{ form.get('email','') if form else '' }}">
           </div>
 
-          <div class="col-md-3">
+          <div class="col-md-4">
             <label for="billing_rate" class="form-label">Standard Hourly Rate ($/hr)</label>
-            <input type="number" name="billing_rate" id="billing_rate" class="form-control" step="0.01" min="0">
+            <input type="number" name="billing_rate" id="billing_rate" class="form-control" value="{{ form.get('billing_rate','') if form else '' }}" step="0.01" min="0">
           </div>
 
-          <div class="col-md-3">
+          <div class="col-md-4">
             <label for="telephonic_rate" class="form-label">Telephonic Hourly Rate ($/hr)</label>
-            <input type="number" name="telephonic_rate" id="telephonic_rate" class="form-control" step="0.01" min="0">
+            <input type="number" name="telephonic_rate" id="telephonic_rate" class="form-control" value="{{ form.get('telephonic_rate','') if form else '' }}" step="0.01" min="0">
           </div>
 
-          <div class="col-md-3">
+          <div class="col-md-4">
             <label for="mileage_rate" class="form-label">Mileage Rate ($/mile)</label>
-            <input type="number" name="mileage_rate" id="mileage_rate" class="form-control" step="0.01" min="0">
+            <input type="number" name="mileage_rate" id="mileage_rate" class="form-control" value="{{ form.get('mileage_rate','') if form else '' }}" step="0.01" min="0">
           </div>
         </div>
 

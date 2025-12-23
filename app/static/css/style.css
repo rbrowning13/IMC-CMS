@@ -430,3 +430,96 @@ html.dark-mode .accordion-button::after {
 .accordion-button:not(.collapsed)::after {
   transform: rotate(180deg);
 }
+
+
+/* -------------------------------------------------------------------------
+   Dark mode: form controls (inputs, selects, textareas)
+   ------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  /* Keep native controls readable in dark mode */
+  input, textarea, select {
+    color-scheme: dark;
+  }
+
+  .form-control,
+  .form-select,
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="number"],
+  input[type="search"],
+  input[type="date"],
+  textarea,
+  select {
+    background-color: #1e1e1e;
+    color: #f1f1f1;
+    border-color: #3a3a3a;
+  }
+
+  .form-control:focus,
+  .form-select:focus,
+  textarea:focus,
+  select:focus {
+    background-color: #1e1e1e;
+    color: #f1f1f1;
+    border-color: #6b6b6b;
+    box-shadow: 0 0 0 0.2rem rgba(255, 255, 255, 0.12);
+  }
+
+  /* Option styling support varies by OS/browser, but helps where supported */
+  select option {
+    background-color: #1e1e1e;
+    color: #f1f1f1;
+  }
+
+  ::placeholder {
+    color: rgba(241, 241, 241, 0.55);
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Validation styling (Bootstrap-compatible) — keeps errors obvious
+   NOTE: preventing form data from clearing is handled in routes/templates.
+   These styles only make validation feedback consistent, incl. dark mode.
+   ------------------------------------------------------------------------- */
+
+/* Inputs/selects/textareas flagged invalid */
+.is-invalid,
+.was-validated .form-control:invalid,
+.was-validated .form-select:invalid,
+.was-validated input:invalid,
+.was-validated textarea:invalid,
+.was-validated select:invalid {
+  border-color: #dc3545 !important; /* bootstrap danger */
+}
+
+/* Inputs/selects/textareas flagged valid */
+.is-valid,
+.was-validated .form-control:valid,
+.was-validated .form-select:valid,
+.was-validated input:valid,
+.was-validated textarea:valid,
+.was-validated select:valid {
+  border-color: #198754 !important; /* bootstrap success */
+}
+
+/* Feedback text */
+.invalid-feedback,
+.valid-feedback {
+  font-weight: 600;
+}
+
+/* Make invalid feedback readable on dark mode */
+html.dark-mode .invalid-feedback {
+  color: #ff6b6b !important;
+}
+
+html.dark-mode .valid-feedback {
+  color: #63e6be !important;
+}
+
+/* Ensure browser-native <select> dropdown arrow remains visible in dark mode */
+html.dark-mode select.form-select,
+html.dark-mode select {
+  color-scheme: dark;
+}

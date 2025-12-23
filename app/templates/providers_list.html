@@ -30,7 +30,8 @@
             <thead class="table-light">
               <tr>
                 <th class="sortable" data-sort-key="name"><span>Name</span> <span class="sort-indicator">↕</span></th>
-                <th class="sortable" data-sort-key="address"><span>Address</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="address1"><span>Address 1</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="address2"><span>Address 2</span> <span class="sort-indicator">↕</span></th>
                 <th class="sortable" data-sort-key="location"><span>City / State / ZIP</span> <span class="sort-indicator">↕</span></th>
                 <th class="sortable" data-sort-key="phone"><span>Phone</span> <span class="sort-indicator">↕</span></th>
                 <th class="sortable" data-sort-key="email"><span>Email</span> <span class="sort-indicator">↕</span></th>
@@ -46,12 +47,15 @@
                     </a>
                   </td>
                   <td>
-                    {% if provider.address1 or provider.address2 %}
-                      {{ provider.address1 or '' }}
-                      {% if provider.address2 %}
-                        <br>
-                        <span class="text-muted small">{{ provider.address2 }}</span>
-                      {% endif %}
+                    {% if provider.address1 %}
+                      {{ provider.address1 }}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if provider.address2 %}
+                      {{ provider.address2 }}
                     {% else %}
                       <span class="text-muted">—</span>
                     {% endif %}
@@ -171,14 +175,16 @@
             switch (key) {
               case 'name':
                 return row.children[0].innerText.trim().toLowerCase();
-              case 'address':
+              case 'address1':
                 return row.children[1].innerText.trim().toLowerCase();
-              case 'location':
+              case 'address2':
                 return row.children[2].innerText.trim().toLowerCase();
-              case 'phone':
+              case 'location':
                 return row.children[3].innerText.trim().toLowerCase();
-              case 'email':
+              case 'phone':
                 return row.children[4].innerText.trim().toLowerCase();
+              case 'email':
+                return row.children[5].innerText.trim().toLowerCase();
               default:
                 return '';
             }

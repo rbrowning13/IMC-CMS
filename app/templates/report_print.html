@@ -290,7 +290,7 @@
             <br>
             {{ settings.city or '' }}{% if settings.city and (settings.state or settings.postal_code) %}, {% endif %}{{ settings.state or '' }} {{ settings.postal_code or '' }}
           {% endif %}
-          {% if settings.phone %}<br>{{ settings.phone }}{% endif %}
+          {% if settings.phone %}<br>{{ settings.phone }}{% if settings.phone_ext %} x{{ settings.phone_ext }}{% endif %}{% endif %}
           {% if settings.email %}<br>{{ settings.email }}{% endif %}
         </div>
       </div>
@@ -448,7 +448,7 @@
             <br>
             {{ settings.city or '' }}{% if settings.city and (settings.state or settings.postal_code) %}, {% endif %}{{ settings.state or '' }} {{ settings.postal_code or '' }}
           {% endif %}
-          {% if settings.phone %}<br>{{ settings.phone }}{% endif %}
+          {% if settings.phone %}<br>{{ settings.phone }}{% if settings.phone_ext %} x{{ settings.phone_ext }}{% endif %}{% endif %}
           {% if settings.email %}<br>{{ settings.email }}{% endif %}
         </div>
       </div>
@@ -553,7 +553,7 @@
               {% endif %}
 
               {% if p.phone %}
-                <p class="rp-pline">{{ p.phone }}</p>
+                <p class="rp-pline">{{ p.phone }}{% if p.phone_ext %} x{{ p.phone_ext }}{% endif %}</p>
               {% endif %}
             </div>
           {% endfor %}

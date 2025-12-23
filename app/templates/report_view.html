@@ -1,6 +1,33 @@
+{#
+  Long-text fields have historically been stored inconsistently (newlines vs literal <BR>/<br> strings).
+  Render them safely as plain text while preserving intended line breaks.
+#}
+{% macro render_long_text(value) -%}
+  {%- set v = (value or '') -%}
+  {# Normalize HTML-ish breaks into real newlines #}
+  {%- set v = v
+      | replace('<BR />', '\n')
+      | replace('<BR/>', '\n')
+      | replace('<BR>', '\n')
+      | replace('<br />', '\n')
+      | replace('<br/>', '\n')
+      | replace('<br>', '\n')
+      | replace('\r\n', '\n')
+      | replace('\r', '\n')
+  -%}
+  <div class="imc-prewrap">{{ v | e }}</div>
+{%- endmacro %}
+
+<style>
+  .imc-prewrap {
+    white-space: pre-wrap;   /* preserve \n */
+    word-break: break-word;  /* long words/URLs */
+  }
+</style>
+
 <div style="display:flex; gap:10px; justify-content:flex-end;">
-    <a href="{{ url_for('main.report_edit', report_id=report.id) }}" class="btn btn-outline-accent">Back to Report</a>
+    <a href="{{ url_for('main.report_edit', claim_id=claim.id, report_id=report.id) }}" class="btn btn-outline-accent">Back to Report</a>
     <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-accent">Back to Claim</a>
     <button onclick="window.print()" class="btn btn-outline-accent">Print</button>
-    <a href="{{ url_for('main.report_print', report_id=report.id) }}" class="btn btn-outline-accent">Download PDF</a>
+    <a href="{{ url_for('main.report_print', claim_id=claim.id, report_id=report.id) }}" class="btn btn-outline-accent">Download PDF</a>
 </div>

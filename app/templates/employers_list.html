@@ -31,7 +31,8 @@
             <thead class="table-light">
               <tr>
                 <th class="sortable" data-sort-key="name"><span>Name</span> <span class="sort-indicator">↕</span></th>
-                <th class="sortable" data-sort-key="address"><span>Address</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="address1"><span>Address 1</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="address2"><span>Address 2</span> <span class="sort-indicator">↕</span></th>
                 <th class="sortable" data-sort-key="location"><span>City / State / ZIP</span> <span class="sort-indicator">↕</span></th>
                 <th class="sortable" data-sort-key="phone"><span>Phone</span> <span class="sort-indicator">↕</span></th>
                 <th class="sortable" data-sort-key="email"><span>Email</span> <span class="sort-indicator">↕</span></th>
@@ -47,12 +48,15 @@
                     </a>
                   </td>
                   <td>
-                    {% if employer.address1 or employer.address2 %}
-                      {{ employer.address1 or '' }}
-                      {% if employer.address2 %}
-                        <br>
-                        <span class="text-muted small">{{ employer.address2 }}</span>
-                      {% endif %}
+                    {% if employer.address1 %}
+                      {{ employer.address1 }}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if employer.address2 %}
+                      {{ employer.address2 }}
                     {% else %}
                       <span class="text-muted">—</span>
                     {% endif %}
@@ -69,6 +73,9 @@
                   <td>
                     {% if employer.phone %}
                       {{ employer.phone }}
+                      {% if employer.phone_ext %}
+                        <span class="text-muted"> x</span>{{ employer.phone_ext }}
+                      {% endif %}
                     {% else %}
                       <span class="text-muted">—</span>
                     {% endif %}
@@ -164,10 +171,11 @@
           const getVal = (row) => {
             switch (key) {
               case 'name': return row.children[0].innerText.trim().toLowerCase();
-              case 'address': return row.children[1].innerText.trim().toLowerCase();
-              case 'location': return row.children[2].innerText.trim().toLowerCase();
-              case 'phone': return row.children[3].innerText.trim().toLowerCase();
-              case 'email': return row.children[4].innerText.trim().toLowerCase();
+              case 'address1': return row.children[1].innerText.trim().toLowerCase();
+              case 'address2': return row.children[2].innerText.trim().toLowerCase();
+              case 'location': return row.children[3].innerText.trim().toLowerCase();
+              case 'phone': return row.children[4].innerText.trim().toLowerCase();
+              case 'email': return row.children[5].innerText.trim().toLowerCase();
               default: return '';
             }
           };

@@ -147,25 +147,30 @@
 
           <hr>
 
-          <form method="post"
-                action="{{ url_for('main.invoice_add_uninvoiced', invoice_id=invoice.id) }}"
-                class="mb-2">
-            <button type="submit"
-                    class="btn btn-sm btn-outline-secondary"
-                    {% if (invoice.status or "Draft") != "Draft" %}disabled{% endif %}>
-              Add all uninvoiced complete items
-            </button>
-          </form>
+          {% set is_draft = (invoice.status or "Draft") == "Draft" %}
 
-          <form method="post"
-                action="{{ url_for('main.invoice_delete', invoice_id=invoice.id) }}"
-                onsubmit="return confirm('Delete this draft invoice and return its items to the claim?');">
-            <button type="submit"
-                    class="btn btn-sm btn-outline-danger"
-                    {% if (invoice.status or "Draft") != "Draft" %}disabled{% endif %}>
-              Delete Draft Invoice
-            </button>
-          </form>
+          {% if is_draft %}
+            <form method="post"
+                  action="{{ url_for('main.invoice_add_uninvoiced', invoice_id=invoice.id) }}"
+                  class="mb-2">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">
+                Add all uninvoiced complete items
+              </button>
+            </form>
+
+            <form method="post"
+                  action="{{ url_for('main.invoice_delete', invoice_id=invoice.id) }}"
+                  onsubmit="return confirm('Delete this draft invoice and return its items to the claim?');">
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                Delete Draft Invoice
+              </button>
+            </form>
+          {% else %}
+            <div class="small text-muted">
+              Draft-only actions are locked after an invoice is marked <strong>{{ invoice.status }}</strong>.
+              Change status back to <strong>Draft</strong> and Save to add items or delete the invoice.
+            </div>
+          {% endif %}
         </div>
       </div>
     </div>

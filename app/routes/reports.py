@@ -500,7 +500,11 @@ def report_edit(claim_id, report_id):
 
         status_treatment_plan = (request.form.get("status_treatment_plan") or "").strip() or None
         employment_status = (request.form.get("employment_status") or "").strip() or None
+        # PCP / Family Doctor is ONLY captured on the Initial Report (report-level only).
+        # Do not persist PCP on Progress/Closure.
         primary_care_provider = (request.form.get("primary_care_provider") or "").strip() or None
+        if report_type_raw and report_type_raw.strip().lower() in {"progress", "closure"}:
+            primary_care_provider = None
 
         # Initial-specific clinical content
         initial_diagnosis = (request.form.get("initial_diagnosis") or "").strip() or None
@@ -559,7 +563,9 @@ def report_edit(claim_id, report_id):
         if not report_type or report_type not in valid_types:
             error = "Report type is required."
 
-        if not error:
+        if error:
+            flash(error, "danger")
+        else:
             report.report_type = report_type
             report.dos_start = dos_start
             report.dos_end = dos_end
@@ -628,11 +634,16 @@ def report_edit(claim_id, report_id):
                 report.barriers_json = None
 
             # PCP / Family Doctor is report-only (Initial Report). Do not write to Claim.
-            # Persist to the report so it prints on the Initial Report only.
+            # Persist only for Initial reports; clear it for other types.
             if hasattr(report, "primary_care_provider"):
-                report.primary_care_provider = primary_care_provider
+                if (report.report_type or "").lower() == "initial":
+                    report.primary_care_provider = primary_care_provider
+                else:
+                    report.primary_care_provider = None
 
             db.session.commit()
+            flash("Saved.", "success")
+            return redirect(url_for("main.report_edit", claim_id=claim.id, report_id=report.id))
 
     barriers_by_category = _get_barrier_options_grouped()
     selected_barrier_ids = set()

@@ -22,59 +22,79 @@
         <div class="col-md-6">
           <label class="form-label">Name<span class="text-danger">*</span></label>
           <input type="text" name="name" class="form-control"
-                 value="{{ carrier.name or '' }}" required>
+                 value="{{ form.name if form is defined and form.name is not none else (carrier.name or '') }}" required>
         </div>
-        <div class="col-md-6">
-          <label class="form-label">City</label>
-          <input type="text" name="city" class="form-control"
-                 value="{{ carrier.city or '' }}">
-        </div>
-      </div>
-
-      <div class="row mb-3">
         <div class="col-md-6">
           <label class="form-label">Address 1</label>
           <input type="text" name="address1" class="form-control"
-                 value="{{ carrier.address1 or '' }}">
+                 value="{{ form.address1 if form is defined and form.address1 is not none else (carrier.address1 or '') }}">
         </div>
+      </div>
+
+      <div class="row mb-3">
         <div class="col-md-6">
           <label class="form-label">Address 2</label>
           <input type="text" name="address2" class="form-control"
-                 value="{{ carrier.address2 or '' }}">
+                 value="{{ form.address2 if form is defined and form.address2 is not none else (carrier.address2 or '') }}">
         </div>
-      </div>
-
-      <div class="row mb-3">
-        <div class="col-md-6">
+        <div class="col-md-3">
+          <label class="form-label">City</label>
+          <input type="text" name="city" class="form-control"
+                 value="{{ form.city if form is defined and form.city is not none else (carrier.city or '') }}">
+        </div>
+        <div class="col-md-3">
           <label class="form-label">State</label>
           <select name="state" class="form-select">
-            {{ state_options(carrier.state) }}
+            {{ state_options(form.state if form is defined and form.state is not none else carrier.state) }}
           </select>
         </div>
-        <div class="col-md-6">
-          <label class="form-label">ZIP</label>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-md-3">
+          <label class="form-label">Zip Code</label>
           <input type="text" name="postal_code" class="form-control"
-                 value="{{ carrier.postal_code or '' }}">
+                 value="{{ form.postal_code if form is defined and form.postal_code is not none else (carrier.postal_code or '') }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Phone</label>
+          <input type="text" name="phone" class="form-control"
+                 value="{{ form.phone if form is defined and form.phone is not none else (carrier.phone or '') }}"
+                 data-auto-phone="1" inputmode="numeric">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Ext</label>
+          <input type="text" name="phone_ext" class="form-control"
+                 value="{{ form.phone_ext if form is defined and form.phone_ext is not none else (carrier.phone_ext or '') }}" inputmode="numeric">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Fax</label>
+          <input type="text" name="fax" class="form-control"
+                 value="{{ form.fax if form is defined and form.fax is not none else (carrier.fax or '') }}"
+                 data-auto-phone="1" inputmode="numeric">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Email</label>
+          <input type="email" name="email" class="form-control"
+                 value="{{ form.email if form is defined and form.email is not none else (carrier.email or '') }}">
         </div>
       </div>
 
       <div class="row mb-3">
         <div class="col-md-4">
-          <label class="form-label">Phone</label>
-          <input type="text" name="phone" class="form-control"
-                 value="{{ carrier.phone or '' }}"
-                 data-auto-phone="1" inputmode="numeric">
+          <label class="form-label">Hourly Rate</label>
+          <input type="number" step="0.01" name="billing_rate" class="form-control"
+                 value="{{ form.billing_rate if form is defined and form.billing_rate is not none else (carrier.billing_rate if carrier.billing_rate is not none else '') }}">
         </div>
         <div class="col-md-4">
-          <label class="form-label">Fax</label>
-          <input type="text" name="fax" class="form-control"
-                 value="{{ carrier.fax or '' }}"
-                 data-auto-phone="1" inputmode="numeric">
+          <label class="form-label">Telephonic Hourly Rate</label>
+          <input type="number" step="0.01" name="telephonic_rate" class="form-control"
+                 value="{{ form.telephonic_rate if form is defined and form.telephonic_rate is not none else (carrier.telephonic_rate if carrier.telephonic_rate is not none else '') }}">
         </div>
         <div class="col-md-4">
-          <label class="form-label">Email</label>
-          <input type="email" name="email" class="form-control"
-                 value="{{ carrier.email or '' }}">
+          <label class="form-label">Mileage Rate</label>
+          <input type="number" step="0.01" name="mileage_rate" class="form-control"
+                 value="{{ form.mileage_rate if form is defined and form.mileage_rate is not none else (carrier.mileage_rate if carrier.mileage_rate is not none else '') }}">
         </div>
       </div>
 

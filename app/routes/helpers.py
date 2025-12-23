@@ -18,7 +18,103 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional, Tuple
 
+
 from flask import current_app
+from markupsafe import Markup, escape
+
+# Public exports used by route modules and templates
+__all__ = [
+    "parse_mmddyyyy",
+    "_parse_mmddyyyy",
+    "parse_iso_or_mmddyyyy",
+    "_parse_date",
+    "parse_date",
+    "validate_email",
+    "_validate_email",
+    "validate_phone",
+    "_validate_phone",
+    "validate_postal_code",
+    "_validate_postal_code",
+    "safe_filename",
+    "documents_root",
+    "_documents_root",
+    "get_claim_folder",
+    "_get_claim_folder",
+    "get_report_folder",
+    "_get_report_folder",
+    "_ensure_settings",
+    "BILLABLE_ACTIVITY_CHOICES",
+    "_billable_is_complete",
+    "generate_invoice_number",
+    "_generate_invoice_number",
+    "calculate_invoice_totals",
+    "_calculate_invoice_totals",
+    "STATE_CHOICES",
+    "STATE_CODE_TO_NAME",
+    "state_options",
+    "_state_options",
+    "open_folder_in_file_manager",
+    "shutil_which",
+    "build_basic_ics",
+]
+
+# Canonical US state list used across the app.
+# Keep this in one place so templates/routes never drift.
+STATE_CHOICES: list[tuple[str, str]] = [
+    ("AL", "Alabama"),
+    ("AK", "Alaska"),
+    ("AZ", "Arizona"),
+    ("AR", "Arkansas"),
+    ("CA", "California"),
+    ("CO", "Colorado"),
+    ("CT", "Connecticut"),
+    ("DE", "Delaware"),
+    ("DC", "District of Columbia"),
+    ("FL", "Florida"),
+    ("GA", "Georgia"),
+    ("HI", "Hawaii"),
+    ("ID", "Idaho"),
+    ("IL", "Illinois"),
+    ("IN", "Indiana"),
+    ("IA", "Iowa"),
+    ("KS", "Kansas"),
+    ("KY", "Kentucky"),
+    ("LA", "Louisiana"),
+    ("ME", "Maine"),
+    ("MD", "Maryland"),
+    ("MA", "Massachusetts"),
+    ("MI", "Michigan"),
+    ("MN", "Minnesota"),
+    ("MS", "Mississippi"),
+    ("MO", "Missouri"),
+    ("MT", "Montana"),
+    ("NE", "Nebraska"),
+    ("NV", "Nevada"),
+    ("NH", "New Hampshire"),
+    ("NJ", "New Jersey"),
+    ("NM", "New Mexico"),
+    ("NY", "New York"),
+    ("NC", "North Carolina"),
+    ("ND", "North Dakota"),
+    ("OH", "Ohio"),
+    ("OK", "Oklahoma"),
+    ("OR", "Oregon"),
+    ("PA", "Pennsylvania"),
+    ("RI", "Rhode Island"),
+    ("SC", "South Carolina"),
+    ("SD", "South Dakota"),
+    ("TN", "Tennessee"),
+    ("TX", "Texas"),
+    ("UT", "Utah"),
+    ("VT", "Vermont"),
+    ("VA", "Virginia"),
+    ("WA", "Washington"),
+    ("WV", "West Virginia"),
+    ("WI", "Wisconsin"),
+    ("WY", "Wyoming"),
+]
+
+STATE_CODE_TO_NAME: dict[str, str] = {code: name for code, name in STATE_CHOICES}
 
 # -----------------------------------------------------------------------------
 # Legacy/back-compat names
@@ -407,6 +503,31 @@ def generate_invoice_number(prefix: str = "INV") -> str:
 def calculate_invoice_totals(invoice):
     return _calculate_invoice_totals(invoice)
 
+
+# -----------------------------------------------------------------------------
+# Jinja helpers
+# -----------------------------------------------------------------------------
+
+def state_options(selected: str | None = None, default: str = "ID") -> Markup:
+    """Return HTML <option> tags for US state dropdowns.
+
+    Templates call this like: {{ state_options(model.state) }}.
+    If `selected` is falsy, `default` is selected.
+    """
+    selected_code = (selected or default or "").strip().upper()
+
+    states = STATE_CHOICES
+
+    parts: list[str] = []
+    for code, name in states:
+        sel = " selected" if code == selected_code else ""
+        parts.append(f'<option value="{escape(code)}"{sel}>{escape(name)}</option>')
+
+    return Markup("\n".join(parts))
+
+def _state_options(selected: str | None = None, default: str = "ID") -> Markup:
+    """Legacy alias for state_options."""
+    return state_options(selected=selected, default=default)
 
 # -----------------------------------------------------------------------------
 # OS helpers

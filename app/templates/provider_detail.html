@@ -45,6 +45,12 @@
             <dt class="col-sm-4">Name</dt>
             <dd class="col-sm-8">{{ provider.name }}</dd>
 
+            <dt class="col-sm-4">Address 1</dt>
+            <dd class="col-sm-8">{{ provider.address1 or "—" }}</dd>
+
+            <dt class="col-sm-4">Address 2</dt>
+            <dd class="col-sm-8">{{ provider.address2 or "—" }}</dd>
+
             <dt class="col-sm-4">City</dt>
             <dd class="col-sm-8">{{ provider.city or "—" }}</dd>
 
@@ -55,7 +61,13 @@
             <dd class="col-sm-8">{{ provider.postal_code or "—" }}</dd>
 
             <dt class="col-sm-4">Phone</dt>
-            <dd class="col-sm-8">{{ provider.phone or "—" }}</dd>
+            <dd class="col-sm-8">
+              {% if provider.phone %}
+                {{ provider.phone }}{% if provider.phone_ext %} x{{ provider.phone_ext }}{% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </dd>
 
             <dt class="col-sm-4">Fax</dt>
             <dd class="col-sm-8">{{ provider.fax or "—" }}</dd>
@@ -64,6 +76,15 @@
             <dd class="col-sm-8">
               {% if provider.email %}
                 <a href="mailto:{{ provider.email }}">{{ provider.email }}</a>
+              {% else %}
+                —
+              {% endif %}
+            </dd>
+
+            <dt class="col-sm-4">Notes</dt>
+            <dd class="col-sm-8">
+              {% if provider.notes %}
+                <span class="text-muted" style="white-space: pre-wrap;">{{ provider.notes }}</span>
               {% else %}
                 —
               {% endif %}
@@ -84,7 +105,7 @@
                 <thead class="table-light">
                   <tr>
                     <th>Name</th>
-                    <th>Role</th>
+                    <th>Title</th>
                     <th>Phone</th>
                     <th>Fax</th>
                     <th>Email</th>
@@ -96,8 +117,14 @@
                   {% for contact in contacts %}
                     <tr>
                       <td>{{ contact.name }}</td>
-                      <td>{{ contact.role or "—" }}</td>
-                      <td>{{ contact.phone or "—" }}</td>
+                      <td>{{ (contact.contact_role.label if contact.contact_role else None) or (contact.title or contact.role) or "—" }}</td>
+                      <td>
+                        {% if contact.phone %}
+                          {{ contact.phone }}{% if contact.phone_ext %} x{{ contact.phone_ext }}{% endif %}
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
                       <td>{{ contact.fax or "—" }}</td>
                       <td>
                         {% if contact.email %}
@@ -117,14 +144,28 @@
                         {% endif %}
                       </td>
                       <td class="text-end">
-                        <a href="{{ url_for('main.provider_detail', provider_id=provider.id, edit_contact_id=contact.id) }}"
-                           class="btn btn-sm btn-outline-secondary me-1">
+                        <button type="button"
+                                class="btn btn-sm btn-outline-secondary me-1 js-edit-contact"
+                                onclick="return (window.imcEditContact && window.imcEditContact(this), false);"
+                                data-contact-id="{{ contact.id }}"
+                                data-contact-role-id="{{ contact.contact_role_id or '' }}"
+                                data-update-url="{{ url_for('main.contact_update', contact_id=contact.id, parent_type='provider', parent_id=provider.id) }}"
+                                data-name="{{ contact.name|e }}"
+                                data-title="{{ (contact.title or '')|e }}"
+                                data-role="{{ (contact.role or '')|e }}"
+                                data-phone="{{ (contact.phone or '')|e }}"
+                                data-phone-ext="{{ (contact.phone_ext or '')|e }}"
+                                data-fax="{{ (contact.fax or '')|e }}"
+                                data-email="{{ (contact.email or '')|e }}"
+                                data-notes="{{ (contact.notes or '')|e }}">
                           Edit
-                        </a>
+                        </button>
                         <form method="post"
                               action="{{ url_for('main.contact_delete', contact_id=contact.id) }}"
                               class="d-inline"
                               onsubmit="return confirm('Delete this contact?') && confirm('This cannot be undone. Continue?');">
+                          <input type="hidden" name="parent_type" value="provider">
+                          <input type="hidden" name="parent_id" value="{{ provider.id }}">
                           <button type="submit" class="btn btn-sm btn-outline-danger">
                             Delete
                           </button>
@@ -143,67 +184,82 @@
 
           <hr class="my-2">
 
+          {# Repopulate the Add Contact form after validation errors #}
+          {% set contact_form_data = {} %}
+          {% if contact_form is defined and contact_form %}
+            {% set contact_form_data = contact_form %}
+          {% elif form is defined and form %}
+            {% set contact_form_data = form %}
+          {% endif %}
           <!-- Add contact form -->
-          <h3 class="h6 mt-2 mb-2">
+          <h3 id="contact-form-title" class="h6 mt-2 mb-2">
             {% if edit_contact %}
               Edit Contact
             {% else %}
               Add Contact
             {% endif %}
           </h3>
-          <form method="post"
+          <form id="contact-form"
+                method="post"
                 action="{% if edit_contact %}{{ url_for('main.contact_update', contact_id=edit_contact.id, parent_type='provider', parent_id=provider.id) }}{% else %}{{ url_for('main.contact_new', parent_type='provider', parent_id=provider.id) }}{% endif %}"
+                data-create-url="{{ url_for('main.contact_new', parent_type='provider', parent_id=provider.id) }}"
                 class="row g-2">
+            <input type="hidden" name="parent_type" value="provider">
+            <input type="hidden" name="parent_id" value="{{ provider.id }}">
             <div class="col-md-4">
               <label class="form-label form-label-sm mb-0">Name</label>
-              <input type="text" name="name" class="form-control form-control-sm" required
-                     value="{{ edit_contact.name if edit_contact else '' }}">
+              <input id="contact-name" type="text" name="name" class="form-control form-control-sm" required
+                     value="{{ edit_contact.name if edit_contact else (contact_form_data.get('name','') if contact_form_data else '') }}">
             </div>
             <div class="col-md-3">
-              <label class="form-label form-label-sm mb-0">Role</label>
-              <select name="role" class="form-select form-select-sm">
-                <option value="">Select role...</option>
+              <label class="form-label form-label-sm mb-0">Title</label>
+              <select id="contact-role" name="contact_role_id" class="form-select form-select-sm">
+                <option value="">Select title...</option>
                 {% for r in contact_roles %}
-                  <option value="{{ r }}" {% if edit_contact and edit_contact.role == r %}selected{% endif %}>{{ r }}</option>
+                  {% set selected_role_id = (edit_contact.contact_role_id if edit_contact else (contact_form_data.get('contact_role_id','') if contact_form_data else '')) %}
+                  <option value="{{ r.id }}"
+                          {% if selected_role_id and (selected_role_id|string == r.id|string) %}selected{% endif %}>
+                    {{ r.label }}
+                  </option>
                 {% endfor %}
               </select>
             </div>
             <div class="col-md-3">
               <label class="form-label form-label-sm mb-0">Phone</label>
-              <input type="text" name="phone" class="form-control form-control-sm phone-input provider-contact-phone"
-                     value="{{ edit_contact.phone if edit_contact else '' }}">
+              <input id="contact-phone" type="text" name="phone" class="form-control form-control-sm phone-input provider-contact-phone"
+                     value="{{ edit_contact.phone if edit_contact else (contact_form_data.get('phone','') if contact_form_data else '') }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label form-label-sm mb-0">Ext</label>
+              <input id="contact-phone-ext" type="text" name="phone_ext" class="form-control form-control-sm"
+                     value="{{ edit_contact.phone_ext if edit_contact else (contact_form_data.get('phone_ext','') if contact_form_data else '') }}">
             </div>
             <div class="col-md-3">
               <label class="form-label form-label-sm mb-0">Fax</label>
-              <input type="text" name="fax" class="form-control form-control-sm phone-input provider-contact-fax"
-                     value="{{ edit_contact.fax if edit_contact else '' }}">
+              <input id="contact-fax" type="text" name="fax" class="form-control form-control-sm phone-input provider-contact-fax"
+                     value="{{ edit_contact.fax if edit_contact else (contact_form_data.get('fax','') if contact_form_data else '') }}">
             </div>
             <div class="col-md-5">
               <label class="form-label form-label-sm mb-0">Email</label>
-              <input type="email" name="email" class="form-control form-control-sm"
-                     value="{{ edit_contact.email if edit_contact else '' }}">
+              <input id="contact-email" type="email" name="email" class="form-control form-control-sm"
+                     value="{{ edit_contact.email if edit_contact else (contact_form_data.get('email','') if contact_form_data else '') }}">
             </div>
             <div class="col-md-7">
               <label class="form-label form-label-sm mb-0">Notes</label>
-              <textarea name="notes"
+              <textarea id="contact-notes" name="notes"
                 class="form-control form-control-sm"
                 rows="2"
-                placeholder="Billing contact, scheduling, etc.">{{ edit_contact.notes if edit_contact else '' }}</textarea>
+                placeholder="Billing contact, scheduling, etc.">{{ edit_contact.notes if edit_contact else (contact_form_data.get('notes','') if contact_form_data else '') }}</textarea>
             </div>
             <div class="col-12 d-flex justify-content-end">
-              {% if edit_contact %}
-                <a href="{{ url_for('main.provider_detail', provider_id=provider.id) }}"
-                   class="btn btn-sm btn-outline-secondary me-2">
-                  Cancel
-                </a>
-                <button type="submit" class="btn btn-sm btn-primary">
-                  Save Changes
-                </button>
-              {% else %}
-                <button type="submit" class="btn btn-sm btn-primary">
-                  Add Contact
-                </button>
-              {% endif %}
+              <a id="contact-cancel"
+                 href="{{ url_for('main.provider_detail', provider_id=provider.id) }}"
+                 class="btn btn-sm btn-outline-secondary me-2 {% if not edit_contact %}d-none{% endif %}">
+                Cancel
+              </a>
+              <button id="contact-submit" type="submit" class="btn btn-sm btn-primary">
+                {% if edit_contact %}Save Changes{% else %}Add Contact{% endif %}
+              </button>
             </div>
           </form>
 
@@ -260,6 +316,110 @@
         '.provider-contact-phone, .provider-contact-fax'
       );
       providerPhoneInputs.forEach(attachPhoneFormatter);
+
+      // --- Contact edit (client-side) ---
+      const contactForm = document.getElementById('contact-form');
+      const contactTitle = document.getElementById('contact-form-title');
+      const cancelBtn = document.getElementById('contact-cancel');
+      const submitBtn = document.getElementById('contact-submit');
+
+      function setAddMode() {
+        if (!contactForm) return;
+        contactForm.action = contactForm.dataset.createUrl;
+        if (contactTitle) contactTitle.textContent = 'Add Contact';
+        if (cancelBtn) cancelBtn.classList.add('d-none');
+        if (submitBtn) submitBtn.textContent = 'Add Contact';
+
+        const nameEl = document.getElementById('contact-name');
+        const roleEl = document.getElementById('contact-role');
+        const phoneEl = document.getElementById('contact-phone');
+        const faxEl = document.getElementById('contact-fax');
+        const emailEl = document.getElementById('contact-email');
+        const notesEl = document.getElementById('contact-notes');
+        const phoneExtEl = document.getElementById('contact-phone-ext');
+
+        if (nameEl) nameEl.value = '';
+        if (roleEl) roleEl.value = '';
+        if (phoneEl) phoneEl.value = '';
+        if (phoneExtEl) phoneExtEl.value = '';
+        if (faxEl) faxEl.value = '';
+        if (emailEl) emailEl.value = '';
+        if (notesEl) notesEl.value = '';
+      }
+
+      function setEditMode(btn) {
+        if (!contactForm) return;
+        contactForm.action = btn.dataset.updateUrl;
+        if (contactTitle) contactTitle.textContent = 'Edit Contact';
+        if (cancelBtn) cancelBtn.classList.remove('d-none');
+        if (submitBtn) submitBtn.textContent = 'Save Changes';
+
+        const nameEl = document.getElementById('contact-name');
+        const roleEl = document.getElementById('contact-role');
+        const phoneEl = document.getElementById('contact-phone');
+        const faxEl = document.getElementById('contact-fax');
+        const emailEl = document.getElementById('contact-email');
+        const notesEl = document.getElementById('contact-notes');
+        const phoneExtEl = document.getElementById('contact-phone-ext');
+
+        if (nameEl) nameEl.value = btn.dataset.name || '';
+        if (roleEl) {
+          const desiredId = (btn.dataset.contactRoleId || '').trim();
+          if (desiredId) {
+            roleEl.value = desiredId;
+          } else {
+            // Back-compat: try to match the saved string title/role to an option label.
+            const desiredLabel = (btn.dataset.title || btn.dataset.role || '').trim();
+            if (desiredLabel) {
+              const match = Array.from(roleEl.options).find((o) => (o.textContent || '').trim() === desiredLabel);
+              roleEl.value = match ? match.value : '';
+            } else {
+              roleEl.value = '';
+            }
+          }
+        }
+        if (phoneEl) phoneEl.value = btn.dataset.phone || '';
+        if (phoneExtEl) phoneExtEl.value = (btn.dataset.phoneExt || '').trim();
+        if (faxEl) faxEl.value = btn.dataset.fax || '';
+        if (emailEl) emailEl.value = btn.dataset.email || '';
+        if (notesEl) notesEl.value = btn.dataset.notes || '';
+
+        // Re-run formatting on prefilled phone/fax
+        if (phoneEl && phoneEl.value) phoneEl.value = formatPhone(phoneEl.value);
+        if (faxEl && faxEl.value) faxEl.value = formatPhone(faxEl.value);
+
+        // Scroll form into view for convenience
+        contactForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      // Contact edit wiring is handled via inline onclick (and global helper) for reliability.
+      // Expose helpers globally so the inline onclick can always trigger edit-mode.
+      window.imcEditContact = function (btn) {
+        try {
+          setEditMode(btn);
+        } catch (err) {
+          console.error('imcEditContact failed', err);
+        }
+      };
+      window.imcSetAddContact = function () {
+        try {
+          setAddMode();
+        } catch (err) {
+          console.error('imcSetAddContact failed', err);
+        }
+      };
+
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', (e) => {
+          // If user is already on provider_detail without server-side edit_contact, prevent navigation.
+          // If server-side edit_contact is present, let the href reload the page clean.
+          const hasServerEdit = {{ 'true' if edit_contact else 'false' }} === true;
+          if (!hasServerEdit) {
+            e.preventDefault();
+            setAddMode();
+          }
+        });
+      }
     });
   </script>
 {% endblock %}

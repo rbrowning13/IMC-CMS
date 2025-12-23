@@ -45,6 +45,12 @@
             <dt class="col-sm-4">Name</dt>
             <dd class="col-sm-8">{{ employer.name }}</dd>
 
+            <dt class="col-sm-4">Address 1</dt>
+            <dd class="col-sm-8">{{ employer.address1 or "—" }}</dd>
+
+            <dt class="col-sm-4">Address 2</dt>
+            <dd class="col-sm-8">{{ employer.address2 or "—" }}</dd>
+
             <dt class="col-sm-4">City</dt>
             <dd class="col-sm-8">{{ employer.city or "—" }}</dd>
 
@@ -55,7 +61,13 @@
             <dd class="col-sm-8">{{ employer.postal_code or "—" }}</dd>
 
             <dt class="col-sm-4">Phone</dt>
-            <dd class="col-sm-8">{{ employer.phone or "—" }}</dd>
+            <dd class="col-sm-8">
+              {% if employer.phone %}
+                {{ employer.phone }}{% if employer.phone_ext %} x{{ employer.phone_ext }}{% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </dd>
 
             <dt class="col-sm-4">Fax</dt>
             <dd class="col-sm-8">{{ employer.fax or "—" }}</dd>
@@ -116,8 +128,22 @@
                   {% for contact in employer.contacts %}
                     <tr>
                       <td>{{ contact.name }}</td>
-                      <td>{{ contact.role or "—" }}</td>
-                      <td>{{ contact.phone or "—" }}</td>
+                      <td>
+                        {% if contact.contact_role %}
+                          {{ contact.contact_role.label }}
+                        {% elif contact.role %}
+                          {{ contact.role }}
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
+                      <td>
+                        {% if contact.phone %}
+                          {{ contact.phone }}{% if contact.phone_ext %} x{{ contact.phone_ext }}{% endif %}
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
                       <td>{{ contact.fax or "—" }}</td>
                       <td>
                         {% if contact.email %}
@@ -172,46 +198,52 @@
             {% endif %}
           </h3>
           <form method="post"
-                action="{{ url_for('main.contact_new', parent_type='employer', parent_id=employer.id) }}"
+                action="{% if edit_contact %}{{ url_for('main.contact_update', contact_id=edit_contact.id, parent_type='employer', parent_id=employer.id) }}{% else %}{{ url_for('main.contact_new', parent_type='employer', parent_id=employer.id) }}{% endif %}"
                 class="row g-2">
-            {% if edit_contact %}
-              <input type="hidden" name="contact_id" value="{{ edit_contact.id }}">
-            {% endif %}
             <div class="col-md-4">
               <label class="form-label form-label-sm mb-0">Name</label>
               <input type="text" name="name" class="form-control form-control-sm" required
-                     value="{{ edit_contact.name if edit_contact else '' }}">
+                     value="{{ edit_contact.name if edit_contact else (contact_form.get('name','') if contact_form else (form.get('name','') if form else '')) }}">
             </div>
             <div class="col-md-3">
               <label class="form-label form-label-sm mb-0">Role</label>
-              <select name="role" class="form-select form-select-sm">
+              <select name="contact_role_id" class="form-select form-select-sm">
                 <option value="">Select role...</option>
                 {% for r in contact_roles %}
-                  <option value="{{ r }}" {% if edit_contact and edit_contact.role == r %}selected{% endif %}>{{ r }}</option>
+                  <option value="{{ r.id }}"
+                          {% if edit_contact and edit_contact.contact_role_id == r.id %}selected{% endif %}
+                          {% if (not edit_contact) and (contact_form and (contact_form.get('contact_role_id')|int == r.id)) %}selected{% endif %}
+                          {% if (not edit_contact) and (not contact_form) and (form and (form.get('contact_role_id')|int == r.id)) %}selected{% endif %}
+                  >{{ r.label }}</option>
                 {% endfor %}
               </select>
             </div>
             <div class="col-md-3">
               <label class="form-label form-label-sm mb-0">Phone</label>
-              <input type="text" name="phone" class="form-control form-control-sm"
-                     value="{{ edit_contact.phone if edit_contact else '' }}">
+              <input type="text" name="phone" class="form-control form-control-sm" data-mask="phone"
+                     value="{{ edit_contact.phone if edit_contact else (contact_form.get('phone','') if contact_form else (form.get('phone','') if form else '')) }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label form-label-sm mb-0">Ext</label>
+              <input type="text" name="phone_ext" class="form-control form-control-sm"
+                     value="{{ edit_contact.phone_ext if edit_contact else (contact_form.get('phone_ext','') if contact_form else (form.get('phone_ext','') if form else '')) }}">
             </div>
             <div class="col-md-3">
               <label class="form-label form-label-sm mb-0">Fax</label>
-              <input type="text" name="fax" class="form-control form-control-sm"
-                     value="{{ edit_contact.fax if edit_contact else '' }}">
+              <input type="text" name="fax" class="form-control form-control-sm" data-mask="phone"
+                     value="{{ edit_contact.fax if edit_contact else (contact_form.get('fax','') if contact_form else (form.get('fax','') if form else '')) }}">
             </div>
             <div class="col-md-5">
               <label class="form-label form-label-sm mb-0">Email</label>
               <input type="email" name="email" class="form-control form-control-sm"
-                     value="{{ edit_contact.email if edit_contact else '' }}">
+                     value="{{ edit_contact.email if edit_contact else (contact_form.get('email','') if contact_form else (form.get('email','') if form else '')) }}">
             </div>
             <div class="col-md-7">
               <label class="form-label form-label-sm mb-0">Notes</label>
               <textarea name="notes"
                 class="form-control form-control-sm"
                 rows="2"
-                placeholder="Best contact for work status, etc.">{{ edit_contact.notes if edit_contact else '' }}</textarea>
+                placeholder="Best contact for work status, etc.">{{ edit_contact.notes if edit_contact else (contact_form.get('notes','') if contact_form else (form.get('notes','') if form else '')) }}</textarea>
             </div>
             <div class="col-12 d-flex justify-content-end gap-2">
               {% if edit_contact %}
@@ -234,4 +266,31 @@
   </div>
 
 </div>
+<script>
+  (function () {
+    function formatPhone(digits) {
+      const d = (digits || "").replace(/\D/g, "").slice(0, 10);
+      if (!d) return "";
+      if (d.length <= 3) return "(" + d;
+      if (d.length <= 6) return "(" + d.slice(0, 3) + ") " + d.slice(3);
+      return "(" + d.slice(0, 3) + ") " + d.slice(3, 6) + "-" + d.slice(6);
+    }
+
+    function bindPhoneMask(el) {
+      // Reformat on input/blur. Keep it lightweight; allow blank.
+      const handler = () => {
+        const raw = el.value;
+        const digits = raw.replace(/\D/g, "");
+        el.value = formatPhone(digits);
+      };
+      el.addEventListener("input", handler);
+      el.addEventListener("blur", handler);
+
+      // Normalize any server-populated value on load
+      handler();
+    }
+
+    document.querySelectorAll('input[data-mask="phone"]').forEach(bindPhoneMask);
+  })();
+</script>
 {% endblock %}

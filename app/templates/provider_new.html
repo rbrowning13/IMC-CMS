@@ -21,22 +21,22 @@
       <div class="row mb-3">
         <div class="col-md-6">
           <label class="form-label">Name<span class="text-danger">*</span></label>
-          <input type="text" name="name" class="form-control" required>
+          <input type="text" name="name" class="form-control" value="{{ request.form.get('name','') }}" required>
         </div>
         <div class="col-md-6">
-          <label class="form-label">City</label>
-          <input type="text" name="city" class="form-control">
+          <label class="form-label">Address 1</label>
+          <input type="text" name="address1" class="form-control" value="{{ request.form.get('address1','') }}">
         </div>
       </div>
 
       <div class="row mb-3">
         <div class="col-md-6">
-          <label class="form-label">Address 1</label>
-          <input type="text" name="address1" class="form-control">
+          <label class="form-label">Address 2</label>
+          <input type="text" name="address2" class="form-control" value="{{ request.form.get('address2','') }}">
         </div>
         <div class="col-md-6">
-          <label class="form-label">Address 2</label>
-          <input type="text" name="address2" class="form-control">
+          <label class="form-label">City</label>
+          <input type="text" name="city" class="form-control" value="{{ request.form.get('city','') }}">
         </div>
       </div>
 
@@ -44,27 +44,63 @@
         <div class="col-md-6">
           <label class="form-label">State</label>
           <select name="state" class="form-select">
-            {{ state_options(None) }}
+            {{ state_options(request.form.get('state') or 'ID') }}
           </select>
         </div>
         <div class="col-md-6">
-          <label class="form-label">ZIP</label>
-          <input type="text" name="postal_code" class="form-control">
+          <label class="form-label">Zip Code</label>
+          <input type="text" name="postal_code" class="form-control" value="{{ request.form.get('postal_code','') }}">
         </div>
       </div>
 
       <div class="row mb-3">
-        <div class="col-md-4">
+        <div class="col-md-3">
           <label class="form-label">Phone</label>
-          <input type="text" name="phone" class="form-control" data-auto-phone="1">
+          <input
+            type="text"
+            name="phone"
+            class="form-control"
+            inputmode="tel"
+            autocomplete="tel"
+            data-auto-phone="1"
+            data-phone-mask="1"
+            value="{{ request.form.get('phone','') }}"
+          >
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
+          <label class="form-label">Ext</label>
+          <input
+            type="text"
+            name="phone_ext"
+            class="form-control"
+            inputmode="numeric"
+            autocomplete="off"
+            value="{{ request.form.get('phone_ext','') }}"
+          >
+        </div>
+        <div class="col-md-3">
           <label class="form-label">Fax</label>
-          <input type="text" name="fax" class="form-control" data-auto-phone="1">
+          <input
+            type="text"
+            name="fax"
+            class="form-control"
+            inputmode="tel"
+            autocomplete="tel"
+            data-auto-phone="1"
+            data-phone-mask="1"
+            value="{{ request.form.get('fax','') }}"
+          >
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
           <label class="form-label">Email</label>
-          <input type="email" name="email" class="form-control">
+          <input type="email" name="email" class="form-control" value="{{ request.form.get('email','') }}">
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-12">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-control" rows="4">{{ request.form.get('notes','') }}</textarea>
         </div>
       </div>
 

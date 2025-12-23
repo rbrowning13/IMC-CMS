@@ -82,7 +82,14 @@
             </dd>
 
             <dt class="col-sm-4">Phone</dt>
-            <dd class="col-sm-8">{{ claim.claimant_phone or "—" }}</dd>
+            <dd class="col-sm-8">
+              {% set claimant_ext = claim.claimant_phone_ext or claim.claimant_phone_extension or claim.claimant_ext %}
+              {% if claim.claimant_phone %}
+                {{ claim.claimant_phone }}{% if claimant_ext %} ext {{ claimant_ext }}{% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </dd>
 
             <dt class="col-sm-4">Email</dt>
             <dd class="col-sm-8">{{ claim.claimant_email or "—" }}</dd>
@@ -99,7 +106,8 @@
               {% if claim.carrier_contact %}
                 {{ claim.carrier_contact.name }}
                 {% if claim.carrier_contact.phone %}
-                  · {{ claim.carrier_contact.phone }}
+                  {% set adj_ext = claim.carrier_contact.phone_ext or claim.carrier_contact.phone_extension or claim.carrier_contact.phone_extn %}
+                  · {{ claim.carrier_contact.phone }}{% if adj_ext %} ext {{ adj_ext }}{% endif %}
                 {% endif %}
                 {% if claim.carrier_contact.email %}
                   · {{ claim.carrier_contact.email }}
@@ -393,6 +401,10 @@
             </div>
           </div>
 
+        </div>
+      </div>
+    </div>
+
     {# ------------------ REPORTS ------------------ #}
     <div class="accordion-item mb-2">
       <h2 class="accordion-header" id="reportsHeading">
@@ -490,9 +502,8 @@
             </div>
             <div class="card-body small" id="report-new-form">
               <form method="post"
-                    action="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
+                    action="{{ url_for('main.claim_report_new', claim_id=claim.id) }}"
                     class="row g-2 align-items-end mb-0">
-                <input type="hidden" name="form_type" value="report_new">
 
                 <div class="col-auto">
                   <label for="report_type" class="form-label form-label-sm mb-1">Report Type</label>

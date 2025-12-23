@@ -143,6 +143,14 @@ def create_app():
     app.jinja_env.filters["format_phone"] = _format_phone
     app.jinja_env.filters["format_fax"] = _format_phone
 
+    # Register template globals
+    try:
+        from .routes.helpers import state_options
+    except Exception:
+        def state_options(selected=None):
+            return ""
+    app.jinja_env.globals["state_options"] = state_options
+
     # Basic configuration
     app.config["SECRET_KEY"] = app.config.get("SECRET_KEY") or "dev-secret-key-change-me"
 

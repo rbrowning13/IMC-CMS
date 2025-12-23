@@ -24,7 +24,7 @@
       <div class="card-body">
 
         <div class="row g-3">
-          <!-- Name & City -->
+          <!-- Name -->
           <div class="col-md-6">
             <label for="name" class="form-label form-label-sm">Name<span class="text-danger">*</span></label>
             <input
@@ -36,18 +36,8 @@
               required
             >
           </div>
-          <div class="col-md-6">
-            <label for="city" class="form-label form-label-sm">City</label>
-            <input
-              type="text"
-              class="form-control form-control-sm"
-              id="city"
-              name="city"
-              value="{{ employer.city or '' }}"
-            >
-          </div>
 
-          <!-- Address 1 & 2 -->
+          <!-- Address 1 -->
           <div class="col-md-6">
             <label for="address1" class="form-label form-label-sm">Address 1</label>
             <input
@@ -58,6 +48,8 @@
               value="{{ employer.address1 or '' }}"
             >
           </div>
+
+          <!-- Address 2 -->
           <div class="col-md-6">
             <label for="address2" class="form-label form-label-sm">Address 2</label>
             <input
@@ -69,7 +61,19 @@
             >
           </div>
 
-          <!-- State & ZIP -->
+          <!-- City -->
+          <div class="col-md-6">
+            <label for="city" class="form-label form-label-sm">City</label>
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              id="city"
+              name="city"
+              value="{{ employer.city or '' }}"
+            >
+          </div>
+
+          <!-- State -->
           <div class="col-md-3">
             <label for="state" class="form-label form-label-sm">State</label>
             <select
@@ -77,23 +81,66 @@
               name="state"
               class="form-select form-select-sm"
             >
-              <option value="">—</option>
-              {% for opt in state_options() %}
-                {% set abbr = opt[0] %}
-                <option value="{{ abbr }}" {% if employer.state == abbr %}selected{% endif %}>
-                  {{ abbr }}
-                </option>
-              {% endfor %}
+              {{ state_options(employer.state or 'ID') }}
             </select>
           </div>
+
+          <!-- Zip Code -->
           <div class="col-md-3">
-            <label for="postal_code" class="form-label form-label-sm">ZIP</label>
+            <label for="postal_code" class="form-label form-label-sm">Zip Code</label>
             <input
               type="text"
               class="form-control form-control-sm"
               id="postal_code"
               name="postal_code"
               value="{{ employer.postal_code or '' }}"
+            >
+          </div>
+
+          <!-- Phone -->
+          <div class="col-md-3">
+            <label for="phone" class="form-label form-label-sm">Phone</label>
+            <input
+              type="text"
+              class="form-control form-control-sm phone-input"
+              id="phone"
+              name="phone"
+              value="{{ employer.phone or '' }}"
+            >
+          </div>
+
+          <div class="col-md-1">
+            <label for="phone_ext" class="form-label form-label-sm">Ext</label>
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              id="phone_ext"
+              name="phone_ext"
+              value="{{ employer.phone_ext or '' }}"
+            >
+          </div>
+
+          <!-- Fax -->
+          <div class="col-md-4">
+            <label for="fax" class="form-label form-label-sm">Fax</label>
+            <input
+              type="text"
+              class="form-control form-control-sm phone-input"
+              id="fax"
+              name="fax"
+              value="{{ employer.fax or '' }}"
+            >
+          </div>
+
+          <!-- Email -->
+          <div class="col-md-4">
+            <label for="email" class="form-label form-label-sm">Email</label>
+            <input
+              type="email"
+              class="form-control form-control-sm"
+              id="email"
+              name="email"
+              value="{{ employer.email or '' }}"
             >
           </div>
 
@@ -117,37 +164,6 @@
             </select>
           </div>
 
-          <!-- Phone / Fax / Email -->
-          <div class="col-md-4">
-            <label for="phone" class="form-label form-label-sm">Phone</label>
-            <input
-              type="text"
-              class="form-control form-control-sm phone-input"
-              id="phone"
-              name="phone"
-              value="{{ employer.phone or '' }}"
-            >
-          </div>
-          <div class="col-md-4">
-            <label for="fax" class="form-label form-label-sm">Fax</label>
-            <input
-              type="text"
-              class="form-control form-control-sm phone-input"
-              id="fax"
-              name="fax"
-              value="{{ employer.fax or '' }}"
-            >
-          </div>
-          <div class="col-md-4">
-            <label for="email" class="form-label form-label-sm">Email</label>
-            <input
-              type="email"
-              class="form-control form-control-sm"
-              id="email"
-              name="email"
-              value="{{ employer.email or '' }}"
-            >
-          </div>
         </div>
 
       </div>

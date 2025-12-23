@@ -2,7 +2,21 @@
 {% block title %}Edit Report – Impact CMS{% endblock %}
 
 {% block content %}
+
 <div class="container-fluid">
+
+  {# Flash messages (warnings/errors/success) #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        {% set _cat = category or 'info' %}
+        {% if _cat == 'message' %}{% set _cat = 'info' %}{% endif %}
+        <div class="alert alert-{{ _cat }} small" role="alert">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
 
   {% if error %}
     <div class="alert alert-danger small" role="alert">
@@ -100,16 +114,6 @@
               </div>
             </div>
 
-            {% if report.report_type == 'initial' %}
-            <!-- Primary Care Provider (stored on the Claim) -->
-            <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Primary Care Provider</label>
-              <input type="text"
-                     name="primary_care_provider"
-                     class="form-control form-control-sm"
-                     value="{{ claim.primary_care_provider or '' }}">
-            </div>
-            {% endif %}
 
             <!-- DOS range -->
             <div class="col-md-4">
@@ -160,6 +164,15 @@
           <div class="card-body small">
             <div class="row g-3">
             {% if report.report_type == 'initial' %}
+            <!-- Primary Care Provider / Family Doctor (Initial report only) -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Primary Care Provider / Family Doctor</label>
+              <input type="text"
+                     name="primary_care_provider"
+                     class="form-control form-control-sm"
+                     value="{{ (report.primary_care_provider if report.primary_care_provider is defined else '') or (claim.primary_care_provider if claim.primary_care_provider is defined else '') or '' }}">
+              <div class="form-text">Initial report only (not shown on later reports).</div>
+            </div>
             <!-- Diagnosis -->
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Diagnosis</label>
@@ -531,7 +544,7 @@
 
     window.rollForwardField = function (fieldName, elementId) {
       const url = baseUrl.replace("__FIELD__", fieldName);
-      fetch(url, {method: "GET"})
+      fetch(url, { method: "GET" })
         .then(function (response) {
           if (!response.ok) {
             throw new Error("Network response was not ok");
@@ -555,7 +568,6 @@
 
     function updateIcsButtonState() {
       if (!dtInput || !icsButton) return;
-      // Disable the button when there is no value in the datetime field
       if (!dtInput.value) {
         icsButton.setAttribute("disabled", "disabled");
       } else {
@@ -563,11 +575,14 @@
       }
     }
 
-    if (dtInput && icsButton) {
-      updateIcsButtonState();
+    if (dtInput) {
       dtInput.addEventListener("input", updateIcsButtonState);
       dtInput.addEventListener("change", updateIcsButtonState);
     }
+
+    // Run once on load
+    updateIcsButtonState();
+  })();
 </script>
 <script>
   (function () {
