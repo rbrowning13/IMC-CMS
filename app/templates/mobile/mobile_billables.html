@@ -5,6 +5,9 @@
   <title>Mobile Billable Entry - Impact CMS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
   <style>
     :root {
       --accent-color: {{ accent_color or '#ff9500' }};
@@ -196,6 +199,164 @@
         width: 100%;
       }
     }
+
+    .recent-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .recent-title {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 650;
+    }
+
+    .recent-sub {
+      margin: 0;
+      font-size: 0.75rem;
+      color: var(--muted-color);
+      text-align: right;
+    }
+
+    .recent-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .recent-item {
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 0.75rem 0.85rem;
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .recent-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .recent-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+    }
+
+    .recent-date {
+      font-size: 0.75rem;
+      color: var(--muted-color);
+    }
+
+    .recent-code {
+      font-size: 0.95rem;
+      font-weight: 650;
+    }
+
+    .recent-qty {
+      font-variant-numeric: tabular-nums;
+      font-size: 0.95rem;
+      font-weight: 650;
+      padding: 0.25rem 0.5rem;
+      border-radius: 999px;
+      border: 1px solid var(--border-color);
+    }
+
+    .recent-desc {
+      font-size: 0.9rem;
+      color: var(--text-color);
+      margin: 0.15rem 0 0;
+    }
+
+    details.recent-notes {
+      margin-top: 0.5rem;
+    }
+
+    details.recent-notes summary {
+      cursor: pointer;
+      color: var(--accent-color);
+      font-size: 0.85rem;
+      font-weight: 600;
+      list-style: none;
+      outline: none;
+    }
+
+    details.recent-notes summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .recent-notes-body {
+      margin-top: 0.45rem;
+      font-size: 0.9rem;
+      color: var(--text-color);
+      white-space: pre-wrap;
+      border-top: 1px solid var(--border-color);
+      padding-top: 0.5rem;
+    }
+
+    /* Flatpickr theme nudge for dark background */
+    .flatpickr-calendar {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+    }
+
+    /* Ensure Flatpickr's injected input styling stays readable on dark UI */
+    input.flatpickr-input {
+      background-color: #000 !important;
+      color: var(--text-color) !important;
+    }
+
+    input.flatpickr-input::placeholder {
+      color: #5c5c60 !important;
+    }
+
+    /* Calendar text colors for dark background */
+    .flatpickr-calendar,
+    .flatpickr-months .flatpickr-month,
+    .flatpickr-current-month,
+    .flatpickr-weekdays,
+    span.flatpickr-weekday,
+    .flatpickr-day {
+      color: var(--text-color);
+    }
+
+    .flatpickr-day:hover,
+    .flatpickr-day:focus {
+      background: rgba(255, 255, 255, 0.10);
+      border-color: rgba(255, 255, 255, 0.10);
+    }
+
+    .flatpickr-day.today {
+      border-color: var(--accent-color);
+    }
+
+    .flatpickr-day.selected,
+    .flatpickr-day.startRange,
+    .flatpickr-day.endRange,
+    .flatpickr-day.selected.inRange,
+    .flatpickr-day.startRange.inRange,
+    .flatpickr-day.endRange.inRange,
+    .flatpickr-day.selected:focus,
+    .flatpickr-day.startRange:focus,
+    .flatpickr-day.endRange:focus,
+    .flatpickr-day.selected:hover,
+    .flatpickr-day.startRange:hover,
+    .flatpickr-day.endRange:hover {
+      background: var(--accent-color);
+      border-color: var(--accent-color);
+      color: var(--bg-color);
+    }
+
+    .flatpickr-time input,
+    .flatpickr-time .flatpickr-am-pm {
+      color: var(--text-color);
+    }
   </style>
 </head>
 <body>
@@ -220,7 +381,7 @@
           <div class="field">
             <label for="service_date">Date of Service</label>
             <input
-              type="date"
+              type="text"
               id="service_date"
               name="service_date"
               autocomplete="off"
@@ -228,6 +389,7 @@
               value="{{ service_date or '' }}"
               required
             >
+            <div class="help">Tap to pick or type MM/DD/YYYY</div>
           </div>
 
           <div class="field">
@@ -307,6 +469,39 @@
           </div>
         </form>
       </div>
+      {% if recent_items %}
+        <div class="card">
+          <div class="recent-header">
+            <h2 class="recent-title">Recent entries</h2>
+            <p class="recent-sub">Last {{ recent_items|length }} for this claim</p>
+          </div>
+
+          <div class="recent-list">
+            {% for it in recent_items %}
+              <div class="recent-item">
+                <div class="recent-top">
+                  <div class="recent-meta">
+                    <div class="recent-date">{{ it.date_of_service.strftime('%m/%d/%Y') if it.date_of_service else '' }}</div>
+                    <div class="recent-code">{{ it.activity_code or '' }}</div>
+                  </div>
+                  <div class="recent-qty">{{ '%.2f'|format(it.quantity) if it.quantity is not none else '' }}</div>
+                </div>
+
+                {% if it.description %}
+                  <div class="recent-desc">{{ it.description }}</div>
+                {% endif %}
+
+                {% if it.notes %}
+                  <details class="recent-notes">
+                    <summary>Notes</summary>
+                    <div class="recent-notes-body">{{ it.notes }}</div>
+                  </details>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
     </main>
 
     <div class="buttons">
@@ -331,13 +526,12 @@
       const dateInput = document.getElementById('service_date');
 
       function getStepForActivity(code) {
-        if (!code) return 0.1;
-
+        const normalized = String(code || '').trim().toUpperCase();
         const mileageCodes = ['MIL'];
-        const expenseCodes = ['EXP'];
+        const expenseCodes = ['EXP', 'EXPENSE'];
 
-        if (mileageCodes.includes(code)) return 1;
-        if (expenseCodes.includes(code)) return 0.01;
+        if (mileageCodes.includes(normalized)) return 1;
+        if (expenseCodes.includes(normalized)) return 0.01;
 
         return 0.1;
       }
@@ -397,12 +591,39 @@
         });
       }
 
-      if (dateInput && !dateInput.value) {
-        const now = new Date();
-        const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        dateInput.value = `${yyyy}-${mm}-${dd}`;
+      function formatMMDDYYYY(d) {
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        return `${mm}/${dd}/${yyyy}`;
+      }
+
+      if (dateInput) {
+        // flatpickr expects the value to match dateFormat when populated
+        const hasValue = Boolean(dateInput.value && dateInput.value.trim());
+        if (!hasValue) {
+          dateInput.value = formatMMDDYYYY(new Date());
+        }
+
+        if (window.flatpickr) {
+          window.flatpickr(dateInput, {
+            dateFormat: 'm/d/Y',
+            allowInput: true,
+          });
+        }
+      }
+
+      const notesEl = document.getElementById('notes');
+      function autosize(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        // cap growth so it doesn't become ridiculous on mobile
+        const max = 10 * 24; // ~10 rows
+        el.style.height = Math.min(el.scrollHeight, max) + 'px';
+      }
+      if (notesEl) {
+        autosize(notesEl);
+        notesEl.addEventListener('input', function () { autosize(notesEl); });
       }
     });
   </script>

@@ -686,3 +686,67 @@ html:not(.dark-mode) .accordion-button:focus {
 .accordion-item + .accordion-item {
   margin-top: 0.75rem;
 }
+
+/* -------------------------------------------------------------------------
+   Flatpickr (date picker) dark-mode visibility
+
+   Mobile billables uses Flatpickr on a dark UI. Ensure the typed date text
+   and calendar UI remain readable when dark mode is enabled.
+   ------------------------------------------------------------------------- */
+
+html.dark-mode .flatpickr-input,
+html.dark-mode input.flatpickr-input,
+html.dark-mode input.flatpickr-input[readonly] {
+  background-color: #1e1e1e !important;
+  color: #f1f1f1 !important;
+  border-color: #3a3a3a !important;
+}
+
+html.dark-mode .flatpickr-calendar {
+  background: #1e1e1e !important;
+  color: #f1f1f1 !important;
+  border-color: #333 !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55) !important;
+}
+
+html.dark-mode .flatpickr-months,
+html.dark-mode .flatpickr-month,
+html.dark-mode .flatpickr-current-month,
+html.dark-mode .flatpickr-weekdays,
+html.dark-mode .flatpickr-weekday {
+  background: #1e1e1e !important;
+  color: #f1f1f1 !important;
+}
+
+html.dark-mode .flatpickr-day {
+  color: #f1f1f1 !important;
+}
+
+html.dark-mode .flatpickr-day:hover,
+html.dark-mode .flatpickr-day:focus {
+  background: #2a2a2a !important;
+  border-color: #2a2a2a !important;
+}
+
+html.dark-mode .flatpickr-day.selected,
+html.dark-mode .flatpickr-day.startRange,
+html.dark-mode .flatpickr-day.endRange,
+html.dark-mode .flatpickr-day.selected:hover,
+html.dark-mode .flatpickr-day.startRange:hover,
+html.dark-mode .flatpickr-day.endRange:hover {
+  background: var(--accent-color) !important;
+  border-color: var(--accent-color) !important;
+  color: #ffffff !important;
+}
+
+html.dark-mode .flatpickr-day.today {
+  border-color: var(--accent-color) !important;
+}
+
+html.dark-mode .flatpickr-time,
+html.dark-mode .flatpickr-time input,
+html.dark-mode .flatpickr-time .flatpickr-am-pm {
+  background: #1e1e1e !important;
+  color: #f1f1f1 !important;
+  border-color: #333 !important;
+}

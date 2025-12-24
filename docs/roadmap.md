@@ -1,6 +1,50 @@
 # Project Roadmap
 
-_Last stabilization sweep completed: validation, contact persistence, and UX alerts are now standardized._
+## 🧱 Production Infrastructure & Data Safety (COMPLETED)
+
+_Last updated: 2025‑12‑24_
+
+These items are now **implemented, verified, and in active use on the production server**.  
+They are considered **baseline guarantees** going forward and should not be regressed.
+
+### ✅ Server runtime & persistence
+- [x] Application runs under **Gunicorn + systemd**
+- [x] Service auto-starts on boot (`impact-cms.service`)
+- [x] App survives SSH disconnects and reboots
+- [x] Verified via systemd status, journalctl, and curl checks
+
+### ✅ Database safety & backups
+- [x] PostgreSQL production database in use
+- [x] Automated nightly logical backups (pg_dump, gzip)
+- [x] Backups written to RAID-backed storage
+- [x] Backup script verified manually
+- [x] Cron job installed and confirmed
+- [x] Restore path documented and tested conceptually
+
+### ✅ RAID storage
+- [x] 3.6 TB RAID mounted at `/mnt/impact_raid`
+- [x] Auto-mounted via `/etc/fstab`
+- [x] Permissions corrected (`impact:impact`, 775)
+- [x] Dedicated directories created:
+  - `/mnt/impact_raid/impact_db_backups`
+  - `/mnt/impact_raid/impact_documents`
+  - `/mnt/impact_raid/time_machine`
+
+### ✅ Time Machine (Mac backups)
+- [x] Samba configured and running
+- [x] Avahi advertising Time Machine service
+- [x] Both Macs detected existing sparsebundles
+- [x] Backups actively running from macOS
+- [x] Time Machine data preserved during migration from Raspberry Pi
+
+### ⚠️ Operational rules (IMPORTANT)
+- **NO schema changes** on production while Gina is entering live data  
+  → Any model change requires Alembic migration
+- UI / CSS / JS / route logic fixes are allowed
+- Backups must remain enabled at all times
+- RAID is the authoritative store for backups and documents
+
+---
 
 ## 🔥 Current Stabilization Backlog (Authoritative Checklist)
 _This is the single source of truth for active bugs, regressions, and polish items.  
@@ -90,7 +134,11 @@ _Test script for all 3: Create contact w/ role → save → refresh page → con
 - [ ] Bump app revision (minor tick) + commit + tag
   _Rule: bump rev before pushing to git._
 - [ ] Push current stabilization build to git (main)
-- [ ] Server deployment: pull latest on server, install deps, restart service
+- [x] Server deployment: pull latest on server, install deps, restart service
+- [x] Verify documents_root points to server storage (RAID later) and uploads work (claim + report)
+- [x] Smoke test on server: create claim → create progress report → print/PDF → upload docs → invoice view  
+  _partial; awaiting live data_
+- [x] Gunicorn + systemd service installed and verified
 - [ ] Start with clean production DB on server (wipe OK) + confirm schema matches current models
   _Gina will enter live data on server; we want a clean starting point._
 - [ ] Verify documents_root points to server storage (RAID later) and uploads work (claim + report)
@@ -144,6 +192,12 @@ _Test script for all 3: Create contact w/ role → save → refresh page → con
 - [ ] Keep refactor plan: split big route files as forms expand
 - [ ] Live server update strategy: support wipe-at-will and/or migrate-at-will using Alembic baseline + repeatable seed/test data  
   _Goal: safe updates while Gina shadows; ability to reset DB during rollout without losing docs storage layout._
+- [ ] Mobile billables entry page needs full verification and likely UX rework  
+  _Deferred until Gina is actively entering billables on the server._
+- [ ] Alembic baseline created on production DB (no-op migration)  
+  _Rule: future schema changes must generate explicit migrations._
+- [ ] Backup retention policy (e.g., prune DB backups >60 days)  
+  _Low risk; implement later._
 
 ---
 
