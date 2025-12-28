@@ -683,9 +683,10 @@ def compute_invoice_financials(
             expenses_total += qty
             continue
 
-        # Telephonic buckets
+        # Telephonic claim billing is handled at the CLAIM level (not per-code).
+        # For now, telephonic codes are billed as standard hourly time.
         if code in INVOICE_TELEPHONIC_CODES:
-            tele_hours_total += qty
+            hours_total += qty
             continue
 
         # Default: billable hours
@@ -693,7 +694,7 @@ def compute_invoice_financials(
 
     # Subtotals
     hourly_subtotal = round(hours_total * hourly_rate, 2)
-    tele_subtotal = round(tele_hours_total * tele_rate, 2)
+    tele_subtotal = 0.0
     mileage_subtotal = round(miles_total * mileage_rate, 2)
     expenses_subtotal = round(expenses_total, 2)
 
@@ -717,12 +718,6 @@ def compute_invoice_financials(
             "rate": hourly_rate,
             "source": hourly_src,
             "subtotal": hourly_subtotal,
-        },
-        {
-            "label": "Telephonic",
-            "rate": tele_rate,
-            "source": tele_src,
-            "subtotal": tele_subtotal,
         },
         {
             "label": "Mileage",

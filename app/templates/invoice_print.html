@@ -278,7 +278,7 @@
 
       {#
         Total amount:
-        - If fin provides component subtotals (hourly/telephonic/mileage/expenses), use them (best).
+        - If fin provides component subtotals (hourly/mileage/expenses), use them (best).
         - Otherwise, compute using effective rates (carrier overrides settings when present).
 
         This prevents invoice_print from drifting to default settings rates when carrier-specific rates exist.
@@ -287,44 +287,38 @@
       {% set total_amount = 0 %}
 
       {% set fin_hourly_subtotal = none %}
-      {% set fin_telephonic_subtotal = none %}
       {% set fin_mileage_subtotal = none %}
       {% set fin_expenses_subtotal = none %}
 
       {% if _fin and (_fin is mapping) %}
         {% set fin_hourly_subtotal = _fin.get('hourly_subtotal') or _fin.get('hourly_amount') or _fin.get('subtotal_hourly') %}
-        {% set fin_telephonic_subtotal = _fin.get('telephonic_subtotal') or _fin.get('telephonic_amount') or _fin.get('subtotal_telephonic') %}
         {% set fin_mileage_subtotal = _fin.get('mileage_subtotal') or _fin.get('mileage_amount') or _fin.get('subtotal_mileage') %}
         {% set fin_expenses_subtotal = _fin.get('expenses_subtotal') or _fin.get('expenses_amount') or _fin.get('subtotal_expenses') %}
       {% elif _fin %}
         {% if _fin.hourly_subtotal is defined %}{% set fin_hourly_subtotal = _fin.hourly_subtotal %}{% elif _fin.hourly_amount is defined %}{% set fin_hourly_subtotal = _fin.hourly_amount %}{% endif %}
-        {% if _fin.telephonic_subtotal is defined %}{% set fin_telephonic_subtotal = _fin.telephonic_subtotal %}{% elif _fin.telephonic_amount is defined %}{% set fin_telephonic_subtotal = _fin.telephonic_amount %}{% endif %}
         {% if _fin.mileage_subtotal is defined %}{% set fin_mileage_subtotal = _fin.mileage_subtotal %}{% elif _fin.mileage_amount is defined %}{% set fin_mileage_subtotal = _fin.mileage_amount %}{% endif %}
         {% if _fin.expenses_subtotal is defined %}{% set fin_expenses_subtotal = _fin.expenses_subtotal %}{% elif _fin.expenses_amount is defined %}{% set fin_expenses_subtotal = _fin.expenses_amount %}{% endif %}
       {% endif %}
 
-      {% if fin_hourly_subtotal is not none or fin_telephonic_subtotal is not none or fin_mileage_subtotal is not none or fin_expenses_subtotal is not none %}
-        {% set total_amount = (fin_hourly_subtotal or 0) + (fin_telephonic_subtotal or 0) + (fin_mileage_subtotal or 0) + (fin_expenses_subtotal or 0) %}
+      {# If fin provides component subtotals, use them (best). #}
+      {% if fin_hourly_subtotal is not none or fin_mileage_subtotal is not none or fin_expenses_subtotal is not none %}
+        {% set total_amount = (fin_hourly_subtotal or 0) + (fin_mileage_subtotal or 0) + (fin_expenses_subtotal or 0) %}
       {% else %}
         {# Effective rates (carrier overrides settings). #}
         {% set c = claim.carrier if claim and claim.carrier else none %}
         {% set hourly_rate = (c.hourly_rate if c and c.hourly_rate is not none else settings.hourly_rate) or 0 %}
-        {% set telephonic_rate = (c.telephonic_rate if c and c.telephonic_rate is not none else settings.telephonic_rate) or hourly_rate %}
         {% set mileage_rate = (c.mileage_rate if c and c.mileage_rate is not none else settings.mileage_rate) or 0 %}
 
-        {# Attempt to separate telephonic hours if fin provides them; otherwise treat all hours as hourly. #}
-        {% set telephonic_hours = 0 %}
+        {# All hours are billed at hourly_rate (telephonic claims are handled at the claim level; not per-code). #}
         {% set hourly_hours = hours_total or 0 %}
 
         {% if _fin and (_fin is mapping) %}
-          {% set telephonic_hours = _fin.get('telephonic_hours') or _fin.get('hours_telephonic') or 0 %}
-          {% set hourly_hours = _fin.get('hourly_hours') or _fin.get('hours_hourly') or (hours_total or 0) %}
+          {% set hourly_hours = _fin.get('hours_total', _fin.get('hours', hourly_hours)) %}
         {% elif _fin %}
-          {% if _fin.telephonic_hours is defined %}{% set telephonic_hours = _fin.telephonic_hours %}{% endif %}
-          {% if _fin.hourly_hours is defined %}{% set hourly_hours = _fin.hourly_hours %}{% endif %}
+          {% if _fin.hours_total is defined %}{% set hourly_hours = _fin.hours_total %}{% elif _fin.hours is defined %}{% set hourly_hours = _fin.hours %}{% endif %}
         {% endif %}
 
-        {% set total_amount = (hourly_hours * hourly_rate) + (telephonic_hours * telephonic_rate) + ((miles_total or 0) * mileage_rate) + (expenses_total or 0) %}
+        {% set total_amount = (hourly_hours * hourly_rate) + ((miles_total or 0) * mileage_rate) + (expenses_total or 0) %}
       {% endif %}
 
       {# Balance due is derived from total_amount and paid_total to stay consistent. #}
