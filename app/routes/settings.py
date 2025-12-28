@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import time
 import re
+import json
 
 from flask import (
     current_app,
@@ -142,9 +143,49 @@ def settings_view():
         except ValueError:
             return None, f"{label} must be a whole number."
 
+    def _sync_contact_roles(text: str):
+        """Persist textarea roles into ContactRole rows (active + ordered).
+
+        We keep the existing ContactRole model as the source of truth for role dropdowns.
+        """
+        lines = text.splitlines() if text else []
+        roles = [ln.strip() for ln in lines if ln.strip()]
+
+        # Deactivate all existing roles first (soft update)
+        try:
+            for r in ContactRole.query.all():
+                r.is_active = False
+        except Exception:
+            # If anything goes sideways, don't hard-fail settings save.
+            return roles
+
+        # Reactivate / create roles in the order given
+        sort_order = 0
+        for name in roles:
+            sort_order += 10
+            existing = (
+                ContactRole.query
+                .filter(func.lower(ContactRole.name) == func.lower(name))
+                .first()
+            )
+            if existing:
+                existing.name = name  # preserve user's exact casing
+                existing.sort_order = sort_order
+                existing.is_active = True
+            else:
+                db.session.add(
+                    ContactRole(
+                        name=name,
+                        sort_order=sort_order,
+                        is_active=True,
+                    )
+                )
+        return roles
+
     if request.method == "POST":
         form = request.form
 
+        # Uploads (logo/signature)
         logo_rel_path, logo_err = _save_settings_upload(request.files.get("logo_file"), "logo")
         sig_rel_path, sig_err = _save_settings_upload(request.files.get("signature_file"), "signature")
 
@@ -159,14 +200,27 @@ def settings_view():
             if sig_rel_path and hasattr(settings, "signature_path"):
                 settings.signature_path = sig_rel_path
 
+        # Business identity / contact
         business_name_raw = (form.get("business_name") or "").strip()
+        address1_raw = (form.get("address1") or "").strip()
+        address2_raw = (form.get("address2") or "").strip()
+        city_raw = (form.get("city") or "").strip()
         state_raw = (form.get("state") or "").strip() or "ID"
+        postal_code_raw = (form.get("postal_code") or form.get("zip") or "").strip()
 
         phone_raw = (form.get("phone") or "").strip()
         fax_raw = (form.get("fax") or "").strip()
         email_raw = (form.get("email") or "").strip()
-        postal_code_raw = (form.get("postal_code") or form.get("zip") or "").strip()
+        ein_raw = (form.get("ein") or "").strip()
+        rcm_raw = (form.get("responsible_case_manager") or "").strip()
 
+        # UI / docs
+        accent_color_raw = (form.get("accent_color") or "").strip()
+        report_footer_raw = (form.get("report_footer_text") or "").strip()
+        invoice_footer_raw = (form.get("invoice_footer_text") or "").strip()
+        documents_root_raw = (form.get("documents_root") or "").strip()
+
+        # Validate contact-ish fields
         if error is None:
             if phone_raw and not validate_phone_or_fax(phone_raw):
                 error = "Phone number must have 10 digits."
@@ -177,6 +231,7 @@ def settings_view():
             elif postal_code_raw and not validate_postal_code(postal_code_raw):
                 error = "ZIP code is invalid."
 
+        # Rates
         hourly_rate, err = _parse_float(form.get("hourly_rate"), "Hourly rate")
         if err and error is None:
             error = err
@@ -189,16 +244,102 @@ def settings_view():
         if err and error is None:
             error = err
 
-        if error is None:
-            settings.business_name = business_name_raw or settings.business_name
-            settings.state = state_raw
+        # Billing/workload
+        payment_terms_default, err = _parse_int(form.get("payment_terms_default"), "Default payment terms")
+        if err and error is None:
+            error = err
 
-            if hasattr(settings, "hourly_rate"):
+        dormant_claim_days, err = _parse_int(form.get("dormant_claim_days"), "Dormant claim days")
+        if err and error is None:
+            error = err
+
+        target_min_hours, err = _parse_float(form.get("target_min_hours_per_week"), "Target min hours/week")
+        if err and error is None:
+            error = err
+
+        target_max_hours, err = _parse_float(form.get("target_max_hours_per_week"), "Target max hours/week")
+        if err and error is None:
+            error = err
+
+        # Report default hours (if present in template/model)
+        initial_report_hours, err = _parse_float(form.get("initial_report_hours"), "Initial report hours")
+        if err and error is None:
+            error = err
+
+        progress_report_hours, err = _parse_float(form.get("progress_report_hours"), "Progress report hours")
+        if err and error is None:
+            error = err
+
+        closure_report_hours, err = _parse_float(form.get("closure_report_hours"), "Closure report hours")
+        if err and error is None:
+            error = err
+
+        # Contact roles textarea
+        roles_text = form.get("contact_roles") or ""
+
+        if error is None:
+            # Identity/contact
+            settings.business_name = business_name_raw or settings.business_name
+            if hasattr(settings, "address1"):
+                settings.address1 = address1_raw
+            if hasattr(settings, "address2"):
+                settings.address2 = address2_raw
+            if hasattr(settings, "city"):
+                settings.city = city_raw
+            settings.state = state_raw
+            if hasattr(settings, "postal_code"):
+                settings.postal_code = postal_code_raw
+            if hasattr(settings, "phone"):
+                settings.phone = phone_raw
+            if hasattr(settings, "fax"):
+                settings.fax = fax_raw
+            if hasattr(settings, "email"):
+                settings.email = email_raw
+            if hasattr(settings, "ein"):
+                settings.ein = ein_raw
+            if hasattr(settings, "responsible_case_manager"):
+                settings.responsible_case_manager = rcm_raw
+
+            # Rates
+            if hasattr(settings, "hourly_rate") and hourly_rate is not None:
                 settings.hourly_rate = hourly_rate
-            if hasattr(settings, "telephonic_rate"):
+            if hasattr(settings, "telephonic_rate") and telephonic_rate is not None:
                 settings.telephonic_rate = telephonic_rate
-            if hasattr(settings, "mileage_rate"):
+            if hasattr(settings, "mileage_rate") and mileage_rate is not None:
                 settings.mileage_rate = mileage_rate
+
+            # Billing/workload
+            if hasattr(settings, "payment_terms_default") and payment_terms_default is not None:
+                settings.payment_terms_default = payment_terms_default
+            if hasattr(settings, "dormant_claim_days") and dormant_claim_days is not None:
+                settings.dormant_claim_days = dormant_claim_days
+            if hasattr(settings, "target_min_hours_per_week") and target_min_hours is not None:
+                settings.target_min_hours_per_week = target_min_hours
+            if hasattr(settings, "target_max_hours_per_week") and target_max_hours is not None:
+                settings.target_max_hours_per_week = target_max_hours
+
+            # UI/docs
+            if hasattr(settings, "accent_color"):
+                settings.accent_color = accent_color_raw
+            if hasattr(settings, "report_footer_text"):
+                settings.report_footer_text = report_footer_raw
+            if hasattr(settings, "invoice_footer_text"):
+                settings.invoice_footer_text = invoice_footer_raw
+            if hasattr(settings, "documents_root") and documents_root_raw:
+                settings.documents_root = documents_root_raw
+
+            # Report defaults
+            if hasattr(settings, "initial_report_hours") and initial_report_hours is not None:
+                settings.initial_report_hours = initial_report_hours
+            if hasattr(settings, "progress_report_hours") and progress_report_hours is not None:
+                settings.progress_report_hours = progress_report_hours
+            if hasattr(settings, "closure_report_hours") and closure_report_hours is not None:
+                settings.closure_report_hours = closure_report_hours
+
+            # Persist contact roles (ContactRole table) + optional json mirror on Settings
+            roles = _sync_contact_roles(roles_text)
+            if hasattr(settings, "contact_roles_json"):
+                settings.contact_roles_json = json.dumps(roles)
 
             try:
                 db.session.commit()
