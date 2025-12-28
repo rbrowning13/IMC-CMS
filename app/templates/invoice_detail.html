@@ -28,255 +28,522 @@
     </div>
   </div>
 
-  <div class="row">
-    <!-- Left: Invoice header / meta -->
-    <div class="col-lg-6 mb-3">
-      <div class="card shadow-sm">
-        <div class="card-header">
-          <h1 class="h5 mb-0">Invoice</h1>
-        </div>
-        <div class="card-body">
-          <dl class="row mb-2 small">
-            <dt class="col-sm-4">Invoice #</dt>
-            <dd class="col-sm-8">
-              {{ invoice.invoice_number or "Draft (no number yet)" }}
-            </dd>
-
-            <dt class="col-sm-4">Status</dt>
-            <dd class="col-sm-8">
-              {{ invoice.status or "Draft" }}
-            </dd>
-
-            <dt class="col-sm-4">Invoice Date</dt>
-            <dd class="col-sm-8">
-              {{ invoice.invoice_date.strftime("%m/%d/%Y") if invoice.invoice_date else "—" }}
-            </dd>
-
-            <dt class="col-sm-4">Dates of Service</dt>
-            <dd class="col-sm-8">
-              {% if invoice.dos_start and invoice.dos_end %}
-                {{ invoice.dos_start.strftime("%m/%d/%Y") }} – {{ invoice.dos_end.strftime("%m/%d/%Y") }}
-              {% elif invoice.dos_start %}
-                From {{ invoice.dos_start.strftime("%m/%d/%Y") }}
-              {% elif invoice.dos_end %}
-                Through {{ invoice.dos_end.strftime("%m/%d/%Y") }}
-              {% else %}
-                —
-              {% endif %}
-            </dd>
-          </dl>
-
-          {% if claim %}
-          <hr>
-          <dl class="row mb-0 small">
-            <dt class="col-sm-4">Claim #</dt>
-            <dd class="col-sm-8">
-              <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
-                {{ claim.claim_number or "—" }}
-              </a>
-            </dd>
-
-            <dt class="col-sm-4">Claimant</dt>
-            <dd class="col-sm-8">
-              {{ claim.claimant_name or "—" }}
-            </dd>
-
-            <dt class="col-sm-4">Employer</dt>
-            <dd class="col-sm-8">
-              {% if claim.employer %}
-                <a href="{{ url_for('main.employer_detail', employer_id=claim.employer.id) }}">
-                  {{ claim.employer.name }}
-                </a>
-              {% else %}
-                —
-              {% endif %}
-            </dd>
-
-            <dt class="col-sm-4">Carrier</dt>
-            <dd class="col-sm-8">
-              {% if claim.carrier %}
-                <a href="{{ url_for('main.carrier_detail', carrier_id=claim.carrier.id) }}">
-                  {{ claim.carrier.name }}
-                </a>
-              {% else %}
-                —
-              {% endif %}
-            </dd>
-          </dl>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-
-    <!-- Right: Status edit + actions -->
-    <div class="col-lg-6 mb-3">
-      <div class="card shadow-sm">
-        <div class="card-header">
-          <h2 class="h6 mb-0">Invoice Status</h2>
-        </div>
-        <div class="card-body">
-          <form method="post" action="{{ url_for('main.invoice_update', invoice_id=invoice.id) }}" class="row g-2 align-items-end">
-            <div class="col-sm-6">
-              <label class="form-label form-label-sm">Status</label>
-              <select name="status" class="form-select form-select-sm">
-                {% set current_status = invoice.status or "Draft" %}
-                {% for s in ["Draft", "Sent", "Paid", "Void"] %}
-                  <option value="{{ s }}" {% if s == current_status %}selected{% endif %}>
-                    {{ s }}
-                  </option>
-                {% endfor %}
-              </select>
+  <div class="row g-3">
+    <!-- Left: Invoice header / meta and Line Items -->
+    <div class="col-lg-6">
+      <div class="d-flex flex-column gap-3 h-100">
+        <div>
+          <div class="card shadow-sm">
+            <div class="card-header">
+              <h1 class="h5 mb-0">Invoice</h1>
             </div>
-            <div class="col-sm-4">
-              <label class="form-label form-label-sm">Invoice Date</label>
-              <input
-                type="text"
-                name="invoice_date"
-                class="form-control form-control-sm auto-date-input"
-                data-auto-date="1"
-                inputmode="numeric"
-                placeholder="MM/DD/YYYY"
-                value="{{ invoice.invoice_date.strftime('%m/%d/%Y') if invoice.invoice_date else '' }}">
-            </div>
-            <div class="col-sm-2 d-grid">
-              <button type="submit" class="btn btn-sm btn-primary mt-3">
-                Save
-              </button>
-            </div>
-          </form>
+            <div class="card-body">
+              <dl class="row mb-2 small">
+                <dt class="col-sm-4">Invoice #</dt>
+                <dd class="col-sm-8">
+                  {{ invoice.invoice_number or "Draft (no number yet)" }}
+                </dd>
 
-          <hr>
+                <dt class="col-sm-4">Status</dt>
+                <dd class="col-sm-8">
+                  {{ invoice.status or "Draft" }}
+                </dd>
 
-          {% set is_draft = (invoice.status or "Draft") == "Draft" %}
+                <dt class="col-sm-4">Invoice Date</dt>
+                <dd class="col-sm-8">
+                  {{ invoice.invoice_date.strftime("%m/%d/%Y") if invoice.invoice_date else "—" }}
+                </dd>
 
-          {% if is_draft %}
-            <form method="post"
-                  action="{{ url_for('main.invoice_add_uninvoiced', invoice_id=invoice.id) }}"
-                  class="mb-2">
-              <button type="submit" class="btn btn-sm btn-outline-secondary">
-                Add all uninvoiced complete items
-              </button>
-            </form>
+                <dt class="col-sm-4">Dates of Service</dt>
+                <dd class="col-sm-8">
+                  {% if invoice.dos_start and invoice.dos_end %}
+                    {{ invoice.dos_start.strftime("%m/%d/%Y") }} – {{ invoice.dos_end.strftime("%m/%d/%Y") }}
+                  {% elif invoice.dos_start %}
+                    From {{ invoice.dos_start.strftime("%m/%d/%Y") }}
+                  {% elif invoice.dos_end %}
+                    Through {{ invoice.dos_end.strftime("%m/%d/%Y") }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
+              </dl>
 
-            <form method="post"
-                  action="{{ url_for('main.invoice_delete', invoice_id=invoice.id) }}"
-                  onsubmit="return confirm('Delete this draft invoice and return its items to the claim?');">
-              <button type="submit" class="btn btn-sm btn-outline-danger">
-                Delete Draft Invoice
-              </button>
-            </form>
-          {% else %}
-            <div class="small text-muted">
-              Draft-only actions are locked after an invoice is marked <strong>{{ invoice.status }}</strong>.
-              Change status back to <strong>Draft</strong> and Save to add items or delete the invoice.
-            </div>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-  </div>
+              {% if claim %}
+              <hr>
+              <dl class="row mb-0 small">
+                <dt class="col-sm-4">Claim #</dt>
+                <dd class="col-sm-8">
+                  <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
+                    {{ claim.claim_number or "—" }}
+                  </a>
+                </dd>
 
-  <!-- Line items + totals -->
-  <div class="row">
-    <div class="col-lg-8 mb-3">
-      <div class="card shadow-sm">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <h2 class="h6 mb-0">Line Items</h2>
-          <small class="text-muted">
-            {% if items %}
-              {{ items|length }} item{{ items|length != 1 and "s" or "" }}
-            {% else %}
-              No items
-            {% endif %}
-          </small>
-        </div>
-        <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-sm mb-0 align-middle">
-              <thead class="table-light">
-                <tr>
-                  <th style="width: 9rem;">Service Date</th>
-                  <th style="width: 6rem;">Code</th>
-                  <th>Description</th>
-                  <th class="text-end" style="width: 8rem;">Quantity</th>
-                  <th class="text-end" style="width: 7rem;">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-              {% if items %}
-                {% for item in items %}
-                  <tr>
-                    <td>{{ item.service_date or "—" }}</td>
-                    <td>{{ item.activity_code or "" }}</td>
-                    <td>{{ item.description or "" }}</td>
-                    <td class="text-end">
-                      {% if item.quantity is not none %}
-                        {{ "%.2f"|format(item.quantity) }}
-                      {% else %}
-                        —
-                      {% endif %}
-                    </td>
-                    <td class="text-end">
-                      {% if (invoice.status or "Draft") == "Draft" %}
-                        <form method="post"
-                              action="{{ url_for('main.invoice_remove_item',
-                                                 invoice_id=invoice.id,
-                                                 item_id=item.id) }}"
-                              onsubmit="return confirm('Remove this item from the invoice and return it to the claim?');">
-                          <button type="submit" class="btn btn-sm btn-outline-danger">
-                            Remove
-                          </button>
-                        </form>
-                      {% else %}
-                        <span class="text-muted small">Locked</span>
-                      {% endif %}
-                    </td>
-                  </tr>
-                {% endfor %}
-              {% else %}
-                <tr>
-                  <td colspan="5" class="text-center text-muted py-3">
-                    No items on this invoice.
-                  </td>
-                </tr>
+                <dt class="col-sm-4">Claimant</dt>
+                <dd class="col-sm-8">
+                  {{ claim.claimant_name or "—" }}
+                </dd>
+
+                <dt class="col-sm-4">Employer</dt>
+                <dd class="col-sm-8">
+                  {% if claim.employer %}
+                    <a href="{{ url_for('main.employer_detail', employer_id=claim.employer.id) }}">
+                      {{ claim.employer.name }}
+                    </a>
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
+
+                <dt class="col-sm-4">Carrier</dt>
+                <dd class="col-sm-8">
+                  {% if claim.carrier %}
+                    <a href="{{ url_for('main.carrier_detail', carrier_id=claim.carrier.id) }}">
+                      {{ claim.carrier.name }}
+                    </a>
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
+              </dl>
               {% endif %}
-              </tbody>
-            </table>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="card shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h2 class="h6 mb-0">Line Items</h2>
+              <small class="text-muted">
+                {% if items %}
+                  {{ items|length }} item{{ items|length != 1 and "s" or "" }}
+                {% else %}
+                  No items
+                {% endif %}
+              </small>
+            </div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                  <thead class="table-light">
+                    <tr>
+                      <th style="width: 9rem;">Service Date</th>
+                      <th style="width: 6rem;">Code</th>
+                      <th>Description</th>
+                      <th class="text-end" style="width: 8rem;">Quantity</th>
+                      <th class="text-end" style="width: 7rem;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                  {% if items %}
+                    {% for item in items %}
+                      <tr>
+                        <td>
+                          {% set _sd = None %}
+                          {% if item.service_date is defined and item.service_date %}
+                            {% set _sd = item.service_date %}
+                          {% elif item.date_of_service is defined and item.date_of_service %}
+                            {% set _sd = item.date_of_service %}
+                          {% elif item.service_dt is defined and item.service_dt %}
+                            {% set _sd = item.service_dt %}
+                          {% elif item.date is defined and item.date %}
+                            {% set _sd = item.date %}
+                          {% elif item.activity_date is defined and item.activity_date %}
+                            {% set _sd = item.activity_date %}
+                          {% endif %}
+
+                          {% if _sd %}
+                            {{ _sd.strftime('%m/%d/%Y') if _sd.strftime is defined else _sd }}
+                          {% else %}
+                            —
+                          {% endif %}
+                        </td>
+                        <td>{{ item.activity_code or "" }}</td>
+                        <td>{{ item.description or "" }}</td>
+                        <td class="text-end">
+                          {% if item.quantity is not none %}
+                            {{ "%.2f"|format(item.quantity) }}
+                          {% else %}
+                            —
+                          {% endif %}
+                        </td>
+                        <td class="text-end">
+                          {% if (invoice.status or "Draft") == "Draft" %}
+                            <form method="post"
+                                  action="{{ url_for('main.invoice_remove_item',
+                                                     invoice_id=invoice.id,
+                                                     item_id=item.id) }}"
+                                  onsubmit="return confirm('Remove this item from the invoice and return it to the claim?');">
+                              <button type="submit" class="btn btn-sm btn-outline-danger">
+                                Remove
+                              </button>
+                            </form>
+                          {% else %}
+                            <span class="text-muted small">Locked</span>
+                          {% endif %}
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="5" class="text-center text-muted py-3">
+                        No items on this invoice.
+                      </td>
+                    </tr>
+                  {% endif %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Totals -->
-    <div class="col-lg-4 mb-3">
-      <div class="card shadow-sm">
-        <div class="card-header">
-          <h2 class="h6 mb-0">Totals</h2>
+    <!-- Right: Status edit + actions and Totals -->
+    <div class="col-lg-6">
+      <div class="d-flex flex-column gap-3 h-100">
+        <div>
+          <div class="card shadow-sm">
+            <div class="card-header">
+              <h2 class="h6 mb-0">Invoice Status</h2>
+            </div>
+            <div class="card-body">
+              <form method="post" action="{{ url_for('main.invoice_update', invoice_id=invoice.id) }}" class="row g-2 align-items-end">
+                <div class="col-sm-6">
+                  <label class="form-label form-label-sm">Status</label>
+                  <select name="status" class="form-select form-select-sm">
+                    {% set current_status = invoice.status or "Draft" %}
+                    {% for s in ["Draft", "Sent", "Paid", "Void"] %}
+                      <option value="{{ s }}" {% if s == current_status %}selected{% endif %}>
+                        {{ s }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label form-label-sm">Invoice Date</label>
+                  <input
+                    type="text"
+                    name="invoice_date"
+                    class="form-control form-control-sm auto-date-input"
+                    data-auto-date="1"
+                    inputmode="numeric"
+                    placeholder="MM/DD/YYYY"
+                    value="{{ invoice.invoice_date.strftime('%m/%d/%Y') if invoice.invoice_date else '' }}">
+                </div>
+                <div class="col-sm-2 d-grid">
+                  <button type="submit" class="btn btn-sm btn-primary mt-3">
+                    Save
+                  </button>
+                </div>
+              </form>
+
+              <hr>
+
+              {% set is_draft = (invoice.status or "Draft") == "Draft" %}
+
+              {% if is_draft %}
+                <form method="post"
+                      action="{{ url_for('main.invoice_add_uninvoiced', invoice_id=invoice.id) }}"
+                      class="mb-2">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">
+                    Add all uninvoiced complete items
+                  </button>
+                </form>
+
+                <form method="post"
+                      action="{{ url_for('main.invoice_delete', invoice_id=invoice.id) }}"
+                      onsubmit="return confirm('Delete this draft invoice and return its items to the claim?');">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">
+                    Delete Draft Invoice
+                  </button>
+                </form>
+              {% else %}
+                <div class="small text-muted">
+                  Draft-only actions are locked after an invoice is marked <strong>{{ invoice.status }}</strong>.
+                  Change status back to <strong>Draft</strong> and Save to add items or delete the invoice.
+                </div>
+              {% endif %}
+
+              <hr>
+
+              {# ---- Payments (billing) ---- #}
+              {# Prefer values computed in the route, but keep the table + summary consistent by
+                 deriving totals from the same payment list when available. #}
+
+              {# Prefer `payments` from the route; fall back to an Invoice relationship if present #}
+              {% set _payments = [] %}
+              {% if payments is defined and payments %}
+                {% set _payments = payments %}
+              {% elif invoice.payments is defined and invoice.payments %}
+                {% set _payments = invoice.payments %}
+              {% elif invoice.payment_records is defined and invoice.payment_records %}
+                {% set _payments = invoice.payment_records %}
+              {% endif %}
+
+              {# Prefer canonical totals from the route (computed via helper), then fall back. #}
+              {% set _invoice_total = 0 %}
+              {% if invoice_total is defined and invoice_total is not none %}
+                {% set _invoice_total = invoice_total %}
+              {% elif invoice.total_amount is defined and invoice.total_amount is not none %}
+                {% set _invoice_total = invoice.total_amount %}
+              {% elif invoice.amount_total is defined and invoice.amount_total is not none %}
+                {% set _invoice_total = invoice.amount_total %}
+              {% endif %}
+
+              {# Paid: prefer route-provided `amount_paid` (or `paid_total`), else derive from rendered list #}
+              {% set _paid_total = 0 %}
+              {% if amount_paid is defined and amount_paid is not none %}
+                {% set _paid_total = amount_paid %}
+              {% elif paid_total is defined and paid_total is not none %}
+                {% set _paid_total = paid_total %}
+              {% elif _payments %}
+                {% for p in _payments %}
+                  {% set _paid_total = _paid_total + (p.amount or 0) %}
+                {% endfor %}
+              {% elif invoice.total_paid is defined and invoice.total_paid is not none %}
+                {% set _paid_total = invoice.total_paid %}
+              {% endif %}
+
+              {# Balance/Total due: prefer route-provided `total_due`, else compute from totals above #}
+              {% set _balance_due = 0 %}
+              {% if total_due is defined and total_due is not none %}
+                {% set _balance_due = total_due %}
+              {% elif balance_due is defined and balance_due is not none %}
+                {% set _balance_due = balance_due %}
+              {% elif invoice.balance_due is defined and invoice.balance_due is not none %}
+                {% set _balance_due = invoice.balance_due %}
+              {% else %}
+                {% set _balance_due = (_invoice_total - _paid_total) %}
+              {% endif %}
+
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div>
+                  <div class="fw-semibold">Payments</div>
+                  <div class="small text-muted">Record and track payments without editing invoice line items.</div>
+                </div>
+                <a
+                  href="/billing/{{ invoice.id }}/payment/new?return_to={{ request.full_path|urlencode }}"
+                  class="btn btn-sm btn-outline-primary">
+                  Record payment
+                </a>
+              </div>
+
+              <dl class="row small mb-2">
+                <dt class="col-6">Paid</dt>
+                <dd class="col-6 text-end">${{ "%.2f"|format(_paid_total) }}</dd>
+                <dt class="col-6">Balance</dt>
+                <dd class="col-6 text-end">${{ "%.2f"|format(_balance_due) }}</dd>
+              </dl>
+
+              {% if _payments %}
+                <div class="table-responsive">
+                  <table class="table table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                      <tr>
+                        <th style="width: 8rem;">Date</th>
+                        <th style="width: 8rem;" class="text-end">Amount</th>
+                        <th style="width: 7rem;">Method</th>
+                        <th style="width: 9rem;">Reference</th>
+                        <th class="d-none d-lg-table-cell">Notes</th>
+                        <th class="text-end" style="width: 9rem;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for p in _payments %}
+                        <tr>
+                          <td>
+                            {% set _pd = None %}
+                            {% if p.paid_date is defined and p.paid_date %}
+                              {% set _pd = p.paid_date %}
+                            {% elif p.payment_date is defined and p.payment_date %}
+                              {% set _pd = p.payment_date %}
+                            {% elif p.date is defined and p.date %}
+                              {% set _pd = p.date %}
+                            {% elif p.created_at is defined and p.created_at %}
+                              {% set _pd = p.created_at %}
+                            {% elif p.created is defined and p.created %}
+                              {% set _pd = p.created %}
+                            {% endif %}
+
+                            {% if _pd %}
+                              {{ _pd.strftime('%m/%d/%Y') if _pd.strftime is defined else _pd }}
+                            {% else %}
+                              —
+                            {% endif %}
+                          </td>
+                          <td class="text-end">${{ "%.2f"|format(p.amount or 0) }}</td>
+                          <td>{{ p.method or "" }}</td>
+                          <td>{{ p.reference or "" }}</td>
+                          <td class="text-muted d-none d-lg-table-cell">{{ p.notes or "" }}</td>
+                          <td class="text-end">
+                            <div class="d-inline-flex gap-1">
+                              <a
+                                class="btn btn-sm btn-outline-secondary"
+                                href="/billing/{{ invoice.id }}/payment/{{ p.id }}/edit?return_to={{ request.full_path|urlencode }}">
+                                Edit
+                              </a>
+                              <form
+                                method="post"
+                                action="/billing/payment/{{ p.id }}/delete?return_to={{ request.full_path|urlencode }}"
+                                onsubmit="return confirm('Delete this payment?');"
+                                class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                              </form>
+                            </div>
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% else %}
+                <div class="small text-muted">No payments recorded yet.</div>
+              {% endif %}
+            </div>
+          </div>
         </div>
-        <div class="card-body">
-          <dl class="row small mb-1">
-            <dt class="col-7">Billable hours</dt>
-            <dd class="col-5 text-end">
-              {{ "%.2f"|format(invoice.total_hours or 0) }}
-            </dd>
+        <div>
+          <div class="card shadow-sm">
+            <div class="card-header">
+              <h2 class="h6 mb-0">Totals</h2>
+            </div>
+            <div class="card-body">
+              {# ---- Totals (fallback compute from items if invoice totals aren't populated) ---- #}
+              {% set ns = namespace(hours=invoice.total_hours or 0, miles=invoice.total_miles or 0, exp=invoice.total_expenses or 0, tele=0) %}
 
-            <dt class="col-7">Mileage (miles)</dt>
-            <dd class="col-5 text-end">
-              {{ "%.2f"|format(invoice.total_miles or 0) }}
-            </dd>
+              {# Heuristic buckets by activity code; invoice_print already has the authoritative logic #}
+              {% if (items is defined and items) and (ns.hours == 0 and ns.miles == 0 and ns.exp == 0) %}
+                {% for _it in items %}
+                  {% set _code = (_it.activity_code or _it.code or '')|upper %}
+                  {% set _qty = 0 %}
+                  {% if _it.quantity is not none %}
+                    {% set _qty = _it.quantity %}
+                  {% elif _it.qty is defined and _it.qty is not none %}
+                    {% set _qty = _it.qty %}
+                  {% endif %}
 
-            <dt class="col-7">Expenses ($)</dt>
-            <dd class="col-5 text-end">
-              {{ "%.2f"|format(invoice.total_expenses or 0) }}
-            </dd>
-          </dl>
-          <hr class="my-2">
-          <dl class="row fw-bold mb-0">
-            <dt class="col-7">Invoice total</dt>
-            <dd class="col-5 text-end">
-              ${{ "%.2f"|format(invoice.total_amount or 0) }}
-            </dd>
-          </dl>
+                  {# Expenses: quantity represents dollars #}
+                  {% if _code in ['EXP','EX','EXPENSE','EXPENSES'] %}
+                    {% set ns.exp = ns.exp + (_qty or 0) %}
+
+                  {# Mileage-ish codes #}
+                  {% elif _code in ['MIL','MILE','MILEAGE','TRAVEL'] %}
+                    {% set ns.miles = ns.miles + (_qty or 0) %}
+
+                  {# Telephonic-ish codes #}
+                  {% elif _code in ['TC','TCM','TEL','PHONE','CALL'] %}
+                    {% set ns.tele = ns.tele + (_qty or 0) %}
+
+                  {# Default: billable time (hours) #}
+                  {% else %}
+                    {% set ns.hours = ns.hours + (_qty or 0) %}
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+
+              {% set _hours_qty = ns.hours %}
+              {% set _miles_qty = ns.miles %}
+              {% set _exp_amt = ns.exp %}
+              {% set _tele_qty = ns.tele %}
+
+              <dl class="row small mb-1">
+                <dt class="col-7">Billable hours</dt>
+                <dd class="col-5 text-end">
+                  {{ "%.2f"|format(_hours_qty or 0) }}
+                </dd>
+
+                <dt class="col-7">Mileage (miles)</dt>
+                <dd class="col-5 text-end">
+                  {{ "%.2f"|format(_miles_qty or 0) }}
+                </dd>
+
+                <dt class="col-7">Expenses ($)</dt>
+                <dd class="col-5 text-end">
+                  {{ "%.2f"|format(_exp_amt or 0) }}
+                </dd>
+              </dl>
+              {# ---- Rates used (use effective rates passed from the route; fall back only if needed) ---- #}
+
+              {# Effective rates from invoices.py (carrier override handled there) #}
+              {% set _rate_hourly = (hourly_rate if hourly_rate is defined else None) %}
+              {% set _rate_mileage = (mileage_rate if mileage_rate is defined else None) %}
+
+              {% set _src_hourly = (hourly_rate_source if hourly_rate_source is defined else None) %}
+              {% set _src_mile = (mileage_rate_source if mileage_rate_source is defined else None) %}
+
+              {# Fallbacks (should rarely be needed) #}
+              {% if _rate_hourly is none %}
+                {% if invoice.rate_hourly is defined and invoice.rate_hourly is not none %}
+                  {% set _rate_hourly = invoice.rate_hourly %}
+                {% elif invoice.hourly_rate is defined and invoice.hourly_rate is not none %}
+                  {% set _rate_hourly = invoice.hourly_rate %}
+                {% endif %}
+              {% endif %}
+
+              {% if _rate_mileage is none %}
+                {% if invoice.rate_mileage is defined and invoice.rate_mileage is not none %}
+                  {% set _rate_mileage = invoice.rate_mileage %}
+                {% elif invoice.mileage_rate is defined and invoice.mileage_rate is not none %}
+                  {% set _rate_mileage = invoice.mileage_rate %}
+                {% endif %}
+              {% endif %}
+
+              {# If sources weren't provided, label as Default (UI only) #}
+              {% if _src_hourly is none %}{% set _src_hourly = 'Default' %}{% endif %}
+              {% if _src_mile is none %}{% set _src_mile = 'Default' %}{% endif %}
+
+              {% set _sub_hours = ((_hours_qty or 0) * (_rate_hourly or 0)) %}
+              {% set _sub_miles = ((_miles_qty or 0) * (_rate_mileage or 0)) %}
+              {% set _sub_exp = (_exp_amt or 0) %}
+              {% set _sub_total = (_sub_hours + _sub_miles + _sub_exp) %}
+
+              {% if _rate_hourly is not none or _rate_mileage is not none %}
+                <hr class="my-2">
+                <div class="small text-muted mb-2">Rates used</div>
+
+                <div class="table-responsive">
+                  <table class="table table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Rate</th>
+                        <th class="text-end" style="width: 8.5rem;">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% if _rate_hourly is not none %}
+                        <tr>
+                          <td>
+                            Hourly
+                            <span class="text-muted">— ${{ "%.2f"|format(_rate_hourly) }}</span>
+                            <span class="text-muted"> {{ _src_hourly }}</span>
+                          </td>
+                          <td class="text-end">${{ "%.2f"|format(_sub_hours) }}</td>
+                        </tr>
+                      {% endif %}
+
+                      {% if _rate_mileage is not none %}
+                        <tr>
+                          <td>
+                            Mileage
+                            <span class="text-muted">— ${{ "%.4f"|format(_rate_mileage) }}/mi</span>
+                            <span class="text-muted"> {{ _src_mile }}</span>
+                          </td>
+                          <td class="text-end">${{ "%.2f"|format(_sub_miles) }}</td>
+                        </tr>
+                      {% endif %}
+
+                      <tr>
+                        <td class="fw-bold">Total</td>
+                        <td class="text-end fw-bold">${{ "%.2f"|format(_sub_total) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              {% endif %}
+              
+            </div>
+          </div>
         </div>
       </div>
     </div>

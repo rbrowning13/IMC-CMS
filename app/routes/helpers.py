@@ -48,6 +48,7 @@ __all__ = [
     "generate_invoice_number",
     "_generate_invoice_number",
     "calculate_invoice_totals",
+    "compute_invoice_financials",
     "_calculate_invoice_totals",
     "STATE_CHOICES",
     "STATE_CODE_TO_NAME",
@@ -56,6 +57,7 @@ __all__ = [
     "open_folder_in_file_manager",
     "shutil_which",
     "build_basic_ics",
+    "_coerce_float",
 ]
 
 # Canonical US state list used across the app.
@@ -384,9 +386,15 @@ def _billable_is_complete(activity_code: str, service_date: Optional[date], quan
     return bool(service_date and quantity)
 
 
+
+#
 # -----------------------------------------------------------------------------
 # Invoice helpers
 # -----------------------------------------------------------------------------
+
+# NOTE:
+# All invoice/billing/payment math MUST go through compute_invoice_financials().
+# Routes and templates should never re-calculate rates, subtotals, or balances.
 
 def _generate_invoice_number(prefix: str = "INV") -> str:
     """Generate a human-friendly invoice number.
@@ -492,6 +500,275 @@ def _calculate_invoice_totals(invoice):
                 pass
 
     return {"subtotal": round(float(subtotal), 2), "mileage_total": round(float(mileage_total), 2), "total": round(float(total), 2)}
+
+
+# New: canonical invoice financials computation (for use in detail/print/PDF)
+def _coerce_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return float(default)
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+#
+# IMPORTANT: Carrier rates ALWAYS override settings when present.
+# This function must be used everywhere invoice math is performed.
+def _pick_rate_and_source(
+    carrier: Any,
+    settings: Any,
+    carrier_attr_candidates: list[str],
+    settings_attr_candidates: list[str],
+    fallback: float = 0.0,
+) -> tuple[float, str, bool]:
+    """Pick a rate from carrier first (if present), else from settings.
+
+    Returns (rate, source_label, present_flag) where:
+      - source_label is 'Carrier', 'Default', or 'None'
+      - present_flag is True if a value was explicitly present (even if it was 0)
+
+    This lets the app distinguish between "missing" and "explicitly set to 0.00".
+    """
+    # Carrier override
+    if carrier is not None:
+        for attr in carrier_attr_candidates:
+            if hasattr(carrier, attr):
+                v = getattr(carrier, attr)
+                # Treat None/blank as missing; 0 is a valid explicit value.
+                if v is not None and str(v).strip() != "":
+                    return _coerce_float(v, fallback), "Carrier", True
+
+    # Settings default
+    if settings is not None:
+        for attr in settings_attr_candidates:
+            if hasattr(settings, attr):
+                v = getattr(settings, attr)
+                if v is not None and str(v).strip() != "":
+                    return _coerce_float(v, fallback), "Default", True
+
+    return float(fallback), "None", False
+#
+# Canonical activity-code buckets for invoice rollups.
+# Keep these centralized so invoice detail/print/payment/billing never drift.
+INVOICE_MILEAGE_CODES = {"MIL", "MILE", "MILEAGE"}
+INVOICE_EXPENSE_CODES = {"EXP", "EX", "EXPENSE", "EXPENSES"}
+INVOICE_TELEPHONIC_CODES = {"TC", "TCM", "TEL", "PHONE", "TELE", "TELEPHONIC"}
+
+
+def compute_invoice_financials(
+    *,
+    invoice: Any,
+    claim: Any | None = None,
+    items: Iterable[Any] | None = None,
+    payments: Iterable[Any] | None = None,
+    settings: Any | None = None,
+) -> dict[str, Any]:
+    """Canonical invoice math used by detail/print/PDF.
+
+    Goal: one source of truth so totals don't drift across routes/templates.
+
+    Inputs are flexible so callers can pass pre-fetched relationships.
+
+    Returns a dict with:
+      - hours_total, telephonic_hours_total, miles_total, expenses_total
+      - hourly_rate, telephonic_rate, mileage_rate
+      - hourly_rate_source, telephonic_rate_source, mileage_rate_source
+      - hourly_subtotal, telephonic_subtotal, mileage_subtotal, expenses_subtotal
+      - invoice_total (pre-payments)
+      - paid_total
+      - balance_due
+      - rates_used_rows (for the UI table)
+    """
+    # Resolve claim/carrier
+    resolved_claim = claim
+    if resolved_claim is None and hasattr(invoice, "claim"):
+        resolved_claim = getattr(invoice, "claim")
+
+    carrier = None
+
+    # Prefer claim.carrier if available
+    if resolved_claim is not None and hasattr(resolved_claim, "carrier"):
+        carrier = getattr(resolved_claim, "carrier")
+
+    # Fallback: invoice may directly reference a carrier
+    if carrier is None and hasattr(invoice, "carrier"):
+        try:
+            carrier = getattr(invoice, "carrier")
+        except Exception:
+            carrier = None
+
+    # Final fallback: look up carrier by FK if present
+    if carrier is None and hasattr(invoice, "carrier_id"):
+        try:
+            carrier_id = getattr(invoice, "carrier_id")
+        except Exception:
+            carrier_id = None
+        if carrier_id:
+            try:
+                from app.models import Carrier  # local import to avoid circulars
+                carrier = Carrier.query.get(int(carrier_id))
+            except Exception:
+                carrier = None
+
+    # Resolve settings if not provided
+    if settings is None:
+        try:
+            settings = _ensure_settings()
+        except Exception:
+            settings = None
+
+    # Items
+    if items is None:
+        items = _iter_invoice_items(invoice)
+
+    # Payments
+    if payments is None:
+        if hasattr(invoice, "payments") and getattr(invoice, "payments") is not None:
+            payments = getattr(invoice, "payments")
+        else:
+            payments = []
+
+    # Pick rates (carrier overrides settings)
+    hourly_rate, hourly_src, hourly_present = _pick_rate_and_source(
+        carrier,
+        settings,
+        carrier_attr_candidates=["hourly_rate", "billing_rate", "rate_hourly"],
+        settings_attr_candidates=["hourly_rate", "billing_rate", "rate_hourly"],
+        fallback=0.0,
+    )
+
+    tele_rate, tele_src, tele_present = _pick_rate_and_source(
+        carrier,
+        settings,
+        carrier_attr_candidates=["telephonic_rate", "phone_rate", "rate_telephonic"],
+        settings_attr_candidates=["telephonic_rate", "phone_rate", "rate_telephonic"],
+        fallback=hourly_rate,
+    )
+
+    mileage_rate, mileage_src, mileage_present = _pick_rate_and_source(
+        carrier,
+        settings,
+        carrier_attr_candidates=["mileage_rate", "rate_mileage"],
+        settings_attr_candidates=["mileage_rate", "rate_mileage"],
+        fallback=0.0,
+    )
+
+    # Roll up quantities
+    hours_total = 0.0
+    tele_hours_total = 0.0
+    miles_total = 0.0
+    expenses_total = 0.0
+
+    for item in items or []:
+        code = (getattr(item, "activity_code", None) or "").strip().upper()
+
+        qty_raw = getattr(item, "quantity", None)
+        qty = None
+        try:
+            qty = float(qty_raw) if qty_raw is not None else None
+        except (TypeError, ValueError):
+            qty = None
+
+        if qty is None:
+            continue
+
+        # Mileage
+        if code in INVOICE_MILEAGE_CODES:
+            miles_total += qty
+            continue
+
+        # Expenses (treat quantity as dollars)
+        if code in INVOICE_EXPENSE_CODES:
+            expenses_total += qty
+            continue
+
+        # Telephonic buckets
+        if code in INVOICE_TELEPHONIC_CODES:
+            tele_hours_total += qty
+            continue
+
+        # Default: billable hours
+        hours_total += qty
+
+    # Subtotals
+    hourly_subtotal = round(hours_total * hourly_rate, 2)
+    tele_subtotal = round(tele_hours_total * tele_rate, 2)
+    mileage_subtotal = round(miles_total * mileage_rate, 2)
+    expenses_subtotal = round(expenses_total, 2)
+
+    computed_total = round(hourly_subtotal + tele_subtotal + mileage_subtotal + expenses_subtotal, 2)
+
+    # Canonical rule for UI math: always use computed totals so every screen agrees.
+    invoice_total = round(computed_total, 2)
+
+    # Payments totals
+    paid_total = 0.0
+    for p in payments or []:
+        amt = getattr(p, "amount", None)
+        paid_total += _coerce_float(amt, 0.0)
+    paid_total = round(paid_total, 2)
+
+    balance_due = round(max(invoice_total - paid_total, 0.0), 2)
+
+    rates_used_rows = [
+        {
+            "label": "Hourly",
+            "rate": hourly_rate,
+            "source": hourly_src,
+            "subtotal": hourly_subtotal,
+        },
+        {
+            "label": "Telephonic",
+            "rate": tele_rate,
+            "source": tele_src,
+            "subtotal": tele_subtotal,
+        },
+        {
+            "label": "Mileage",
+            "rate": mileage_rate,
+            "source": mileage_src,
+            "subtotal": mileage_subtotal,
+        },
+    ]
+
+    return {
+        "hours_total": round(hours_total, 2),
+        "telephonic_hours_total": round(tele_hours_total, 2),
+        "miles_total": round(miles_total, 2),
+        "expenses_total": round(expenses_total, 2),
+        "hourly_rate": round(hourly_rate, 4),
+        "telephonic_rate": round(tele_rate, 4),
+        "mileage_rate": round(mileage_rate, 6),
+        "hourly_rate_source": hourly_src,
+        "telephonic_rate_source": tele_src,
+        "mileage_rate_source": mileage_src,
+        # Back-compat / template-friendly names
+        "effective_hourly_rate": round(hourly_rate, 4),
+        "effective_telephonic_rate": round(tele_rate, 4),
+        "effective_mileage_rate": round(mileage_rate, 6),
+        "hourly_source": hourly_src,
+        "telephonic_source": tele_src,
+        "mileage_source": mileage_src,
+        "carrier_overrides": (hourly_src == "Carrier") or (tele_src == "Carrier") or (mileage_src == "Carrier"),
+        "missing_rates": [
+            name
+            for name, present in (
+                ("hourly", hourly_present),
+                ("telephonic", tele_present),
+                ("mileage", mileage_present),
+            )
+            if not present
+        ],
+        "hourly_subtotal": hourly_subtotal,
+        "telephonic_subtotal": tele_subtotal,
+        "mileage_subtotal": mileage_subtotal,
+        "expenses_subtotal": expenses_subtotal,
+        "invoice_total": invoice_total,
+        "paid_total": paid_total,
+        "balance_due": balance_due,
+        "rates_used_rows": rates_used_rows,
+    }
 
 
 # Back-compat public aliases (some modules may import non-underscored names)

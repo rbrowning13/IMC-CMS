@@ -1,6 +1,8 @@
 from datetime import datetime, date
 
+
 from sqlalchemy.orm import synonym
+from sqlalchemy import Numeric
 
 
 from .extensions import db
@@ -44,6 +46,11 @@ class Carrier(db.Model):
     phone_ext = db.Column(db.String(20))
     fax = db.Column(db.String(50))
     email = db.Column(db.String(255))
+
+    # Carrier-specific billing rates (override Settings when present)
+    hourly_rate = db.Column(Numeric(10, 2))
+    telephonic_rate = db.Column(Numeric(10, 2))
+    mileage_rate = db.Column(Numeric(10, 4))
 
     @property
     def phone_display(self):
@@ -539,8 +546,54 @@ class Invoice(db.Model):
 
     items = db.relationship("BillableItem", backref="invoice", lazy=True)
 
+    # Payments applied to this invoice (Billing / A/R)
+    payments = db.relationship(
+        "Payment",
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+        order_by="Payment.payment_date",
+    )
+
+    @property
+    def total_paid(self) -> float:
+        """Sum of payments applied to this invoice."""
+        return float(sum((p.amount or 0) for p in (self.payments or [])))
+
+    @property
+    def balance_due(self) -> float:
+        """Remaining balance (never below zero unless you allow overpayment intentionally)."""
+        return float((self.total_amount or 0) - self.total_paid)
+
     def __repr__(self):
         return f"<Invoice {self.invoice_number or self.id} – Claim {self.claim_id}>"
+
+
+# ============================================================
+#  PAYMENTS (A/R)
+# ============================================================
+
+class Payment(db.Model):
+    __tablename__ = "payment"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    invoice_id = db.Column(db.Integer, db.ForeignKey("invoice.id"), nullable=False)
+    invoice = db.relationship("Invoice", back_populates="payments")
+
+    payment_date = db.Column(db.Date, nullable=False, default=date.today)
+
+    # Use Numeric for currency to avoid float rounding issues
+    amount = db.Column(Numeric(12, 2), nullable=False)
+
+    # Optional metadata for bookkeeping
+    method = db.Column(db.String(50))         # e.g., Check, EFT, ACH, Card, Cash
+    reference = db.Column(db.String(120))     # check number / transaction id
+    notes = db.Column(db.Text)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<Payment {self.amount} on {self.payment_date} for Invoice {self.invoice_id}>"
 
 
 # ============================================================

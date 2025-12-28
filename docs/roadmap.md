@@ -50,6 +50,18 @@ They are considered **baseline guarantees** going forward and should not be regr
 _This is the single source of truth for active bugs, regressions, and polish items.  
 Items here supersede older phase notes until checked off._
 
+### 📱 Mobile workflow (ACTIVE / IN PROGRESS)
+- [x] Mobile billables entry page implemented
+  _Status: routes, template, and persistence verified locally._
+- [x] Mobile claim selection screen implemented
+  _Status: allows selecting active claims before billable entry._
+- [x] Mobile Flatpickr date picker wired for billable entry
+- [x] Mobile Flatpickr contrast fixed for dark UI (readable text)
+- [ ] Mobile billables end‑to‑end verification on production server
+  _Pending: verify with real data once Gina actively uses mobile flow._
+- [ ] Mobile UX polish pass (tap targets, spacing, defaults)
+  _Deferred until real‑world usage feedback._
+
 ### A) Data safety and validation polish
 - [x] Global phone/fax input masking across the entire app (auto ( ) -)  
   _Test: type digits in every phone/fax field; confirm formatting + doesn’t fight cursor._
@@ -192,8 +204,8 @@ _Test script for all 3: Create contact w/ role → save → refresh page → con
 - [ ] Keep refactor plan: split big route files as forms expand
 - [ ] Live server update strategy: support wipe-at-will and/or migrate-at-will using Alembic baseline + repeatable seed/test data  
   _Goal: safe updates while Gina shadows; ability to reset DB during rollout without losing docs storage layout._
-- [ ] Mobile billables entry page needs full verification and likely UX rework  
-  _Deferred until Gina is actively entering billables on the server._
+- [ ] Mobile billables entry page: production verification + UX refinement
+  _Status: core functionality complete; awaiting live usage._
 - [ ] Alembic baseline created on production DB (no-op migration)  
   _Rule: future schema changes must generate explicit migrations._
 - [ ] Backup retention policy (e.g., prune DB backups >60 days)  

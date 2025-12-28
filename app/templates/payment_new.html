@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-0">{% if payment %}Edit Payment{% else %}Record Payment{% endif %}</h2>
+      {% if invoice %}
+        <div class="text-muted small">
+          Invoice <strong>{{ invoice.invoice_number }}</strong>
+          {% if invoice.carrier %} — {{ invoice.carrier.name }}{% endif %}
+        </div>
+      {% endif %}
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-sm btn-outline-secondary" href="{{ return_to or url_for('main.invoice_detail', invoice_id=invoice.id) }}">
+        Cancel
+      </a>
+    </div>
+  </div>
+
+  {% if invoice %}
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="row g-3">
+          {# Prefer centralized invoice math (from helpers). If it isn't provided, DON'T guess totals here
+             (we can end up using default rates instead of carrier overrides). #}
+          {% set im = (invoice_math if invoice_math is defined and invoice_math else none) %}
+
+          {% if im %}
+            {% set total_amt = (im.get('invoice_total') if im is mapping else im.invoice_total) or 0 %}
+            {% set paid_amt = (im.get('amount_paid') if im is mapping else im.amount_paid) or 0 %}
+            {% set bal = (im.get('balance_due') if im is mapping else im.balance_due) %}
+            {% if bal is none %}
+              {% set bal = total_amt - paid_amt %}
+            {% endif %}
+          {% else %}
+            {% set total_amt = none %}
+            {% set paid_amt = none %}
+            {% set bal = none %}
+          {% endif %}
+
+          <div class="col-12 col-md-4">
+            <div class="text-muted small">Invoice Total</div>
+            <div class="fw-semibold">
+              {% if total_amt is not none %}${{ "%.2f"|format(total_amt) }}{% else %}—{% endif %}
+            </div>
+          </div>
+          <div class="col-12 col-md-4">
+            <div class="text-muted small">Amount Paid</div>
+            <div class="fw-semibold">
+              {% if paid_amt is not none %}${{ "%.2f"|format(paid_amt) }}{% else %}—{% endif %}
+            </div>
+          </div>
+          <div class="col-12 col-md-4">
+            <div class="text-muted small">Balance Due</div>
+            <div class="fw-semibold">
+              {% if bal is not none %}${{ "%.2f"|format(bal) }}{% else %}—{% endif %}
+            </div>
+          </div>
+          {% if not im %}
+            <div class="col-12">
+              <div class="alert alert-warning py-2 mb-0 small">
+                Invoice totals are unavailable on this screen because the route didn’t provide centralized invoice math.
+                (We intentionally avoid guessing here to prevent using the wrong rate set.)
+              </div>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-body">
+      <form method="post" action="{{ url_for('main.payment_create') }}">
+        <input type="hidden" name="invoice_id" value="{{ invoice.id }}">
+        <input type="hidden" name="return_to" value="{{ return_to or '' }}">
+        {% if payment %}
+          <input type="hidden" name="payment_id" value="{{ payment.id }}">
+        {% endif %}
+
+        <div class="row g-3">
+          <div class="col-12 col-md-4">
+            <label class="form-label">Payment Date</label>
+            {% set pdt = (
+              (payment.paid_date if payment and payment.paid_date is defined else none)
+              or (payment.payment_date if payment and payment.payment_date is defined else none)
+              or (payment.date if payment and payment.date is defined else none)
+            ) %}
+            <input
+              type="text"
+              name="payment_date"
+              class="form-control form-control-sm js-date"
+              value="{{ (pdt.strftime('%m/%d/%Y') if pdt and pdt.strftime is defined else (pdt if pdt else ((defaults.payment_date if defaults and defaults.payment_date) or ''))) }}"
+              placeholder="MM/DD/YYYY"
+              autocomplete="off">
+            <div class="form-text">Defaults to today.</div>
+          </div>
+
+          <div class="col-12 col-md-4">
+            <label class="form-label">Amount</label>
+            <input
+              type="number"
+              name="amount"
+              class="form-control form-control-sm"
+              step="0.01"
+              min="0"
+              value="{{ (payment.amount if payment and payment.amount is not none else ((defaults.amount if defaults and defaults.amount is not none) or '')) }}"
+              required>
+            <div class="form-text">This will reduce the invoice balance.</div>
+          </div>
+
+          <div class="col-12 col-md-4">
+            <label class="form-label">Method</label>
+            {% set m = (payment.method if payment and payment.method else ((defaults.method if defaults and defaults.method) or '')) %}
+            <select name="method" class="form-select form-select-sm">
+              <option value="" {% if not m %}selected{% endif %}>—</option>
+              <option value="check" {% if m == 'check' %}selected{% endif %}>Check</option>
+              <option value="ach" {% if m == 'ach' %}selected{% endif %}>ACH</option>
+              <option value="card" {% if m == 'card' %}selected{% endif %}>Card</option>
+              <option value="cash" {% if m == 'cash' %}selected{% endif %}>Cash</option>
+              <option value="other" {% if m == 'other' %}selected{% endif %}>Other</option>
+            </select>
+          </div>
+
+          <div class="col-12 col-md-6">
+            <label class="form-label">Reference / Check #</label>
+            <input
+              type="text"
+              name="reference"
+              class="form-control form-control-sm"
+              value="{{ (payment.reference if payment and payment.reference else ((defaults.reference if defaults and defaults.reference) or '')) }}"
+              placeholder="e.g., Check 1034, ACH trace, etc.">
+          </div>
+
+          <div class="col-12 col-md-6">
+            <label class="form-label">Notes</label>
+            <input
+              type="text"
+              name="notes"
+              class="form-control form-control-sm"
+              value="{{ (payment.notes if payment and payment.notes else ((defaults.notes if defaults and defaults.notes) or '')) }}"
+              placeholder="Optional">
+          </div>
+
+          <div class="col-12">
+            <div class="d-flex gap-2 mt-2">
+              <button type="submit" class="btn btn-primary btn-sm">Save Payment</button>
+              <a class="btn btn-outline-secondary btn-sm" href="{{ return_to or url_for('main.invoice_detail', invoice_id=invoice.id) }}">Cancel</a>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

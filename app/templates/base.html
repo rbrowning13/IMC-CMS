@@ -17,7 +17,17 @@
 
   <!-- App stylesheet -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {# Global accent color from Settings (used by style.css via --accent-color) #}
+  {% set _accent_color = (settings.accent_color if settings and settings.accent_color else '') %}
+  {% set _accent_color = (_accent_color | string) | trim %}
+  {% if not _accent_color %}
+    {% set _accent_color = '#d6871f' %}
+  {% endif %}
   <style>
+    :root {
+      /* Brand accent color (overrides the fallback defined in style.css) */
+      --accent-color: {{ _accent_color }};
+    }
     /* Centered flash messages (fixed overlay) */
     .flash-container {
       position: fixed;
@@ -371,6 +381,57 @@
           // Keep behavior consistent with our UI expectations
           // (no time selection here; we can enable time per-field later).
           enableTime: false,
+
+          // Typed date entry fix:
+          // Flatpickr will revert typed text if it can't parse it.
+          // Accept a few common formats so typing doesn't "snap back".
+          parseDate: function (dateStr, format) {
+            if (!dateStr) return null;
+            var s = String(dateStr).trim();
+
+            // Accept ISO: YYYY-MM-DD
+            var iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+            if (iso) {
+              return new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10));
+            }
+
+            // Accept M/D/YYYY or MM/DD/YYYY or MM/DD/YY
+            var mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+            if (mdy) {
+              var mm = parseInt(mdy[1], 10);
+              var dd = parseInt(mdy[2], 10);
+              var yy = parseInt(mdy[3], 10);
+              if (yy < 100) yy = 2000 + yy; // 25 -> 2025
+              return new Date(yy, mm - 1, dd);
+            }
+
+            // Accept 8 digits: MMDDYYYY (or pasted digits)
+            var digits = s.replace(/\D/g, '');
+            if (digits.length === 8) {
+              var mm2 = parseInt(digits.slice(0, 2), 10);
+              var dd2 = parseInt(digits.slice(2, 4), 10);
+              var yy2 = parseInt(digits.slice(4, 8), 10);
+              return new Date(yy2, mm2 - 1, dd2);
+            }
+
+            // Fall back to Flatpickr's default parser
+            try {
+              return window.flatpickr.parseDate(s, format);
+            } catch (e) {
+              return null;
+            }
+          },
+
+          onClose: function (selectedDates, dateStr, instance) {
+            // If the user typed something valid, commit it as the selected date.
+            var raw = (instance && instance.input) ? (instance.input.value || '').trim() : '';
+            if (!raw) return;
+
+            var d = instance.parseDate(raw, instance.config.dateFormat);
+            if (d && !isNaN(d.getTime())) {
+              instance.setDate(d, true); // triggerChange so forms capture the normalized value
+            }
+          },
         });
       });
     });

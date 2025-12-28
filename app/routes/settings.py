@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from flask import flash, redirect, render_template, request, url_for
 
+import re
+
 from sqlalchemy import func
 
 from ..utils import validation as _validation
@@ -156,13 +158,29 @@ def settings_view():
         report_footer_text_raw = (form.get("report_footer_text") or "").strip()
 
         invoice_footer_text_raw = (form.get("invoice_footer_text") or "").strip()
+        # Accent color: only update when the field is present in the POST.
+        # Otherwise keep the existing value so we don't accidentally wipe it.
+        _accent_present = ("accent_color" in form) or ("accent_color_hex" in form)
         accent_color_raw = (form.get("accent_color") or form.get("accent_color_hex") or "").strip()
-        # DB column is payment_terms_default; accept legacy/template field name
-        default_payment_terms_raw = (
+
+        # Normalize common user inputs (e.g. "ff8800" -> "#ff8800").
+        if accent_color_raw and not accent_color_raw.startswith("#"):
+            maybe_hex = accent_color_raw
+            if all(c in "0123456789abcdefABCDEF" for c in maybe_hex) and len(maybe_hex) in (3, 6, 8):
+                accent_color_raw = "#" + maybe_hex
+        # Payment terms: store as numeric "days" in the existing payment_terms_default column.
+        # Accept legacy/template field name.
+        payment_terms_days_raw = (
             form.get("payment_terms_default")
             or form.get("default_payment_terms")
             or ""
         ).strip()
+
+        # Accept legacy free-text values like "Net 30" or "30 days" by extracting the first integer.
+        if payment_terms_days_raw and not payment_terms_days_raw.isdigit():
+            m = re.search(r"(-?\d+)", payment_terms_days_raw)
+            if m:
+                payment_terms_days_raw = m.group(1)
 
         # Targets (some templates use slightly different field names)
         target_min_hours_raw = (
@@ -201,6 +219,15 @@ def settings_view():
         if error is None and err:
             error = err
 
+        payment_terms_days, err = _parse_int(payment_terms_days_raw, "Default payment terms (days)")
+        if error is None and err:
+            error = err
+        if error is None and payment_terms_days is not None:
+            if payment_terms_days < 0:
+                error = "Default payment terms (days) cannot be negative."
+            elif payment_terms_days > 3650:
+                error = "Default payment terms (days) seems too large."
+
         target_min_hours_week, err = _parse_float(target_min_hours_raw, "Target min hours/week")
         if error is None and err:
             error = err
@@ -230,20 +257,32 @@ def settings_view():
             # Settings table columns
             ("responsible_case_manager", case_manager_raw),
             ("ein", ein_tax_id_raw),
-            ("payment_terms_default", default_payment_terms_raw),
+            # payment_terms_default handled separately below
 
             # Back-compat / older model attrs (harmless if absent)
             ("case_manager", case_manager_raw),
             ("ein_tax_id", ein_tax_id_raw),
-            ("default_payment_terms", default_payment_terms_raw),
+            # default_payment_terms handled separately below
 
             ("report_footer_text", report_footer_text_raw),
             ("invoice_footer_text", invoice_footer_text_raw),
-            ("accent_color", accent_color_raw),
+            # ("accent_color", accent_color_raw),  # handled separately below
             ("documents_root", documents_root_raw),
         ):
             if hasattr(settings, attr):
                 setattr(settings, attr, raw)
+
+        # Apply accent color only if it was posted; avoid clearing it on unrelated settings saves.
+        if _accent_present and hasattr(settings, "accent_color"):
+            settings.accent_color = accent_color_raw
+
+        # Apply payment terms days into the existing column as a normalized string.
+        # Blank input clears the value.
+        if hasattr(settings, "payment_terms_default"):
+            settings.payment_terms_default = (str(payment_terms_days) if payment_terms_days is not None else "")
+        # Back-compat attribute (harmless if absent)
+        if hasattr(settings, "default_payment_terms"):
+            settings.default_payment_terms = (str(payment_terms_days) if payment_terms_days is not None else "")
 
         # Numeric fields: if blank, attempt to clear (set None). If DB rejects NULL, we'll catch on commit.
         if hasattr(settings, "hourly_rate"):

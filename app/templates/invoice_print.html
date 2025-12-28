@@ -2,7 +2,18 @@
 {% block title %}Print Invoice {{ invoice.invoice_number or "Draft" }} - Impact CMS{% endblock %}
 
 {% block content %}
-<div class="container mt-3" id="invoice-print-root" style="--accent: {{ settings.accent_color or '#0d6efd' }};">
+{# Accent color: support Settings model OR a dict-like settings payload #}
+{% set s = settings %}
+{% set accent_raw = (
+  (s.get('accent_color') if s is mapping else s.accent_color)
+  or (s.get('theme_accent_color') if s is mapping else s.theme_accent_color)
+  or (s.get('theme_color') if s is mapping else s.theme_color)
+  or (s.get('primary_color') if s is mapping else s.primary_color)
+  or '#0d6efd'
+) %}
+{# Normalize hex strings like "ff8800" -> "#ff8800" #}
+{% set accent = ('#' ~ accent_raw) if (accent_raw is string and accent_raw and not accent_raw.startswith('#') and accent_raw|length in [3, 6]) else accent_raw %}
+<div class="container mt-3" id="invoice-print-root" style="--accent: {{ accent }};">
   <div class="d-print-none mb-3">
     <div class="d-flex justify-content-end gap-2">
       <a href="{{ url_for('main.invoice_detail', invoice_id=invoice.id) }}"
@@ -104,13 +115,41 @@
 
         <div class="col-md-6">
           <h3 class="h6">Dates of Service</h3>
+
+          {# Determine DOS from invoice fields, otherwise derive from items (various service date field names) #}
+          {% set dos_start = invoice.dos_start %}
+          {% set dos_end = invoice.dos_end %}
+
+          {% if (not dos_start or not dos_end) and items %}
+            {% set dos = namespace(min=None, max=None) %}
+            {% for item in items %}
+              {# Try several common service date field names; item may be a model, dict, or a view-model #}
+              {% set d = (
+                item.service_date
+                or item.date_of_service
+                or item.dos
+                or item.activity_date
+                or item.date
+                or item.activity_dt
+                or item.service_dt
+                or item.performed_on
+              ) %}
+              {% if d %}
+                {% if dos.min is none or d < dos.min %}{% set dos.min = d %}{% endif %}
+                {% if dos.max is none or d > dos.max %}{% set dos.max = d %}{% endif %}
+              {% endif %}
+            {% endfor %}
+            {% if not dos_start %}{% set dos_start = dos.min %}{% endif %}
+            {% if not dos_end %}{% set dos_end = dos.max %}{% endif %}
+          {% endif %}
+
           <p class="small mb-0">
-            {% if invoice.dos_start and invoice.dos_end %}
-              {{ invoice.dos_start|format_date }} – {{ invoice.dos_end|format_date }}
-            {% elif invoice.dos_start %}
-              From {{ invoice.dos_start|format_date }}
-            {% elif invoice.dos_end %}
-              Through {{ invoice.dos_end|format_date }}
+            {% if dos_start and dos_end %}
+              {{ dos_start|format_date }} – {{ dos_end|format_date }}
+            {% elif dos_start %}
+              From {{ dos_start|format_date }}
+            {% elif dos_end %}
+              Through {{ dos_end|format_date }}
             {% else %}
               Not specified
             {% endif %}
@@ -118,10 +157,47 @@
         </div>
       </div>
 
+      {# Totals: ALWAYS prefer centralized route math (fin) to avoid mismatches with invoice_detail. #}
+      {% set _fin = fin if fin is defined else none %}
+
+      {# Fallback totals computed from items only if fin is not available #}
+      {% set ns = namespace(hours=0.0, miles=0.0, expenses=0.0) %}
+      {% if items and not _fin %}
+        {% for item in items %}
+          {% set code = (item.activity_code or '')|upper %}
+          {% set qty = (item.quantity if item.quantity is not none else 0) %}
+          {% if code == 'MIL' %}
+            {% set ns.miles = ns.miles + qty %}
+          {% elif code == 'EXP' %}
+            {% set ns.expenses = ns.expenses + qty %}
+          {% else %}
+            {% set ns.hours = ns.hours + qty %}
+          {% endif %}
+        {% endfor %}
+      {% endif %}
+
+      {# Default to stored totals (or item-computed) #}
+      {% set hours_total = invoice.total_hours if invoice.total_hours is not none else ns.hours %}
+      {% set miles_total = invoice.total_miles if invoice.total_miles is not none else ns.miles %}
+      {% set expenses_total = invoice.total_expenses if invoice.total_expenses is not none else ns.expenses %}
+
+      {# If the route passed centralized financials, use them (source of truth) #}
+      {% if _fin %}
+        {% if _fin is mapping %}
+          {% set hours_total = _fin.get('hours_total', _fin.get('hours', hours_total)) %}
+          {% set miles_total = _fin.get('miles_total', _fin.get('miles', miles_total)) %}
+          {% set expenses_total = _fin.get('expenses_total', _fin.get('expenses', expenses_total)) %}
+        {% else %}
+          {% if _fin.hours_total is defined %}{% set hours_total = _fin.hours_total %}{% elif _fin.hours is defined %}{% set hours_total = _fin.hours %}{% endif %}
+          {% if _fin.miles_total is defined %}{% set miles_total = _fin.miles_total %}{% elif _fin.miles is defined %}{% set miles_total = _fin.miles %}{% endif %}
+          {% if _fin.expenses_total is defined %}{% set expenses_total = _fin.expenses_total %}{% elif _fin.expenses is defined %}{% set expenses_total = _fin.expenses %}{% endif %}
+        {% endif %}
+      {% endif %}
+
       <!-- Line items table -->
       <div class="table-responsive">
         <table class="table table-sm table-bordered align-middle mb-3 ip-items">
-          <thead style="background-color: {{ settings.accent_color or '#0d6efd' }}; color: #ffffff; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+          <thead class="ip-items-head">
             <tr>
               <th style="width: 9rem;">Service Date</th>
               <th style="width: 6rem;">Code</th>
@@ -134,8 +210,23 @@
             {% for item in items %}
               <tr>
                 <td>
-                  {% if item.service_date %}
-                    {{ item.service_date|format_date }}
+                  {# Service date can come through under different field names and may be a string already #}
+                  {% set d = (
+                    item.service_date
+                    or item.date_of_service
+                    or item.dos
+                    or item.activity_date
+                    or item.date
+                    or item.activity_dt
+                    or item.service_dt
+                    or item.performed_on
+                  ) %}
+                  {% if d %}
+                    {% if d is string %}
+                      {{ d }}
+                    {% else %}
+                      {{ d|format_date }}
+                    {% endif %}
                   {% else %}
                     —
                   {% endif %}
@@ -162,6 +253,84 @@
         </table>
       </div>
 
+      {# Payments / Balance Due: prefer centralized `fin` from the route, but ensure totals use carrier rates when available. #}
+      {% set _fin = fin if fin is defined else none %}
+
+      {# Amount paid: best source is fin; fallback to invoice/payments. #}
+      {% set paid_total = 0 %}
+      {% if _fin %}
+        {% if _fin is mapping %}
+          {% set paid_total = _fin.get('paid_total', _fin.get('paid', 0)) %}
+        {% else %}
+          {% if _fin.paid_total is defined %}{% set paid_total = _fin.paid_total %}{% elif _fin.paid is defined %}{% set paid_total = _fin.paid %}{% endif %}
+        {% endif %}
+      {% elif invoice.balance_due is defined and invoice.balance_due is not none %}
+        {% set paid_total = (invoice.total_amount or 0) - (invoice.balance_due or 0) %}
+      {% elif payments is defined and payments %}
+        {% set pns = namespace(total=0.0) %}
+        {% for p in payments %}
+          {% set pns.total = pns.total + (p.amount or 0) %}
+        {% endfor %}
+        {% set paid_total = pns.total %}
+      {% else %}
+        {% set paid_total = 0 %}
+      {% endif %}
+
+      {#
+        Total amount:
+        - If fin provides component subtotals (hourly/telephonic/mileage/expenses), use them (best).
+        - Otherwise, compute using effective rates (carrier overrides settings when present).
+
+        This prevents invoice_print from drifting to default settings rates when carrier-specific rates exist.
+      #}
+
+      {% set total_amount = 0 %}
+
+      {% set fin_hourly_subtotal = none %}
+      {% set fin_telephonic_subtotal = none %}
+      {% set fin_mileage_subtotal = none %}
+      {% set fin_expenses_subtotal = none %}
+
+      {% if _fin and (_fin is mapping) %}
+        {% set fin_hourly_subtotal = _fin.get('hourly_subtotal') or _fin.get('hourly_amount') or _fin.get('subtotal_hourly') %}
+        {% set fin_telephonic_subtotal = _fin.get('telephonic_subtotal') or _fin.get('telephonic_amount') or _fin.get('subtotal_telephonic') %}
+        {% set fin_mileage_subtotal = _fin.get('mileage_subtotal') or _fin.get('mileage_amount') or _fin.get('subtotal_mileage') %}
+        {% set fin_expenses_subtotal = _fin.get('expenses_subtotal') or _fin.get('expenses_amount') or _fin.get('subtotal_expenses') %}
+      {% elif _fin %}
+        {% if _fin.hourly_subtotal is defined %}{% set fin_hourly_subtotal = _fin.hourly_subtotal %}{% elif _fin.hourly_amount is defined %}{% set fin_hourly_subtotal = _fin.hourly_amount %}{% endif %}
+        {% if _fin.telephonic_subtotal is defined %}{% set fin_telephonic_subtotal = _fin.telephonic_subtotal %}{% elif _fin.telephonic_amount is defined %}{% set fin_telephonic_subtotal = _fin.telephonic_amount %}{% endif %}
+        {% if _fin.mileage_subtotal is defined %}{% set fin_mileage_subtotal = _fin.mileage_subtotal %}{% elif _fin.mileage_amount is defined %}{% set fin_mileage_subtotal = _fin.mileage_amount %}{% endif %}
+        {% if _fin.expenses_subtotal is defined %}{% set fin_expenses_subtotal = _fin.expenses_subtotal %}{% elif _fin.expenses_amount is defined %}{% set fin_expenses_subtotal = _fin.expenses_amount %}{% endif %}
+      {% endif %}
+
+      {% if fin_hourly_subtotal is not none or fin_telephonic_subtotal is not none or fin_mileage_subtotal is not none or fin_expenses_subtotal is not none %}
+        {% set total_amount = (fin_hourly_subtotal or 0) + (fin_telephonic_subtotal or 0) + (fin_mileage_subtotal or 0) + (fin_expenses_subtotal or 0) %}
+      {% else %}
+        {# Effective rates (carrier overrides settings). #}
+        {% set c = claim.carrier if claim and claim.carrier else none %}
+        {% set hourly_rate = (c.hourly_rate if c and c.hourly_rate is not none else settings.hourly_rate) or 0 %}
+        {% set telephonic_rate = (c.telephonic_rate if c and c.telephonic_rate is not none else settings.telephonic_rate) or hourly_rate %}
+        {% set mileage_rate = (c.mileage_rate if c and c.mileage_rate is not none else settings.mileage_rate) or 0 %}
+
+        {# Attempt to separate telephonic hours if fin provides them; otherwise treat all hours as hourly. #}
+        {% set telephonic_hours = 0 %}
+        {% set hourly_hours = hours_total or 0 %}
+
+        {% if _fin and (_fin is mapping) %}
+          {% set telephonic_hours = _fin.get('telephonic_hours') or _fin.get('hours_telephonic') or 0 %}
+          {% set hourly_hours = _fin.get('hourly_hours') or _fin.get('hours_hourly') or (hours_total or 0) %}
+        {% elif _fin %}
+          {% if _fin.telephonic_hours is defined %}{% set telephonic_hours = _fin.telephonic_hours %}{% endif %}
+          {% if _fin.hourly_hours is defined %}{% set hourly_hours = _fin.hourly_hours %}{% endif %}
+        {% endif %}
+
+        {% set total_amount = (hourly_hours * hourly_rate) + (telephonic_hours * telephonic_rate) + ((miles_total or 0) * mileage_rate) + (expenses_total or 0) %}
+      {% endif %}
+
+      {# Balance due is derived from total_amount and paid_total to stay consistent. #}
+      {% set total_due = (total_amount or 0) - (paid_total or 0) %}
+      {% if total_due < 0 %}{% set total_due = 0 %}{% endif %}
+
       <!-- Totals (keep together on one printed page) -->
       <div class="row ip-bottom">
         <div class="col-md-6">
@@ -173,25 +342,37 @@
               <tr>
                 <th class="text-end">Billable hours</th>
                 <td class="text-end" style="width: 8rem;">
-                  {{ "%.2f"|format(invoice.total_hours or 0) }}
+                  {{ "%.2f"|format(hours_total or 0) }}
                 </td>
               </tr>
               <tr>
                 <th class="text-end">Mileage (miles)</th>
                 <td class="text-end">
-                  {{ "%.2f"|format(invoice.total_miles or 0) }}
+                  {{ "%.2f"|format(miles_total or 0) }}
                 </td>
               </tr>
               <tr>
                 <th class="text-end">Expenses ($)</th>
                 <td class="text-end">
-                  {{ "%.2f"|format(invoice.total_expenses or 0) }}
+                  {{ "%.2f"|format(expenses_total or 0) }}
+                </td>
+              </tr>
+              <tr>
+                <th class="text-end">Invoice Total</th>
+                <td class="text-end">
+                  ${{ "%.2f"|format(total_amount or 0) }}
+                </td>
+              </tr>
+              <tr>
+                <th class="text-end">Amount Paid</th>
+                <td class="text-end">
+                  ${{ "%.2f"|format(paid_total or 0) }}
                 </td>
               </tr>
               <tr class="fw-bold">
                 <th class="text-end">Total Due</th>
                 <td class="text-end">
-                  ${{ "%.2f"|format(invoice.total_amount or 0) }}
+                  ${{ "%.2f"|format(total_due or 0) }}
                 </td>
               </tr>
             </tbody>
@@ -212,6 +393,17 @@
 
 <style>
   /* Invoice print styling: match report/fax clean look */
+
+  /* Keep the invoice itself as a white sheet (but don't break site-wide dark mode) */
+  #invoice-print-root .card-body {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+  /* Links inside the printed "paper" should use the configured accent */
+  #invoice-print-root .card-body a {
+    color: var(--accent, #0d6efd) !important;
+  }
+
   #invoice-print-root .card {
     border: 0;
     background: transparent;
@@ -246,11 +438,44 @@
     border-color: rgba(0,0,0,0.28);
   }
 
-  .ip-items thead {
-    background-color: {{ settings.accent_color or '#0d6efd' }} !important;
+  /* Force all tables onto a white “paper” theme (the base site uses dark tables) */
+  #invoice-print-root .table,
+  #invoice-print-root .table th,
+  #invoice-print-root .table td {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+
+  /* Keep the line-items header as the accent bar, but make body cells white */
+  /* Line-items header: always use accent color (screen + print) */
+  #invoice-print-root .ip-items-head th {
+    background-color: var(--accent, #0d6efd) !important;
+    color: #ffffff !important;
+    border-color: rgba(0,0,0,0.28) !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+  #invoice-print-root .ip-items tbody td {
+    background: #ffffff !important;
+  }
+
+  /* Shrink totals table so it only sits under the labels/values (no long line to the left) */
+  #invoice-print-root .ip-bottom .col-md-6:last-child {
+    text-align: right;
+  }
+  #invoice-print-root .ip-totals {
+    display: inline-table;
+    width: auto;
+    margin-left: auto;
+  }
+
+  /* Totals box: light rows + subtle separators */
+  #invoice-print-root .ip-totals th,
+  #invoice-print-root .ip-totals td {
+    background: #ffffff !important;
+    border-color: rgba(0,0,0,0.18) !important;
+  }
+
 
   @media print {
     body {
@@ -282,6 +507,20 @@
     #invoice-print-root .card-body {
       box-shadow: none !important;
       background-image: none !important;
+    }
+
+    /* Print: force tables to white/black regardless of site theme */
+    #invoice-print-root .table,
+    #invoice-print-root .table th,
+    #invoice-print-root .table td {
+      background: #ffffff !important;
+      color: #111111 !important;
+    }
+    #invoice-print-root .ip-items-head th {
+      background-color: var(--accent, #0d6efd) !important;
+      color: #ffffff !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
   }
 </style>

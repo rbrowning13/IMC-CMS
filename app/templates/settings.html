@@ -113,10 +113,18 @@
       </div>
       <div class="card-body">
         <div class="mb-2">
-          <label class="form-label form-label-sm">Default Payment Terms</label>
-          <input type="text" name="payment_terms_default" class="form-control form-control-sm"
-                 placeholder="e.g. Net 30"
+          <label class="form-label form-label-sm">Default Payment Terms (days)</label>
+          <input type="number"
+                 name="payment_terms_default"
+                 class="form-control form-control-sm"
+                 min="0"
+                 step="1"
+                 inputmode="numeric"
+                 placeholder="e.g. 30"
                  value="{{ settings.payment_terms_default or '' }}">
+          <div class="form-text small mt-1">
+            Used to calculate due dates and past-due status (example: 30 = Net 30).
+          </div>
         </div>
         <div class="row">
           <div class="col-md-4 mb-2">

@@ -76,11 +76,21 @@ def claim_document_upload(claim_id: int):
     """
     claim = Claim.query.get_or_404(claim_id)
 
-    uploaded = (
-        request.files.get("file")
-        or request.files.get("document")
-        or request.files.get("upload")
-    )
+    # Support multi-select uploads. Prefer the standard field name "file",
+    # but remain backward compatible with older field names.
+    uploads = []
+    for key in ("file", "document", "upload"):
+        try:
+            uploads = request.files.getlist(key)
+        except Exception:
+            uploads = []
+        # If this key exists in the form, stop searching (even if empty),
+        # so we don't mix keys unexpectedly.
+        if key in request.files:
+            break
+
+    # Filter empty selections (browser can submit empty parts)
+    uploads = [f for f in (uploads or []) if getattr(f, "filename", "")]
 
     doc_type = (
         (request.form.get("doc_type") or "")
@@ -93,7 +103,7 @@ def claim_document_upload(claim_id: int):
         or (request.form.get("doc_description") or "")
     ).strip() or None
 
-    if not uploaded or not getattr(uploaded, "filename", ""):
+    if not uploads:
         flash("Choose a file to upload.", "danger")
         return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
@@ -109,59 +119,80 @@ def claim_document_upload(claim_id: int):
 
     claim_folder = _get_claim_folder(claim)
 
-    original_name = uploaded.filename
-    safe_name = secure_filename(original_name) or "upload"
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    stored_name = f"{ts}_{safe_name}"
+    created_count = 0
+    saved_paths: list[Path] = []
 
-    file_path = Path(claim_folder) / stored_name
+    # Use a stable base timestamp for this batch; add a per-file suffix to avoid collisions.
+    batch_ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
-    try:
-        uploaded.save(file_path)
-    except Exception:
-        current_app.logger.exception("Failed to save uploaded document")
-        flash("Upload failed while saving the file.", "danger")
-        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+    for idx, uploaded in enumerate(uploads, start=1):
+        original_name = uploaded.filename
+        safe_name = secure_filename(original_name) or "upload"
+        stored_name = f"{batch_ts}_{idx:02d}_{safe_name}"
 
-    doc = ClaimDocument(claim_id=claim.id)
+        file_path = Path(claim_folder) / stored_name
 
-    # Defensive field mapping (schema has evolved).
-    if hasattr(doc, "doc_type"):
-        setattr(doc, "doc_type", doc_type)
-    elif hasattr(doc, "type"):
-        setattr(doc, "type", doc_type)
+        try:
+            uploaded.save(file_path)
+            saved_paths.append(file_path)
+        except Exception:
+            current_app.logger.exception("Failed to save uploaded document")
+            flash("Upload failed while saving the file.", "danger")
+            # Cleanup any files saved earlier in this batch.
+            for p in saved_paths:
+                try:
+                    if p.exists():
+                        p.unlink()
+                except Exception:
+                    pass
+            return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
-    if hasattr(doc, "description"):
-        setattr(doc, "description", description)
+        doc = ClaimDocument(claim_id=claim.id)
 
-    if hasattr(doc, "filename_stored"):
-        setattr(doc, "filename_stored", stored_name)
-    elif hasattr(doc, "stored_filename"):
-        setattr(doc, "stored_filename", stored_name)
-    elif hasattr(doc, "filename"):
-        setattr(doc, "filename", stored_name)
+        # Defensive field mapping (schema has evolved).
+        if hasattr(doc, "doc_type"):
+            setattr(doc, "doc_type", doc_type)
+        elif hasattr(doc, "type"):
+            setattr(doc, "type", doc_type)
 
-    if hasattr(doc, "original_filename"):
-        setattr(doc, "original_filename", original_name)
+        if hasattr(doc, "description"):
+            setattr(doc, "description", description)
 
-    if hasattr(doc, "uploaded_at") and getattr(doc, "uploaded_at", None) is None:
-        setattr(doc, "uploaded_at", datetime.utcnow())
+        if hasattr(doc, "filename_stored"):
+            setattr(doc, "filename_stored", stored_name)
+        elif hasattr(doc, "stored_filename"):
+            setattr(doc, "stored_filename", stored_name)
+        elif hasattr(doc, "filename"):
+            setattr(doc, "filename", stored_name)
 
-    db.session.add(doc)
+        if hasattr(doc, "original_filename"):
+            setattr(doc, "original_filename", original_name)
+
+        if hasattr(doc, "uploaded_at") and getattr(doc, "uploaded_at", None) is None:
+            setattr(doc, "uploaded_at", datetime.utcnow())
+
+        db.session.add(doc)
+        created_count += 1
+
     try:
         db.session.commit()
     except Exception:
         db.session.rollback()
         # Avoid orphan files if DB write fails.
-        try:
-            if file_path.exists():
-                file_path.unlink()
-        except Exception:
-            pass
+        for p in saved_paths:
+            try:
+                if p.exists():
+                    p.unlink()
+            except Exception:
+                pass
         flash("Upload failed while saving to the database.", "danger")
         return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
-    flash("Document uploaded.", "success")
+    if created_count == 1:
+        flash("Document uploaded.", "success")
+    else:
+        flash(f"{created_count} documents uploaded.", "success")
+
     return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
 

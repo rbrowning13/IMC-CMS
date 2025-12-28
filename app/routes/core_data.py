@@ -114,6 +114,7 @@ def _obj_to_form(obj, *, fields: list[str], defaults: dict | None = None) -> dic
 # -----------------------------------------------------------------------------
 # Helper: normalize phone extension
 # -----------------------------------------------------------------------------
+
 def _clean_phone_ext(raw: str | None) -> str | None:
     """Normalize phone extension input.
 
@@ -131,6 +132,23 @@ def _clean_phone_ext(raw: str | None) -> str | None:
         s = s[3:].strip()
     # Keep it reasonably small.
     return s[:20] or None
+
+
+# -----------------------------------------------------------------------------
+# Helper: set first existing attribute
+# -----------------------------------------------------------------------------
+def _set_first_existing_attr(obj, names: list[str], value) -> bool:
+    """Set the first attribute that exists on obj from a list of candidate names.
+
+    Returns True if a value was set, False otherwise.
+
+    Used to support schema variations like `hourly_rate` vs `carrier_hourly_rate`.
+    """
+    for name in names:
+        if hasattr(obj, name):
+            setattr(obj, name, value)
+            return True
+    return False
 
 
 # -----------------------------------------------------------------------------
@@ -705,6 +723,53 @@ def carrier_new():
         if hasattr(carrier, "phone_ext"):
             carrier.phone_ext = _clean_phone_ext(request.form.get("phone_ext"))
 
+        # Optional carrier-specific billing rates (may not exist on older schemas)
+        def _parse_float_or_none(raw: str | None) -> float | None:
+            s = (raw or "").strip()
+            if s == "":
+                return None
+            try:
+                return float(s)
+            except ValueError:
+                return None
+
+        hourly_rate = _parse_float_or_none(request.form.get("hourly_rate") or request.form.get("carrier_hourly_rate"))
+        telephonic_rate = _parse_float_or_none(request.form.get("telephonic_rate") or request.form.get("carrier_telephonic_rate"))
+        mileage_rate = _parse_float_or_none(request.form.get("mileage_rate") or request.form.get("carrier_mileage_rate"))
+
+        # If user typed something non-numeric, stop and re-render with inputs preserved.
+        def _raw_is_nonempty_and_parsed_is_none(raw: str | None, parsed: float | None) -> bool:
+            return ((raw or "").strip() != "") and (parsed is None)
+
+        if (
+            _raw_is_nonempty_and_parsed_is_none(request.form.get("hourly_rate") or request.form.get("carrier_hourly_rate"), hourly_rate)
+            or _raw_is_nonempty_and_parsed_is_none(request.form.get("telephonic_rate") or request.form.get("carrier_telephonic_rate"), telephonic_rate)
+            or _raw_is_nonempty_and_parsed_is_none(request.form.get("mileage_rate") or request.form.get("carrier_mileage_rate"), mileage_rate)
+        ):
+            flash("Carrier rate fields must be numbers.", "danger")
+            return render_template(
+                "carrier_new.html",
+                active_page="carriers",
+                carrier=None,
+                form=request.form,
+            )
+
+        # Persist carrier-specific rates across evolving schemas.
+        set_hourly = _set_first_existing_attr(carrier, ["hourly_rate", "carrier_hourly_rate"], hourly_rate)
+        set_tel = _set_first_existing_attr(carrier, ["telephonic_rate", "carrier_telephonic_rate"], telephonic_rate)
+        set_mileage = _set_first_existing_attr(carrier, ["mileage_rate", "carrier_mileage_rate"], mileage_rate)
+
+        # If the user provided rates but this schema doesn't have columns for them,
+        # warn loudly so we don't silently drop their inputs.
+        if (hourly_rate is not None or telephonic_rate is not None or mileage_rate is not None) and not (
+            set_hourly or set_tel or set_mileage
+        ):
+            flash(
+                "Carrier rate fields were provided, but this database/schema has no carrier rate columns yet. "
+                "Rates were NOT saved. (We need an Alembic migration to add them.)",
+                "warning",
+            )
+
         is_valid = _validate_contactish_fields(
             subject="Carrier",
             email=carrier.email,
@@ -760,6 +825,26 @@ def carrier_detail(carrier_id: int):
 
     role_ctx = _contact_role_context(settings)
 
+    # Carrier-specific rates (schema may vary). Provide template-friendly values.
+    carrier_hourly = getattr(carrier, "hourly_rate", None)
+    if carrier_hourly is None:
+        carrier_hourly = getattr(carrier, "carrier_hourly_rate", None)
+
+    carrier_telephonic = getattr(carrier, "telephonic_rate", None)
+    if carrier_telephonic is None:
+        carrier_telephonic = getattr(carrier, "carrier_telephonic_rate", None)
+
+    carrier_mileage = getattr(carrier, "mileage_rate", None)
+    if carrier_mileage is None:
+        carrier_mileage = getattr(carrier, "carrier_mileage_rate", None)
+
+    # Effective rates: carrier overrides settings, otherwise fall back to settings values if present.
+    effective_hourly = carrier_hourly if carrier_hourly is not None else getattr(settings, "hourly_rate", None)
+    effective_telephonic = (
+        carrier_telephonic if carrier_telephonic is not None else getattr(settings, "telephonic_rate", None)
+    )
+    effective_mileage = carrier_mileage if carrier_mileage is not None else getattr(settings, "mileage_rate", None)
+
     return render_template(
         "carrier_detail.html",
         active_page="carriers",
@@ -767,6 +852,12 @@ def carrier_detail(carrier_id: int):
         carrier=carrier,
         contacts=contacts,
         edit_contact=edit_contact,
+        carrier_hourly_rate=carrier_hourly,
+        carrier_telephonic_rate=carrier_telephonic,
+        carrier_mileage_rate=carrier_mileage,
+        effective_hourly_rate=effective_hourly,
+        effective_telephonic_rate=effective_telephonic,
+        effective_mileage_rate=effective_mileage,
         **role_ctx,
     )
 
@@ -787,6 +878,56 @@ def carrier_edit(carrier_id: int):
             carrier.phone_ext = _clean_phone_ext(request.form.get("phone_ext"))
         carrier.fax = (request.form.get("fax") or "").strip() or None
         carrier.email = (request.form.get("email") or "").strip() or None
+
+        # Optional carrier-specific billing rates (may not exist on older schemas)
+        def _parse_float_or_none(raw: str | None) -> float | None:
+            s = (raw or "").strip()
+            if s == "":
+                return None
+            try:
+                return float(s)
+            except ValueError:
+                return None
+
+        hourly_raw = request.form.get("hourly_rate") or request.form.get("carrier_hourly_rate")
+        telephonic_raw = request.form.get("telephonic_rate") or request.form.get("carrier_telephonic_rate")
+        mileage_raw = request.form.get("mileage_rate") or request.form.get("carrier_mileage_rate")
+
+        hourly_rate = _parse_float_or_none(hourly_raw)
+        telephonic_rate = _parse_float_or_none(telephonic_raw)
+        mileage_rate = _parse_float_or_none(mileage_raw)
+
+        def _raw_is_nonempty_and_parsed_is_none(raw: str | None, parsed: float | None) -> bool:
+            return ((raw or "").strip() != "") and (parsed is None)
+
+        if (
+            _raw_is_nonempty_and_parsed_is_none(hourly_raw, hourly_rate)
+            or _raw_is_nonempty_and_parsed_is_none(telephonic_raw, telephonic_rate)
+            or _raw_is_nonempty_and_parsed_is_none(mileage_raw, mileage_rate)
+        ):
+            flash("Carrier rate fields must be numbers.", "danger")
+            return render_template(
+                "carrier_edit.html",
+                active_page="carriers",
+                carrier=carrier,
+                form=request.form,
+            )
+
+        # Persist carrier-specific rates across evolving schemas.
+        set_hourly = _set_first_existing_attr(carrier, ["hourly_rate", "carrier_hourly_rate"], hourly_rate)
+        set_tel = _set_first_existing_attr(carrier, ["telephonic_rate", "carrier_telephonic_rate"], telephonic_rate)
+        set_mileage = _set_first_existing_attr(carrier, ["mileage_rate", "carrier_mileage_rate"], mileage_rate)
+
+        # If the user provided rates but this schema doesn't have columns for them,
+        # warn loudly so we don't silently drop their inputs.
+        if (hourly_rate is not None or telephonic_rate is not None or mileage_rate is not None) and not (
+            set_hourly or set_tel or set_mileage
+        ):
+            flash(
+                "Carrier rate fields were provided, but this database/schema has no carrier rate columns yet. "
+                "Rates were NOT saved. (We need an Alembic migration to add them.)",
+                "warning",
+            )
 
         is_valid = _validate_contactish_fields(
             subject="Carrier",
@@ -822,9 +963,22 @@ def carrier_edit(carrier_id: int):
             "phone_ext",
             "fax",
             "email",
+            "hourly_rate",
+            "telephonic_rate",
+            "mileage_rate",
+            "carrier_hourly_rate",
+            "carrier_telephonic_rate",
+            "carrier_mileage_rate",
         ],
         defaults={"state": "ID"},
     )
+    # Normalize rate keys so templates can always use form.get('hourly_rate') etc.
+    if not form.get("hourly_rate") and form.get("carrier_hourly_rate"):
+        form["hourly_rate"] = form.get("carrier_hourly_rate")
+    if not form.get("telephonic_rate") and form.get("carrier_telephonic_rate"):
+        form["telephonic_rate"] = form.get("carrier_telephonic_rate")
+    if not form.get("mileage_rate") and form.get("carrier_mileage_rate"):
+        form["mileage_rate"] = form.get("carrier_mileage_rate")
     return render_template(
         "carrier_edit.html",
         active_page="carriers",
@@ -836,6 +990,32 @@ def carrier_edit(carrier_id: int):
 @bp.route("/carriers/<int:carrier_id>/delete", methods=["POST"])
 def carrier_delete(carrier_id: int):
     carrier = Carrier.query.get_or_404(carrier_id)
+
+    # Safety first: do not allow deleting a carrier that is referenced by claims.
+    claim_refs = 0
+    try:
+        claim_refs = Claim.query.filter(Claim.carrier_id == carrier_id).count()
+    except Exception:
+        claim_refs = 0
+
+    # Also block deletion if any claims reference contacts that belong to this carrier.
+    contact_refs = 0
+    try:
+        carrier_contact_ids = [c.id for c in _contacts_for("carrier", carrier_id).all()]
+        if carrier_contact_ids and hasattr(Claim, "carrier_contact_id"):
+            contact_refs = Claim.query.filter(Claim.carrier_contact_id.in_(carrier_contact_ids)).count()
+    except Exception:
+        contact_refs = 0
+
+    if claim_refs or contact_refs:
+        flash(
+            "Can’t delete this carrier because it’s referenced by existing claims. "
+            "Reassign or delete those claims (and carrier contacts) first.",
+            "danger",
+        )
+        return redirect(url_for("main.carrier_detail", carrier_id=carrier_id))
+
+    # If it’s truly unreferenced, allow deletion.
     db.session.delete(carrier)
     db.session.commit()
     flash("Carrier deleted.", "success")
