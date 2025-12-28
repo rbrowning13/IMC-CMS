@@ -216,3 +216,120 @@ def settings_view():
         error=error,
         contact_roles_text=_contact_roles_text(),
     )
+# ---------------------------------------------------------------------
+# Lists & code tables (simple management screens)
+# ---------------------------------------------------------------------
+
+@bp.route("/settings/barriers", methods=["GET", "POST"])
+def settings_barriers():
+    # Minimal CRUD: add + toggle active
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip()
+
+        if action == "add":
+            label = (request.form.get("label") or "").strip()
+            category = (request.form.get("category") or "").strip() or None
+            sort_order_raw = (request.form.get("sort_order") or "").strip()
+            try:
+                sort_order = int(sort_order_raw) if sort_order_raw else 0
+            except ValueError:
+                sort_order = 0
+
+            if not label:
+                flash("Label is required.", "danger")
+            else:
+                bo = BarrierOption(
+                    label=label,
+                    category=category,
+                    sort_order=sort_order,
+                    is_active=True,
+                )
+                db.session.add(bo)
+                db.session.commit()
+                flash("Barrier option added.", "success")
+                return redirect(url_for("main.settings_barriers"))
+
+        elif action == "toggle":
+            try:
+                bo_id = int(request.form.get("id") or "0")
+            except ValueError:
+                bo_id = 0
+            bo = BarrierOption.query.get(bo_id)
+            if not bo:
+                flash("Barrier option not found.", "danger")
+            else:
+                bo.is_active = not bool(getattr(bo, "is_active", True))
+                db.session.commit()
+                flash("Barrier option updated.", "success")
+                return redirect(url_for("main.settings_barriers"))
+
+    items = (
+        BarrierOption.query.order_by(
+            getattr(BarrierOption, "sort_order", 0),
+            getattr(BarrierOption, "category", ""),
+            getattr(BarrierOption, "label", ""),
+        ).all()
+    )
+
+    return render_template(
+        "settings_barriers.html",
+        active_page="settings",
+        items=items,
+    )
+
+
+@bp.route("/settings/billables", methods=["GET", "POST"])
+def settings_billables():
+    # Minimal CRUD: add + toggle active
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip()
+
+        if action == "add":
+            code = (request.form.get("code") or "").strip()
+            label = (request.form.get("label") or "").strip()
+            sort_order_raw = (request.form.get("sort_order") or "").strip()
+            try:
+                sort_order = int(sort_order_raw) if sort_order_raw else 0
+            except ValueError:
+                sort_order = 0
+
+            if not code or not label:
+                flash("Code and label are required.", "danger")
+            else:
+                item = BillingActivityCode(
+                    code=code,
+                    label=label,
+                    sort_order=sort_order,
+                    is_active=True,
+                )
+                db.session.add(item)
+                db.session.commit()
+                flash("Activity code added.", "success")
+                return redirect(url_for("main.settings_billables"))
+
+        elif action == "toggle":
+            try:
+                item_id = int(request.form.get("id") or "0")
+            except ValueError:
+                item_id = 0
+            item = BillingActivityCode.query.get(item_id)
+            if not item:
+                flash("Activity code not found.", "danger")
+            else:
+                item.is_active = not bool(getattr(item, "is_active", True))
+                db.session.commit()
+                flash("Activity code updated.", "success")
+                return redirect(url_for("main.settings_billables"))
+
+    items = (
+        BillingActivityCode.query.order_by(
+            getattr(BillingActivityCode, "sort_order", 0),
+            getattr(BillingActivityCode, "code", ""),
+        ).all()
+    )
+
+    return render_template(
+        "settings_billables.html",
+        active_page="settings",
+        items=items,
+    )

@@ -20,13 +20,14 @@
     </div>
     <div class="card-body">
       <form method="post" class="row g-2">
-        <div class="col-md-3">
+        <input type="hidden" name="action" value="add">
+<div class="col-md-3">
           <label class="form-label mb-1">Code</label>
           <input type="text" name="code" class="form-control form-control-sm" required>
         </div>
         <div class="col-md-6">
           <label class="form-label mb-1">Description</label>
-          <input type="text" name="description" class="form-control form-control-sm"
+          <input type="text" name="label" class="form-control form-control-sm"
                  placeholder="e.g. Telephonic Case Management">
         </div>
         <div class="col-md-2">
@@ -60,7 +61,7 @@
             </tr>
           </thead>
           <tbody>
-          {% for b in codes %}
+          {% for b in items %}
             <tr class="{% if not b.is_active %}table-secondary{% endif %}">
               <td>{{ b.code }}</td>
               <td>{{ b.label or "—" }}</td>
@@ -73,7 +74,7 @@
                 {% endif %}
               </td>
               <td class="text-end">
-                <a href="{{ url_for('main.settings_billable_edit', code_id=b.id) }}"
+                <a href="{{ url_for('main.settings_billables') }}"
                    class="btn btn-outline-primary btn-sm">
                   Edit
                 </a>
