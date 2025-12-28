@@ -75,6 +75,7 @@ Items here supersede older phase notes until checked off._
   _Test: intentionally fail validation and confirm fields retain values exactly._
 - [ ] Field-level error highlighting (red outline + message near field)  
   _Future enhancement: used later for report DOS/date validation._
+  - [ ] Settings persistence mismatch on production server (case manager name saves locally but not on server)
 
 ### H) Deletes / referential integrity
 - [x] Delete Claim succeeds without FK crashes
@@ -101,17 +102,17 @@ Items here supersede older phase notes until checked off._
 _Test script for all 3: Create contact w/ role → save → refresh page → confirm role displays → click Edit → role is selected → change role → save → refresh → confirm changed._
 
 ### F) Billables + Billing Activity Codes
-- [ ] Billing activity code list exists + populates dropdowns in claim/report billables  
+- [x] Billing activity code list exists + populates dropdowns in claim/report billables  
   _Known problems we saw: code length constraint, label NULL, “rate” mismatch._
-- [ ] Add new billing activity code works (requires label and code; no per-code rate)
-- [ ] Billable item creation persists and appears immediately in the table  
+- [x] Add new billing activity code works (requires label and code; no per-code rate)
+- [x] Billable item creation persists and appears immediately in the table  
   _Known issue: item “disappears” after add → verify._
-- [ ] Billables completeness rules enforced (“NO BILL” special case)
+- [x] Billables completeness rules enforced (“NO BILL” special case)
 - [ ] Long-format notes field on billables (notes → report; short desc → invoice/report)  
   _Status: likely still pending unless we already implemented._
 
 ### E) Claims / Reports workflow
-- [ ] “New Report” from Claim Detail works for Initial/Progress/Closure  
+- [x] “New Report” from Claim Detail works for Initial/Progress/Closure  
   _Test: click each type → new report created → lands on edit page._
 - [x] Initial Report: "Primary Care Provider / Family Doctor" saves and persists  
   _Status: column added, model + routes wired, persists correctly._
@@ -123,10 +124,10 @@ _Test script for all 3: Create contact w/ role → save → refresh page → con
   _Status: verified working; keep counting based on visible/non-deleted reports._
 - [ ] Report edit screen not spamming status updates / refresh loops  
   _Test: open report edit and watch top banner behavior._
-- [ ] Roll-forward per-field works (shared long text fields)  
+- [x] Roll-forward per-field works (shared long text fields)  
   _Test: click roll-forward on a field with a previous report._
-- [ ] Roll-forward buttons not functioning on report edit screens  
-  _Note: Buttons render but do not populate fields. Likely similar fix to treating providers / barriers carry-forward, but defer until report field mapping is finalized._
+- [x] Roll-forward buttons exist and populate fields on report edit screens  
+  _Note: Buttons render and now populate fields. Functionality verified._
 - [ ] ICS download works for Next Appointment  
   _Note: previously flagged to fix; verify current behavior._
 - [ ] Closure report print/layout tweaks (remove unused fields, update closure reasons, full-width Closure Details)  
@@ -142,7 +143,7 @@ _Test script for all 3: Create contact w/ role → save → refresh page → con
 
 ### G) Invoices
 
-### K) Go‑Live / Server Cutover (next week)
+-### K) Go‑Live / Server Cutover (next week)
 - [ ] Bump app revision (minor tick) + commit + tag
   _Rule: bump rev before pushing to git._
 - [ ] Push current stabilization build to git (main)
@@ -161,6 +162,8 @@ _Test script for all 3: Create contact w/ role → save → refresh page → con
 - [ ] “Delete draft invoice” works
 - [ ] Gather billables by report DOS range works (doesn’t say “no items” when there are)  
   _Known issue: still saying none when they exist._
+  - [ ] Create one-command server update script (git pull, deps, migrate, restart, smoke test)
+  - [ ] Add pre-push local verification checklist (settings save, report print, server parity)
 
 ### B) Consistency: address + state dropdowns
 - [ ] All State fields use the shared state list helper (no “random characters”)  

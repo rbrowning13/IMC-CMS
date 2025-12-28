@@ -1,8 +1,11 @@
 import sys
 import os
 import json
+import re
 from pathlib import Path
 from datetime import datetime, date
+
+from markupsafe import Markup, escape
 from sqlalchemy.exc import ProgrammingError, OperationalError
 from flask import Flask
 
@@ -57,11 +60,53 @@ def format_datetime(value, fmt="%m/%d/%Y %H:%M"):
     except Exception:
         return str(value)
 
-def nl2br(value):
-    """Fallback newline-to-&lt;br&gt; formatter."""
+
+def _normalize_multiline_text(value) -> str:
+    """Normalize text that may contain HTML-ish <br> fragments into real newlines.
+
+    We have legacy content where users' line breaks were stored as literal "<br>" or
+    escaped "&lt;br&gt;" text. This normalizes everything back to real newlines.
+    """
     if value is None:
         return ""
-    return str(value).replace("\n", "<br>")
+
+    s = str(value)
+
+    # Normalize Windows/Mac newlines first
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Handle double-escaped entities that sometimes land in the DB (e.g. "&amp;lt;br&amp;gt;")
+    # Convert them back to the single-escaped form so the regex below can catch them.
+    s = s.replace("&amp;lt;", "&lt;").replace("&amp;gt;", "&gt;")
+
+    # Convert escaped <br> strings (literally "&lt;br&gt;") into newlines
+    s = re.sub(r"(?i)&lt;br\s*/?&gt;", "\n", s)
+
+    # Convert literal <br> tags into newlines
+    s = re.sub(r"(?i)<br\s*/?>", "\n", s)
+
+    return s
+
+
+
+def nl2br(value):
+    """Render multiline text safely, honoring both real newlines and stored <br> tags.
+
+    Important: we must return a Markup object so Jinja does NOT escape the <br> tags.
+    """
+    s = _normalize_multiline_text(value)
+    if not s:
+        return Markup("")
+
+    # Escape user content first (prevents HTML injection), then convert real newlines
+    # into actual <br> tags and return Markup so they render as HTML.
+    escaped = escape(s)
+    return Markup(str(escaped).replace("\n", "<br>\n"))
+
+
+def br2nl(value):
+    """Convert stored <br> fragments to newlines (useful for textarea values)."""
+    return _normalize_multiline_text(value)
 
 # Demo contact-role defaults stub; real values can be overridden elsewhere.
 CONTACT_ROLE_DEFAULTS = []
@@ -124,6 +169,7 @@ def create_app():
     app.jinja_env.filters["format_date"] = format_date
     app.jinja_env.filters["format_datetime"] = format_datetime
     app.jinja_env.filters["nl2br"] = nl2br
+    app.jinja_env.filters["br2nl"] = br2nl
 
     def _format_phone(value):
         """Format US phone numbers as (###) ###-#### when possible; otherwise return original."""

@@ -562,6 +562,45 @@ def claim_detail(claim_id: int):
         .all()
     )
 
+    # -----------------------------------------------------------------
+    # Report numbering
+    # Initial report should be #1, then count up chronologically across
+    # all report types within the claim.
+    # We attach the computed value to each report as `display_report_number`
+    # so templates can use it without re-implementing math.
+    #
+    # Sort key preference: DOS start -> created_at -> id
+    # -----------------------------------------------------------------
+
+    def _report_sort_key(r: Report):
+        dos = getattr(r, "dos_start", None)
+        created = getattr(r, "created_at", None)
+        rid = getattr(r, "id", 0) or 0
+        # Normalize None values so sorting is stable
+        return (
+            dos or date.min,
+            created or datetime.min,
+            rid,
+        )
+
+    # Build id -> display number map
+    report_number_map: dict[int, int] = {}
+    if reports:
+        chronological = sorted(reports, key=_report_sort_key)
+        n = 0
+        for r in chronological:
+            n += 1
+            if getattr(r, "id", None) is not None:
+                report_number_map[int(r.id)] = n
+
+        # Attach to the report objects (works for both print/PDF and table display)
+        for r in reports:
+            rid = getattr(r, "id", None)
+            if rid is not None:
+                setattr(r, "display_report_number", report_number_map.get(int(rid)))
+            else:
+                setattr(r, "display_report_number", None)
+
     documents = (
         ClaimDocument.query.filter_by(claim_id=claim.id)
         .order_by(ClaimDocument.uploaded_at.desc())
@@ -606,6 +645,7 @@ def claim_detail(claim_id: int):
         invoice_map=invoice_map,
         open_invoice_count=open_invoice_count,
         billable_activity_choices=billable_activity_choices,
+        report_number_map=report_number_map,
     )
 
 

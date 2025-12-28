@@ -458,19 +458,13 @@
                 </thead>
                 <tbody>
                 {% if reports %}
-                  {% set progress_num = namespace(n=0) %}
                   {% for r in reports %}
                     <tr>
                       <td class="small" style="white-space: normal; word-break: break-word;">
                         {{ (r.report_type or "—")|capitalize }}
                       </td>
                       <td class="small">
-                        {% if r.report_type == 'progress' %}
-                          {% set progress_num.n = progress_num.n + 1 %}
-                          {{ progress_num.n }}
-                        {% else %}
-                          —
-                        {% endif %}
+                        {{ r.display_report_number if r.display_report_number is defined and r.display_report_number else '—' }}
                       </td>
                       <td class="small">
                         {% if r.dos_start or r.dos_end %}

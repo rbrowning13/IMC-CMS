@@ -1,5 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Edit Report – Impact CMS{% endblock %}
+{% block title %}
+  {% if display_report_number is defined and display_report_number %}
+    Report #{{ display_report_number }} – Impact CMS
+  {% else %}
+    Report – Impact CMS
+  {% endif %}
+{% endblock %}
 
 {% block content %}
 
@@ -29,7 +35,11 @@
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
       <h1 class="h4 mb-0">
-        Edit {{ (report.report_type or 'Report')|capitalize }} Report
+        {% if display_report_number is defined and display_report_number %}
+          Report #{{ display_report_number }}
+        {% else %}
+          Report
+        {% endif %}
       </h1>
       <div class="text-muted small">
         Claim: {{ claim.claimant_name }} · Claim #{{ claim.claim_number }}
@@ -69,18 +79,11 @@
           <div class="card-body small">
             <div class="row g-3">
 
-            <!-- Report type (read-only display, keep value in hidden field) -->
-            <div class="col-md-4">
-              <label class="form-label form-label-sm mb-0">Report Type</label>
-              <input type="text"
-                     class="form-control form-control-sm"
-                     value="{{ (report.report_type or '')|capitalize }}"
-                     readonly>
-              <input type="hidden" name="report_type" value="{{ report.report_type }}">
-            </div>
+            {# Keep report_type value for POST handling, but don't show it in the metadata UI #}
+            <input type="hidden" name="report_type" value="{{ report.report_type }}">
 
             <!-- Treating Provider(s) selector (checkbox list) -->
-            <div class="col-md-8">
+            <div class="col-12">
               <label class="form-label form-label-sm mb-1">Treating Provider(s)</label>
               <input
                 type="text"
@@ -192,7 +195,7 @@
 
             <!-- Co-existing conditions -->
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Co-Existing Conditions</label>
+              <label class="form-label form-label-sm mb-0">Concurrent Conditions</label>
               <textarea name="initial_coexisting_conditions"
                         class="form-control form-control-sm"
                         rows="2">{{ report.initial_coexisting_conditions or "" }}</textarea>
@@ -220,6 +223,15 @@
               <textarea name="initial_diagnostics"
                         class="form-control form-control-sm"
                         rows="2">{{ report.initial_diagnostics or "" }}</textarea>
+            </div>
+
+            <!-- Employment status (Initial only) -->
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Employment Status</label>
+              <textarea name="employment_status"
+                        id="employment_status_field"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.employment_status or "" }}</textarea>
             </div>
             {% endif %}
 
@@ -259,16 +271,6 @@
                         rows="2">{{ report.work_status or "" }}</textarea>
             </div>
 
-            {% if report.report_type == 'initial' %}
-            <!-- Employment status (Initial only) -->
-            <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Employment Status</label>
-              <textarea name="employment_status"
-                        id="employment_status_field"
-                        class="form-control form-control-sm"
-                        rows="2">{{ report.employment_status or "" }}</textarea>
-            </div>
-            {% endif %}
 
             {% if report.report_type != 'closure' %}
             <!-- Case management plan -->
@@ -292,6 +294,42 @@
             </div>
           </div>
         </div>
+
+        {% if report.report_type != 'closure' %}
+        <!-- Barriers -->
+        <div class="card shadow-sm mb-3">
+          <div class="card-header">
+            <h2 class="h6 mb-0">Possible Barriers to Recovery</h2>
+          </div>
+          <div class="card-body small scroll-area" style="max-height: 360px;">
+            {% set selected_ids = selected_barrier_ids if selected_barrier_ids is defined else [] %}
+            {% if barriers_by_category %}
+              {% for category, options in barriers_by_category.items() %}
+                {% set cat = category if category and category|trim else "Uncategorized" %}
+                <div class="mb-2">
+                  <div class="fw-semibold small">{{ cat }}</div>
+                  {% for opt in options %}
+                    <div class="form-check mb-1" style="position: relative;">
+                      <input class="form-check-input js-accent-check"
+                             type="checkbox"
+                             name="barrier_ids"
+                             id="barrier_{{ opt.id }}"
+                             value="{{ opt.id }}"
+                             {% if opt.id in selected_ids %}checked{% endif %}
+                             style="position: relative; z-index: 5; pointer-events: auto; accent-color: var(--accent-color);">
+                      <label class="form-check-label" for="barrier_{{ opt.id }}" style="position: relative; z-index: 5; pointer-events: auto; cursor: pointer;">
+                        {{ opt.label }}
+                      </label>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endfor %}
+            {% else %}
+              <p class="text-muted mb-0">No barrier options configured.</p>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
 
         {% if report.report_type == 'closure' %}
         <!-- Closure-only fields (they can stay empty for Initial/Progress) -->
@@ -444,41 +482,6 @@
       <!-- Right column: barriers + next appointment + actions -->
       <div class="col-lg-4 mb-3">
 
-        {% if report.report_type != 'closure' %}
-        <!-- Barriers -->
-        <div class="card shadow-sm mb-3">
-          <div class="card-header">
-            <h2 class="h6 mb-0">Possible Barriers to Recovery</h2>
-          </div>
-          <div class="card-body small scroll-area" style="max-height: 360px;">
-            {% set selected_ids = selected_barrier_ids if selected_barrier_ids is defined else [] %}
-            {% if barriers_by_category %}
-              {% for category, options in barriers_by_category.items() %}
-                {% set cat = category if category and category|trim else "Uncategorized" %}
-                <div class="mb-2">
-                  <div class="fw-semibold small">{{ cat }}</div>
-                  {% for opt in options %}
-                    <div class="form-check mb-1" style="position: relative;">
-                      <input class="form-check-input js-accent-check"
-                             type="checkbox"
-                             name="barrier_ids"
-                             id="barrier_{{ opt.id }}"
-                             value="{{ opt.id }}"
-                             {% if opt.id in selected_ids %}checked{% endif %}
-                             style="position: relative; z-index: 5; pointer-events: auto; accent-color: var(--accent-color);">
-                      <label class="form-check-label" for="barrier_{{ opt.id }}" style="position: relative; z-index: 5; pointer-events: auto; cursor: pointer;">
-                        {{ opt.label }}
-                      </label>
-                    </div>
-                  {% endfor %}
-                </div>
-              {% endfor %}
-            {% else %}
-              <p class="text-muted mb-0">No barrier options configured.</p>
-            {% endif %}
-          </div>
-        </div>
-        {% endif %}
 
         <!-- Next appointment -->
         <div class="card shadow-sm mb-3">
@@ -552,6 +555,24 @@
             </button>
           </div>
         </div>
+
+    </div>
+  </div>
+
+  <!-- Bottom Save / Cancel (full-width) -->
+  <div class="card shadow-sm mt-3">
+    <div class="card-body d-flex justify-content-between align-items-center">
+      <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}"
+         class="btn btn-outline-secondary btn-sm">
+        Cancel
+      </a>
+      <button type="submit" class="btn btn-primary btn-sm">
+        Save Changes
+      </button>
+    </div>
+  </div>
+
+</div>
 
       </div>
     </div>

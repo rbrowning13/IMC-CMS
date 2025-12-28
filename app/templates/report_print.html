@@ -130,8 +130,8 @@
   }
   .rp-dl dd { margin: 2px 0 0 0; color: var(--ink); font-size: 0.98rem; }
 
-  .rp-section { margin-top: 22px; }
-  .rp-section h3 { margin: 0 0 8px 0; font-size: 1.05rem; font-weight: 700; color: var(--ink); }
+  .rp-section { margin-top: 22px; break-inside: avoid; page-break-inside: avoid; }
+  .rp-section h3 { margin: 0 0 8px 0; font-size: 1.05rem; font-weight: 700; color: var(--ink); break-after: avoid; page-break-after: avoid; }
   .rp-body { color: var(--ink); line-height: 1.5; font-size: 0.98rem; }
   .rp-na { color: var(--muted); }
 
@@ -268,6 +268,20 @@
   </div>
 </div>
 
+
+{#
+  Long-text renderer.
+  We store plain text with real newlines, but older data may contain <br> fragments.
+  The `nl2br` filter normalizes both cases and outputs safe HTML.
+#}
+{% macro rp_text(val, empty='N/A') -%}
+  {%- if val and (val|string).strip() != '' -%}
+    {{ val|nl2br }}
+  {%- else -%}
+    <span class="rp-na">{{ empty }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
 <div class="rp-wrap">
 
 
@@ -298,8 +312,18 @@
 
     <div class="rp-title">
       <h1>{{ report.report_type|capitalize }} Report</h1>
-      {% if report.report_type == 'progress' and display_report_number %}
-        <div class="rp-sub">Report #: {{ display_report_number }}</div>
+      {# Prefer the report's own stored number (shown in the Claim Detail reports table). #}
+      {% set _report_num = none %}
+      {% if report.report_number is defined and report.report_number %}
+        {% set _report_num = report.report_number %}
+      {% elif display_report_number %}
+        {% set _report_num = display_report_number %}
+      {% elif report.report_type == 'initial' %}
+        {% set _report_num = 1 %}
+      {% endif %}
+
+      {% if _report_num is not none %}
+        <div class="rp-sub">Report #: {{ _report_num }}</div>
       {% endif %}
       <div class="rp-sub">
         Date of Service: {{ report.dos_start|format_date('%m/%d/%Y') }} – {{ report.dos_end|format_date('%m/%d/%Y') }}
@@ -412,59 +436,82 @@
       <div class="rp-section">
         <h3>Primary Care Provider / Family Doctor</h3>
         <div class="rp-body">
-          {% if report.primary_care_provider %}
-            {{ report.primary_care_provider|nl2br }}
-          {% else %}
-            <span class="rp-na">N/A</span>
-          {% endif %}
+          {{ rp_text(report.primary_care_provider) }}
+        </div>
+      </div>
+    {% endif %}
+
+    {# INITIAL-specific fields #}
+    {% if report.report_type == 'initial' %}
+      <div class="rp-section">
+        <h3>Diagnosis</h3>
+        <div class="rp-body">
+          {{ rp_text(report.initial_diagnosis) }}
+        </div>
+      </div>
+
+      <div class="rp-section">
+        <h3>Mechanism of Injury</h3>
+        <div class="rp-body">
+          {{ rp_text(report.initial_mechanism_of_injury) }}
+        </div>
+      </div>
+
+      <div class="rp-section">
+        <h3>Concurrent Conditions</h3>
+        <div class="rp-body">
+          {{ rp_text(report.initial_coexisting_conditions) }}
+        </div>
+      </div>
+
+      <div class="rp-section">
+        <h3>Surgical History</h3>
+        <div class="rp-body">
+          {{ rp_text(report.initial_surgical_history) }}
+        </div>
+      </div>
+
+      <div class="rp-section">
+        <h3>Medications</h3>
+        <div class="rp-body">
+          {{ rp_text(report.initial_medications) }}
+        </div>
+      </div>
+
+      <div class="rp-section">
+        <h3>Diagnostics</h3>
+        <div class="rp-body">
+          {{ rp_text(report.initial_diagnostics) }}
+        </div>
+      </div>
+
+      <div class="rp-section">
+        <h3>Employment Status</h3>
+        <div class="rp-body">
+          {{ rp_text(report.employment_status) }}
         </div>
       </div>
     {% endif %}
 
     <div class="rp-section">
-      <h3>Status / Treatment Plan</h3>
+      <h3>Status Update/Treatment plan</h3>
       <div class="rp-body">
-        {% if report.status_treatment_plan %}
-          {{ report.status_treatment_plan|nl2br }}
-        {% else %}
-          <span class="rp-na">N/A</span>
-        {% endif %}
+        {{ rp_text(report.status_treatment_plan) }}
       </div>
     </div>
 
     <div class="rp-section">
       <h3>Work Status</h3>
       <div class="rp-body">
-        {% if report.work_status %}
-          {{ report.work_status|nl2br }}
-        {% else %}
-          <span class="rp-na">N/A</span>
-        {% endif %}
+        {{ rp_text(report.work_status) }}
       </div>
     </div>
-
-    {% if report.report_type == 'initial' %}
-      <div class="rp-section">
-        <h3>Employment Status</h3>
-        <div class="rp-body">
-          {% if report.employment_status %}
-            {{ report.employment_status|nl2br }}
-          {% else %}
-            <span class="rp-na">N/A</span>
-          {% endif %}
-        </div>
-      </div>
-    {% endif %}
 
     {% if report.report_type != 'closure' %}
       <div class="rp-section">
         <h3>Case Management Plan / Recommendations</h3>
         <div class="rp-body">
-          {% if report.case_management_plan %}
-            {{ report.case_management_plan|nl2br }}
-          {% else %}
-            <span class="rp-na">N/A</span>
-          {% endif %}
+          {{ rp_text(report.case_management_plan) }}
         </div>
       </div>
     {% endif %}
@@ -486,74 +533,6 @@
       </div>
     {% endif %}
 
-    {# INITIAL-specific fields #}
-    {% if report.report_type == 'initial' %}
-      <div class="rp-section">
-        <h3>Diagnosis</h3>
-        <div class="rp-body">
-          {% if report.initial_diagnosis %}
-            {{ report.initial_diagnosis|nl2br }}
-          {% else %}
-            <span class="rp-na">N/A</span>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="rp-section">
-        <h3>Mechanism of Injury</h3>
-        <div class="rp-body">
-          {% if report.initial_mechanism_of_injury %}
-            {{ report.initial_mechanism_of_injury|nl2br }}
-          {% else %}
-            <span class="rp-na">N/A</span>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="rp-section">
-        <h3>Concurrent Conditions</h3>
-        <div class="rp-body">
-          {% if report.initial_coexisting_conditions %}
-            {{ report.initial_coexisting_conditions|nl2br }}
-          {% else %}
-            <span class="rp-na">N/A</span>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="rp-section">
-        <h3>Surgical History</h3>
-        <div class="rp-body">
-          {% if report.initial_surgical_history %}
-            {{ report.initial_surgical_history|nl2br }}
-          {% else %}
-            <span class="rp-na">N/A</span>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="rp-section">
-        <h3>Medications</h3>
-        <div class="rp-body">
-          {% if report.initial_medications %}
-            {{ report.initial_medications|nl2br }}
-          {% else %}
-            <span class="rp-na">N/A</span>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="rp-section">
-        <h3>Diagnostics</h3>
-        <div class="rp-body">
-          {% if report.initial_diagnostics %}
-            {{ report.initial_diagnostics|nl2br }}
-          {% else %}
-            <span class="rp-na">N/A</span>
-          {% endif %}
-        </div>
-      </div>
-    {% endif %}
 
     {# CLOSURE-specific fields #}
     {% if report.report_type == 'closure' %}
@@ -571,22 +550,14 @@
       <div class="rp-section">
         <h3>Closure Details</h3>
         <div class="rp-body">
-          {% if report.closure_details %}
-            {{ report.closure_details|nl2br }}
-          {% else %}
-            <span class="rp-na">N/A</span>
-          {% endif %}
+          {{ rp_text(report.closure_details) }}
         </div>
       </div>
 
       <div class="rp-section">
         <h3>Case Management Impact</h3>
         <div class="rp-body">
-          {% if report.closure_case_management_impact %}
-            {{ report.closure_case_management_impact|nl2br }}
-          {% else %}
-            <span class="rp-na">N/A</span>
-          {% endif %}
+          {{ rp_text(report.closure_case_management_impact) }}
         </div>
       </div>
     {% endif %}
@@ -612,11 +583,7 @@
                 <td>{{ item.activity_code }}</td>
                 <td>{{ item.description or '—' }}</td>
                 <td>
-                  {% if item.notes %}
-                    {{ item.notes|nl2br }}
-                  {% else %}
-                    <span class="rp-na">—</span>
-                  {% endif %}
+                  {{ rp_text(item.notes, empty='—') }}
                 </td>
               </tr>
             {% endfor %}
@@ -649,7 +616,7 @@
 
     {% if settings and settings.report_footer_text %}
       <div class="rp-footer">
-        {{ settings.report_footer_text|nl2br }}
+        {{ rp_text(settings.report_footer_text, empty='') }}
       </div>
     {% endif %}
 

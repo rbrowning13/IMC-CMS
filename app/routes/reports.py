@@ -288,6 +288,7 @@ def _get_selected_barriers(report: Report) -> list[BarrierOption]:
 
 
 # Helper: compute 1-based sequence number for progress reports within a claim.
+
 def _compute_progress_report_number(claim_id: int, report_id: int) -> int | None:
     """Return 1-based sequence number for a progress report within a claim.
 
@@ -314,6 +315,34 @@ def _compute_progress_report_number(claim_id: int, report_id: int) -> int | None
 
     return None
 
+# Helper: compute 1-based sequence number for ALL reports within a claim.
+# Requirement: Initial report is #1, then count up chronologically across report types.
+def _compute_claim_report_number(claim_id: int, report_id: int) -> int | None:
+    """Return 1-based sequence number for any report within a claim.
+
+    Sequence is based on chronological order (DOS start, then created_at, then id).
+    Returns None if the report is not found.
+    """
+    q = Report.query.filter_by(claim_id=claim_id)
+
+    # Optional soft-delete guards (only applied if fields exist).
+    if hasattr(Report, "is_deleted"):
+        q = q.filter(Report.is_deleted.is_(False))
+    if hasattr(Report, "deleted_at"):
+        q = q.filter(Report.deleted_at.is_(None))
+
+    reports = q.order_by(
+        Report.dos_start.asc().nullslast(),
+        Report.created_at.asc().nullslast(),
+        Report.id.asc(),
+    ).all()
+
+    for idx, r in enumerate(reports, start=1):
+        if r.id == report_id:
+            return idx
+
+    return None
+
 
 # ------------------------
 # Report routes
@@ -330,9 +359,8 @@ def report_new(claim_id):
       - form field: report_type
 
     Defaults:
-      - Initial: DOS start = claim referral date (if present) else today; DOS end = today
-      - Progress/Closure: DOS start = day after last report DOS end (fallback today);
-        DOS end = today
+      - Initial: DOS start = claim created date (if present) else claim referral date (if present) else today; DOS end = today
+      - Progress/Closure: DOS start = day after the most recent prior report DOS end (based on DOS end, then created_at); DOS end = today
 
     Also:
       - Copy barriers_json from the most recent prior report if present.
@@ -348,28 +376,55 @@ def report_new(claim_id):
 
     today = date.today()
 
-    # Most recent report (any type) for defaults + carry-forward
+    # Most recent prior report (any type) for defaults + carry-forward.
+    # Use DOS end when available (this matches “last submitted report” behavior better than created_at).
     last_report = (
         Report.query.filter_by(claim_id=claim.id)
-        .order_by(Report.created_at.desc())
+        .order_by(
+            Report.dos_end.desc().nullslast(),
+            Report.created_at.desc().nullslast(),
+            Report.id.desc(),
+        )
         .first()
     )
 
     if report_type_raw == "initial":
+        # Initial report: DOS start should be the date the claim was put in the system.
+        # Prefer claim.created_at (date) when present; fall back to referral_date; else today.
+        created = getattr(claim, "created_at", None)
+        if isinstance(created, datetime):
+            created = created.date()
+
         referral = getattr(claim, "referral_date", None)
         if isinstance(referral, datetime):
             referral = referral.date()
-        dos_start = referral if isinstance(referral, date) else today
+
+        if isinstance(created, date):
+            dos_start = created
+        elif isinstance(referral, date):
+            dos_start = referral
+        else:
+            dos_start = today
+
         dos_end = today
     else:
-        # Progress/Closure: start the day after the last report DOS end (if available)
+        # Progress/Closure: DOS start is the day AFTER the last submitted report.
+        # Prefer last_report.dos_end; fall back to last_report.created_at; else today.
         last_end = getattr(last_report, "dos_end", None) if last_report else None
         if isinstance(last_end, datetime):
             last_end = last_end.date()
+
         if isinstance(last_end, date):
             dos_start = last_end + timedelta(days=1)
         else:
-            dos_start = today
+            last_created = getattr(last_report, "created_at", None) if last_report else None
+            if isinstance(last_created, datetime):
+                dos_start = last_created.date() + timedelta(days=1)
+            elif isinstance(last_created, date):
+                dos_start = last_created + timedelta(days=1)
+            else:
+                dos_start = today
+
         dos_end = today
 
     report = Report(
@@ -632,6 +687,15 @@ def report_edit(claim_id, report_id):
     """Edit an existing report for a claim."""
     claim = Claim.query.get_or_404(claim_id)
     report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
+
+    # Display number for this report within the claim (Initial should be #1)
+    display_report_number = _compute_claim_report_number(claim.id, report.id)
+
+    # Convenience for templates that prefer attribute access
+    try:
+        setattr(report, "display_report_number", display_report_number)
+    except Exception:
+        pass
 
     # --- PCP / Family Doctor field back-compat ---
     # DB/schema may store this as `initial_primary_care_provider` (preferred) but
@@ -955,6 +1019,7 @@ def report_edit(claim_id, report_id):
         selected_barrier_ids=selected_barrier_ids,
         providers=providers,
         approved_provider_ids=approved_provider_ids,
+        display_report_number=display_report_number,
     )
 
 
@@ -1120,9 +1185,7 @@ def report_print(claim_id, report_id):
 
     barriers = _get_selected_barriers(report)
 
-    display_report_number = None
-    if (report.report_type or "").lower() == "progress":
-        display_report_number = _compute_progress_report_number(claim.id, report.id)
+    display_report_number = _compute_claim_report_number(claim.id, report.id)
 
     # Convenience for templates that prefer attribute access
     try:
@@ -1139,7 +1202,6 @@ def report_print(claim_id, report_id):
             .filter(BillableItem.date_of_service <= report.dos_end)
         )
         q = q.filter(BillableItem.activity_code != "EXP")
-        q = q.filter(BillableItem.activity_code != "REP")
 
         items = (
             q.order_by(
@@ -1189,9 +1251,7 @@ def report_pdf(claim_id, report_id):
 
     barriers = _get_selected_barriers(report)
 
-    display_report_number = None
-    if (report.report_type or "").lower() == "progress":
-        display_report_number = _compute_progress_report_number(claim.id, report.id)
+    display_report_number = _compute_claim_report_number(claim.id, report.id)
 
     try:
         setattr(report, "display_report_number", display_report_number)
@@ -1212,7 +1272,6 @@ def report_pdf(claim_id, report_id):
             .filter(BillableItem.date_of_service <= report.dos_end)
         )
         q = q.filter(BillableItem.activity_code != "EXP")
-        q = q.filter(BillableItem.activity_code != "REP")
 
         items = (
             q.order_by(
