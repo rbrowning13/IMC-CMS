@@ -225,9 +225,10 @@
                   <input
                     type="text"
                     name="invoice_date"
-                    class="form-control form-control-sm auto-date-input"
-                    data-auto-date="1"
+                    class="form-control form-control-sm js-date"
+                    data-flatpickr="1"
                     inputmode="numeric"
+                    autocomplete="off"
                     placeholder="MM/DD/YYYY"
                     value="{{ invoice.invoice_date.strftime('%m/%d/%Y') if invoice.invoice_date else '' }}">
                 </div>

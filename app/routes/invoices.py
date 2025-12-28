@@ -772,19 +772,28 @@ def invoice_update(invoice_id: int):
         "invoiceDate",
         "date",
     )
-    if present and hasattr(invoice, "invoice_date"):
-        parsed = _parse_date_any(invoice_date_raw)
-        if invoice.invoice_date != parsed:
-            invoice.invoice_date = parsed
-            changed = True
 
-    # If marking Sent without a date, auto-set to today
-    if hasattr(invoice, "invoice_date"):
-        if new_status == "Sent" and invoice.invoice_date is None:
-            # Only auto-fill when the form did not provide a usable date.
-            if (not present) or (_parse_date_any(invoice_date_raw) is None and (invoice_date_raw or "").strip() == ""):
-                invoice.invoice_date = date.today()
+    parsed_invoice_date = None
+    if present:
+        parsed_invoice_date = _parse_date_any(invoice_date_raw)
+
+        # If the user typed something non-blank but it doesn't parse, do NOT wipe
+        # any existing stored date. Treat as a validation warning.
+        if parsed_invoice_date is None and (invoice_date_raw or "").strip():
+            flash("Invoice date must be a valid date (MM/DD/YYYY or YYYY-MM-DD).", "warning")
+        else:
+            # Blank clears; valid value sets
+            if hasattr(invoice, "invoice_date") and invoice.invoice_date != parsed_invoice_date:
+                invoice.invoice_date = parsed_invoice_date
                 changed = True
+
+    # If marking Sent without a usable date, auto-set to today
+    if hasattr(invoice, "invoice_date") and new_status == "Sent" and invoice.invoice_date is None:
+        # Auto-fill when the form did not provide a date, provided a blank date,
+        # or provided an invalid date.
+        if (not present) or not (invoice_date_raw or "").strip() or (parsed_invoice_date is None):
+            invoice.invoice_date = date.today()
+            changed = True
 
     # DOS range (Draft-only)
     if was_draft:
