@@ -9,8 +9,11 @@ Notes during transition:
 
 from __future__ import annotations
 
-from flask import flash, redirect, render_template, request, url_for
+import os
+import time
 
+from flask import current_app, flash, redirect, render_template, request, url_for
+from werkzeug.utils import secure_filename
 from sqlalchemy import func
 
 from ..utils import validation as _validation
@@ -84,6 +87,34 @@ def _contact_roles_text() -> str:
         # If the ContactRole table/model isn't available yet, keep Settings usable.
         return ""
 
+def _save_settings_upload(file_storage, kind: str) -> tuple[str | None, str | None]:
+    """
+    Save an uploaded settings image (logo/signature) under app/static/uploads
+    and return (relative_static_path, error_message).
+    """
+    if not file_storage or not getattr(file_storage, "filename", ""):
+        return None, None
+
+    filename = secure_filename(file_storage.filename or "")
+    _, ext = os.path.splitext(filename)
+    ext = (ext or "").lower()
+
+    allowed = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+    if ext not in allowed:
+        return None, f"{kind.title()} must be an image ({', '.join(sorted(allowed))})."
+
+    uploads_dir = os.path.join(current_app.static_folder, "uploads")
+    os.makedirs(uploads_dir, exist_ok=True)
+
+    # Use timestamped filenames to avoid browser cache issues
+    ts = int(time.time())
+    out_name = f"{kind}_{ts}{ext}"
+    out_path = os.path.join(uploads_dir, out_name)
+
+    file_storage.save(out_path)
+
+    # Path stored in DB is relative to /static for url_for('static', filename=...)
+    return f"uploads/{out_name}", None
 
 @bp.route("/settings", methods=["GET", "POST"])
 def settings_view():
@@ -112,6 +143,20 @@ def settings_view():
     if request.method == "POST":
         # Always read raw form values first so we can re-render without losing user input.
         form = request.form
+                # Handle logo/signature uploads (optional)
+        logo_rel_path, logo_err = _save_settings_upload(request.files.get("logo_file"), "logo")
+        sig_rel_path, sig_err = _save_settings_upload(request.files.get("signature_file"), "signature")
+
+        if error is None and logo_err:
+            error = logo_err
+        if error is None and sig_err:
+            error = sig_err
+
+        if error is None:
+            if logo_rel_path and hasattr(settings, "logo_path"):
+                settings.logo_path = logo_rel_path
+            if sig_rel_path and hasattr(settings, "signature_path"):
+                settings.signature_path = sig_rel_path
 
         # Text fields (blank means user wants to clear; we store None when possible)
         business_name_raw = (form.get("business_name") or "").strip()

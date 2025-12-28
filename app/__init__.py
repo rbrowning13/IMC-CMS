@@ -3,7 +3,7 @@ import os
 import json
 from pathlib import Path
 from datetime import datetime, date
-
+from sqlalchemy.exc import ProgrammingError, OperationalError
 from flask import Flask
 
 from dotenv import load_dotenv
@@ -196,15 +196,15 @@ def create_app():
 
         # Ensure there is at least one Settings row
         existing = Settings.query.first()
+
+
         if not existing:
             settings = Settings(
-                business_name="Impact Medical Consulting, PLLC",
-                documents_root=documents_root,
-                contact_roles_json=json.dumps(CONTACT_ROLE_DEFAULTS),
+                business_name="Impact Medical Consulting",
+                # … defaults …
             )
             db.session.add(settings)
             db.session.commit()
-
         _seed_reference_data()
 
     return app
