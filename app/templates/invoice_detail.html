@@ -410,96 +410,50 @@
               <h2 class="h6 mb-0">Totals</h2>
             </div>
             <div class="card-body">
-              {# ---- Totals (fallback compute from items if invoice totals aren't populated) ---- #}
-              {% set ns = namespace(hours=invoice.total_hours or 0, miles=invoice.total_miles or 0, exp=invoice.total_expenses or 0, tele=0) %}
+              {# ---- Totals: ALWAYS prefer canonical route math (fin) so this matches Payments and Print ---- #}
+              {% set _fin = fin if fin is defined else none %}
 
-              {# Heuristic buckets by activity code; invoice_print already has the authoritative logic #}
-              {% if (items is defined and items) and (ns.hours == 0 and ns.miles == 0 and ns.exp == 0) %}
-                {% for _it in items %}
-                  {% set _code = (_it.activity_code or _it.code or '')|upper %}
-                  {% set _qty = 0 %}
-                  {% if _it.quantity is not none %}
-                    {% set _qty = _it.quantity %}
-                  {% elif _it.qty is defined and _it.qty is not none %}
-                    {% set _qty = _it.qty %}
-                  {% endif %}
+              {% set hours_total = 0.0 %}
+              {% set miles_total = 0.0 %}
+              {% set expenses_total = 0.0 %}
+              {% set invoice_total_amt = 0.0 %}
+              {% set rates_rows = [] %}
 
-                  {# Expenses: quantity represents dollars #}
-                  {% if _code in ['EXP','EX','EXPENSE','EXPENSES'] %}
-                    {% set ns.exp = ns.exp + (_qty or 0) %}
-
-                  {# Mileage-ish codes #}
-                  {% elif _code in ['MIL','MILE','MILEAGE','TRAVEL'] %}
-                    {% set ns.miles = ns.miles + (_qty or 0) %}
-
-                  {# Telephonic-ish codes #}
-                  {% elif _code in ['TC','TCM','TEL','PHONE','CALL'] %}
-                    {% set ns.tele = ns.tele + (_qty or 0) %}
-
-                  {# Default: billable time (hours) #}
-                  {% else %}
-                    {% set ns.hours = ns.hours + (_qty or 0) %}
-                  {% endif %}
-                {% endfor %}
+              {% if _fin %}
+                {% if _fin is mapping %}
+                  {% set hours_total = _fin.get('hours_total', _fin.get('total_hours', 0.0)) or 0.0 %}
+                  {% set miles_total = _fin.get('miles_total', _fin.get('total_miles', 0.0)) or 0.0 %}
+                  {% set expenses_total = _fin.get('expenses_total', _fin.get('total_expenses', 0.0)) or 0.0 %}
+                  {% set invoice_total_amt = _fin.get('invoice_total', 0.0) or 0.0 %}
+                  {% set rates_rows = _fin.get('rates_used_rows', []) or [] %}
+                {% else %}
+                  {% if _fin.hours_total is defined %}{% set hours_total = _fin.hours_total %}{% elif _fin.total_hours is defined %}{% set hours_total = _fin.total_hours %}{% endif %}
+                  {% if _fin.miles_total is defined %}{% set miles_total = _fin.miles_total %}{% elif _fin.total_miles is defined %}{% set miles_total = _fin.total_miles %}{% endif %}
+                  {% if _fin.expenses_total is defined %}{% set expenses_total = _fin.expenses_total %}{% elif _fin.total_expenses is defined %}{% set expenses_total = _fin.total_expenses %}{% endif %}
+                  {% if _fin.invoice_total is defined %}{% set invoice_total_amt = _fin.invoice_total %}{% endif %}
+                  {% if _fin.rates_used_rows is defined %}{% set rates_rows = _fin.rates_used_rows %}{% endif %}
+                {% endif %}
+              {% else %}
+                {# Fallback: use stored invoice totals if fin wasn't passed (should be rare) #}
+                {% set hours_total = invoice.total_hours or 0.0 %}
+                {% set miles_total = invoice.total_miles or 0.0 %}
+                {% set expenses_total = invoice.total_expenses or 0.0 %}
+                {% set invoice_total_amt = invoice.total_amount or 0.0 %}
               {% endif %}
-
-              {% set _hours_qty = ns.hours %}
-              {% set _miles_qty = ns.miles %}
-              {% set _exp_amt = ns.exp %}
-              {% set _tele_qty = ns.tele %}
 
               <dl class="row small mb-1">
                 <dt class="col-7">Billable hours</dt>
-                <dd class="col-5 text-end">
-                  {{ "%.2f"|format(_hours_qty or 0) }}
-                </dd>
+                <dd class="col-5 text-end">{{ "%.2f"|format(hours_total or 0) }}</dd>
 
                 <dt class="col-7">Mileage (miles)</dt>
-                <dd class="col-5 text-end">
-                  {{ "%.2f"|format(_miles_qty or 0) }}
-                </dd>
+                <dd class="col-5 text-end">{{ "%.2f"|format(miles_total or 0) }}</dd>
 
                 <dt class="col-7">Expenses ($)</dt>
-                <dd class="col-5 text-end">
-                  {{ "%.2f"|format(_exp_amt or 0) }}
-                </dd>
+                <dd class="col-5 text-end">{{ "%.2f"|format(expenses_total or 0) }}</dd>
               </dl>
-              {# ---- Rates used (use effective rates passed from the route; fall back only if needed) ---- #}
 
-              {# Effective rates from invoices.py (carrier override handled there) #}
-              {% set _rate_hourly = (hourly_rate if hourly_rate is defined else None) %}
-              {% set _rate_mileage = (mileage_rate if mileage_rate is defined else None) %}
-
-              {% set _src_hourly = (hourly_rate_source if hourly_rate_source is defined else None) %}
-              {% set _src_mile = (mileage_rate_source if mileage_rate_source is defined else None) %}
-
-              {# Fallbacks (should rarely be needed) #}
-              {% if _rate_hourly is none %}
-                {% if invoice.rate_hourly is defined and invoice.rate_hourly is not none %}
-                  {% set _rate_hourly = invoice.rate_hourly %}
-                {% elif invoice.hourly_rate is defined and invoice.hourly_rate is not none %}
-                  {% set _rate_hourly = invoice.hourly_rate %}
-                {% endif %}
-              {% endif %}
-
-              {% if _rate_mileage is none %}
-                {% if invoice.rate_mileage is defined and invoice.rate_mileage is not none %}
-                  {% set _rate_mileage = invoice.rate_mileage %}
-                {% elif invoice.mileage_rate is defined and invoice.mileage_rate is not none %}
-                  {% set _rate_mileage = invoice.mileage_rate %}
-                {% endif %}
-              {% endif %}
-
-              {# If sources weren't provided, label as Default (UI only) #}
-              {% if _src_hourly is none %}{% set _src_hourly = 'Default' %}{% endif %}
-              {% if _src_mile is none %}{% set _src_mile = 'Default' %}{% endif %}
-
-              {% set _sub_hours = ((_hours_qty or 0) * (_rate_hourly or 0)) %}
-              {% set _sub_miles = ((_miles_qty or 0) * (_rate_mileage or 0)) %}
-              {% set _sub_exp = (_exp_amt or 0) %}
-              {% set _sub_total = (_sub_hours + _sub_miles + _sub_exp) %}
-
-              {% if _rate_hourly is not none or _rate_mileage is not none %}
+              {# Rates used table should come from canonical helper (rates_used_rows) #}
+              {% if rates_rows %}
                 <hr class="my-2">
                 <div class="small text-muted mb-2">Rates used</div>
 
@@ -512,37 +466,44 @@
                       </tr>
                     </thead>
                     <tbody>
-                      {% if _rate_hourly is not none %}
+                      {% for r in rates_rows %}
                         <tr>
                           <td>
-                            Hourly
-                            <span class="text-muted">— ${{ "%.2f"|format(_rate_hourly) }}</span>
-                            <span class="text-muted"> {{ _src_hourly }}</span>
+                            {{ r.label or r.get('label') }}
+                            {% if (r.rate is defined or (r is mapping and r.get('rate') is not none)) %}
+                              {% set _r_rate = (r.rate if r.rate is defined else r.get('rate')) %}
+                              {% if (r.label or r.get('label')) == 'Mileage' %}
+                                <span class="text-muted">— ${{ "%.4f"|format(_r_rate or 0) }}/mi</span>
+                              {% else %}
+                                <span class="text-muted">— ${{ "%.2f"|format(_r_rate or 0) }}</span>
+                              {% endif %}
+                            {% endif %}
+                            {% set _r_src = (r.source if r.source is defined else (r.get('source') if r is mapping else None)) %}
+                            {% if _r_src %}<span class="text-muted"> {{ _r_src }}</span>{% endif %}
                           </td>
-                          <td class="text-end">${{ "%.2f"|format(_sub_hours) }}</td>
+                          {% set _r_sub = (r.subtotal if r.subtotal is defined else (r.get('subtotal') if r is mapping else 0)) %}
+                          <td class="text-end">${{ "%.2f"|format(_r_sub or 0) }}</td>
                         </tr>
-                      {% endif %}
+                      {% endfor %}
 
-                      {% if _rate_mileage is not none %}
+                      {% if (expenses_total or 0) != 0 %}
                         <tr>
                           <td>
-                            Mileage
-                            <span class="text-muted">— ${{ "%.4f"|format(_rate_mileage) }}/mi</span>
-                            <span class="text-muted"> {{ _src_mile }}</span>
+                            Expenses
+                            <span class="text-muted">— pass-through</span>
                           </td>
-                          <td class="text-end">${{ "%.2f"|format(_sub_miles) }}</td>
+                          <td class="text-end">${{ "%.2f"|format(expenses_total or 0) }}</td>
                         </tr>
                       {% endif %}
 
                       <tr>
                         <td class="fw-bold">Total</td>
-                        <td class="text-end fw-bold">${{ "%.2f"|format(_sub_total) }}</td>
+                        <td class="text-end fw-bold">${{ "%.2f"|format(invoice_total_amt or 0) }}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               {% endif %}
-              
             </div>
           </div>
         </div>
