@@ -19,11 +19,15 @@
 
     <form method="post">
       <div class="row mb-3">
-        <div class="col-md-6">
+        <div class="col-md-4">
           <label class="form-label">Name<span class="text-danger">*</span></label>
           <input type="text" name="name" class="form-control" value="{{ request.form.get('name','') }}" required>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-4">
+          <label class="form-label">Specialty</label>
+          <input type="text" name="specialty" class="form-control" value="{{ request.form.get('specialty','') }}">
+        </div>
+        <div class="col-md-4">
           <label class="form-label">Address 1</label>
           <input type="text" name="address1" class="form-control" value="{{ request.form.get('address1','') }}">
         </div>

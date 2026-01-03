@@ -121,6 +121,10 @@ class Provider(db.Model):
     phone_ext = db.Column(db.String(20))
     fax = db.Column(db.String(50))
     email = db.Column(db.String(255))
+
+    # Provider specialty (e.g., Orthopedics, PT, Neurology)
+    specialty = db.Column(db.String(255))
+
     notes = db.Column(db.Text)
 
     @property

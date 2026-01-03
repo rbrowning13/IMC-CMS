@@ -550,8 +550,9 @@ def claim_detail(claim_id: int):
     billable_items = (
         BillableItem.query.filter_by(claim_id=claim.id)
         .order_by(
-            BillableItem.date_of_service.desc().nullslast(),
-            BillableItem.created_at.desc(),
+            BillableItem.date_of_service.asc().nullslast(),
+            BillableItem.created_at.asc(),
+            BillableItem.id.asc(),
         )
         .all()
     )
@@ -610,8 +611,8 @@ def claim_detail(claim_id: int):
     invoices = (
         Invoice.query.filter_by(claim_id=claim.id)
         .order_by(
-            Invoice.invoice_date.desc().nullslast(),
-            Invoice.id.desc(),
+            Invoice.invoice_date.asc().nullslast(),
+            Invoice.id.asc(),
         )
         .all()
     )

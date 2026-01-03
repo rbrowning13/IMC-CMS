@@ -8,6 +8,7 @@ from datetime import datetime, date
 from markupsafe import Markup, escape
 from sqlalchemy.exc import ProgrammingError, OperationalError
 from flask import Flask
+from flask_migrate import Migrate
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -21,6 +22,9 @@ try:
 except ImportError:
     # Fallback stub to avoid hard crashes if extensions isn&apos;t imported yet.
     db = None
+
+# Flask-Migrate (Alembic integration)
+migrate = Migrate()
 
 # --- Minimal filter stubs to keep templates working even if the real helpers live elsewhere ---
 def format_date(value, fmt="%m/%d/%Y"):
@@ -216,6 +220,8 @@ def create_app():
 
     # Initialize extensions (register this app with the shared db instance)
     db.init_app(app)
+    # Initialize migrations
+    migrate.init_app(app, db)
 
     # Register blueprints
     from .routes import bp as main_bp

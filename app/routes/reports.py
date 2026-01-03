@@ -287,6 +287,40 @@ def _get_selected_barriers(report: Report) -> list[BarrierOption]:
     return ordered
 
 
+def _find_overlapping_reports(
+    claim_id: int,
+    dos_start: date | None,
+    dos_end: date | None,
+    exclude_report_id: int | None = None,
+) -> list[Report]:
+    """Return reports on the same claim whose DOS range overlaps [dos_start, dos_end].
+
+    Overlap rule (inclusive): existing.dos_start <= dos_end AND existing.dos_end >= dos_start
+
+    Notes:
+    - Only enforces overlap checks when BOTH dates are present on BOTH reports.
+      (If an existing report has missing DOS dates, we skip it rather than blocking edits.)
+    """
+    if not dos_start or not dos_end:
+        return []
+
+    q = Report.query.filter(Report.claim_id == claim_id)
+    if exclude_report_id is not None:
+        q = q.filter(Report.id != exclude_report_id)
+
+    # Only compare against reports that have both dates.
+    q = q.filter(Report.dos_start.isnot(None)).filter(Report.dos_end.isnot(None))
+
+    # Inclusive overlap: start <= other_end AND end >= other_start
+    q = q.filter(Report.dos_start <= dos_end).filter(Report.dos_end >= dos_start)
+
+    # Order for stable messaging
+    return q.order_by(
+        Report.dos_start.asc().nullslast(),
+        Report.dos_end.asc().nullslast(),
+        Report.id.asc(),
+    ).all()
+
 # Helper: compute 1-based sequence number for progress reports within a claim.
 
 def _compute_progress_report_number(claim_id: int, report_id: int) -> int | None:
@@ -426,6 +460,24 @@ def report_new(claim_id):
                 dos_start = today
 
         dos_end = today
+
+    # Prevent overlapping DOS ranges for reports on the same claim.
+    if dos_start and dos_end and dos_start > dos_end:
+        flash("DOS Start cannot be after DOS End.", "danger")
+        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+    overlaps = _find_overlapping_reports(claim.id, dos_start, dos_end)
+    if overlaps:
+        parts = []
+        for r in overlaps[:3]:
+            rt = (r.report_type or "report").title()
+            parts.append(f"{rt} #{r.id} ({r.dos_start.strftime('%m/%d/%Y')}–{r.dos_end.strftime('%m/%d/%Y')})")
+        more = "" if len(overlaps) <= 3 else f" (+{len(overlaps) - 3} more)"
+        flash(
+            "Report dates overlap an existing report on this claim: " + ", ".join(parts) + more,
+            "danger",
+        )
+        return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
     report = Report(
         claim_id=claim.id,
@@ -908,8 +960,23 @@ def report_edit(claim_id, report_id):
         if not report_type or report_type not in valid_types:
             error = "Report type is required."
 
+        if not error and dos_start and dos_end and dos_start > dos_end:
+            error = "DOS Start cannot be after DOS End."
+
+        if not error:
+            overlaps = _find_overlapping_reports(claim.id, dos_start, dos_end, exclude_report_id=report.id)
+            if overlaps:
+                parts = []
+                for r in overlaps[:3]:
+                    rt = (r.report_type or "report").title()
+                    parts.append(f"{rt} #{r.id} ({r.dos_start.strftime('%m/%d/%Y')}–{r.dos_end.strftime('%m/%d/%Y')})")
+                more = "" if len(overlaps) <= 3 else f" (+{len(overlaps) - 3} more)"
+                error = "Report dates overlap an existing report on this claim: " + ", ".join(parts) + more
+
         if error:
-            flash(error, "danger")
+            # NOTE: Do not `flash()` here because the template already renders the
+            # `error` variable. Flashing would duplicate the message (banner + toast).
+            pass
         else:
             report.report_type = report_type
             report.dos_start = dos_start

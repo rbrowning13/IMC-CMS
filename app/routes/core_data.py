@@ -1251,6 +1251,7 @@ def provider_new():
             phone=(request.form.get("phone") or "").strip() or None,
             fax=(request.form.get("fax") or "").strip() or None,
             email=(request.form.get("email") or "").strip() or None,
+            specialty=(request.form.get("specialty") or "").strip() or None,
         )
         if hasattr(provider, "phone_ext"):
             provider.phone_ext = _clean_phone_ext(request.form.get("phone_ext"))
@@ -1342,6 +1343,8 @@ def provider_edit(provider_id: int):
             provider.phone_ext = _clean_phone_ext(request.form.get("phone_ext"))
         provider.fax = (request.form.get("fax") or "").strip() or None
         provider.email = (request.form.get("email") or "").strip() or None
+        if hasattr(provider, "specialty"):
+            provider.specialty = (request.form.get("specialty") or "").strip() or None
         # Notes is optional / may not exist in older schemas.
         # Some templates historically used `note` instead of `notes`.
         if hasattr(provider, "notes"):
@@ -1381,6 +1384,7 @@ def provider_edit(provider_id: int):
             "phone_ext",
             "fax",
             "email",
+            "specialty",
         ],
         defaults={"state": "ID"},
     )

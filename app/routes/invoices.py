@@ -462,7 +462,7 @@ def _compute_totals_from_items(invoice: Invoice, rates: dict) -> dict:
             invoice_total += qty
         elif code_u in telephonic_codes:
             total_hours += qty
-            invoice_total += qty * hourly_rate
+            invoice_total += qty * telephonic_rate
         else:
             total_hours += qty
             invoice_total += qty * hourly_rate
@@ -491,13 +491,18 @@ def invoice_new_for_claim(claim_id: int):
     if complete_clause is not None:
         q = q.filter(complete_clause)
 
+    service_date = _billable_service_date_attr()
+    # Prefer chronological ordering by service date
+    if service_date is not None:
+        q = q.order_by(service_date.asc(), BillableItem.id.asc())
+    else:
+        q = q.order_by(BillableItem.id.asc())
     items = q.all()
 
     if not items:
         flash("This claim has no complete billable items to invoice yet.", "warning")
         return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
-    service_date = _billable_service_date_attr()
     dated_items = [i for i in items if (service_date is not None and getattr(i, service_date.key, None))]
     if dated_items:
         dos_start = min(getattr(i, service_date.key) for i in dated_items)
@@ -526,7 +531,7 @@ def invoice_new_for_claim(claim_id: int):
     _calculate_invoice_totals(invoice)
     db.session.commit()
 
-    return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
+    return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
 
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/invoice/new", methods=["GET"])
@@ -559,17 +564,33 @@ def invoice_new_for_report(claim_id: int, report_id: int):
     if complete_clause is not None:
         q = q.filter(complete_clause)
 
+    # Warn if any uninvoiced items are missing a service date (they cannot be auto-gathered into a DOS window)
+    try:
+        missing_dos_count = q_base.filter(service_date.is_(None)).count()
+    except Exception:
+        missing_dos_count = 0
+
+    if missing_dos_count:
+        flash(
+            f"Warning: {missing_dos_count} uninvoiced billable item(s) have no Date of Service and were skipped for invoice auto-gather.",
+            "warning",
+        )
+
     items = (
-        q.filter(service_date >= report.dos_start)
+        q.filter(service_date.isnot(None))
+        .filter(service_date >= report.dos_start)
         .filter(service_date <= report.dos_end)
+        .order_by(service_date.asc(), BillableItem.id.asc())
         .all()
     )
 
     if not items:
         # Fallback: if items exist in-range but aren't flagged complete, don't hard-block.
         items_any = (
-            q_base.filter(service_date >= report.dos_start)
+            q_base.filter(service_date.isnot(None))
+            .filter(service_date >= report.dos_start)
             .filter(service_date <= report.dos_end)
+            .order_by(service_date.asc(), BillableItem.id.asc())
             .all()
         )
         if items_any:
@@ -605,10 +626,14 @@ def invoice_new_for_report(claim_id: int, report_id: int):
     _calculate_invoice_totals(invoice)
     db.session.commit()
 
-    return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
+    return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
 
-@bp.route("/billing/<int:invoice_id>")
+ # NOTE: Some installations also define these billing endpoints in another routes module.
+ # To avoid Flask endpoint collisions during blueprint registration, we assign unique
+ # endpoint names here. The canonical endpoint name used by templates should remain
+ # `main.invoice_detail` (provided elsewhere).
+@bp.route("/billing/<int:invoice_id>", endpoint="invoice_detail_invoices")
 def invoice_detail(invoice_id: int):
     """Invoice detail screen."""
 
@@ -623,6 +648,21 @@ def invoice_detail(invoice_id: int):
 
     # Prefer relationship name used by the model
     items = getattr(invoice, "items", None) or getattr(invoice, "billable_items", None) or []
+
+    # Ensure line-items are always chronological by service date (undated last)
+    service_date = _billable_service_date_attr()
+    if service_date is not None:
+        try:
+            items = sorted(
+                list(items),
+                key=lambda i: (
+                    getattr(i, service_date.key, None) is None,
+                    getattr(i, service_date.key, None) or date.min,
+                    getattr(i, "id", 0),
+                ),
+            )
+        except Exception:
+            pass
 
     claim = invoice.claim
     fin = _compute_invoice_financials(invoice, settings, claim)
@@ -666,7 +706,7 @@ def invoice_detail(invoice_id: int):
     )
 
 
-@bp.route("/billing/<int:invoice_id>/print")
+@bp.route("/billing/<int:invoice_id>/print", endpoint="invoice_print_invoices")
 def invoice_print(invoice_id: int):
     """Print-friendly invoice view."""
 
@@ -679,6 +719,21 @@ def invoice_print(invoice_id: int):
         settings = None
 
     items = getattr(invoice, "items", None) or getattr(invoice, "billable_items", None) or []
+
+    # Ensure line-items are always chronological by service date (undated last)
+    service_date = _billable_service_date_attr()
+    if service_date is not None:
+        try:
+            items = sorted(
+                list(items),
+                key=lambda i: (
+                    getattr(i, service_date.key, None) is None,
+                    getattr(i, service_date.key, None) or date.min,
+                    getattr(i, "id", 0),
+                ),
+            )
+        except Exception:
+            pass
 
     fin = _compute_invoice_financials(invoice, settings, invoice.claim)
     payments = fin.get("payments", []) if isinstance(fin, dict) else []
@@ -703,7 +758,7 @@ def invoice_print(invoice_id: int):
     )
 
 
-@bp.route("/billing/<int:invoice_id>/update", methods=["POST"])
+@bp.route("/billing/<int:invoice_id>/update", methods=["POST"], endpoint="invoice_update_invoices")
 def invoice_update(invoice_id: int):
     """Update invoice header fields (Draft-only).
 
@@ -825,17 +880,17 @@ def invoice_update(invoice_id: int):
     else:
         flash("No changes detected to save.", "info")
 
-    return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
+    return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
 
-@bp.route("/billing/<int:invoice_id>/add-uninvoiced", methods=["POST"])
+@bp.route("/billing/<int:invoice_id>/add-uninvoiced", methods=["POST"], endpoint="invoice_add_uninvoiced_invoices")
 def invoice_add_uninvoiced(invoice_id: int):
     """Attach all complete, uninvoiced billables for this claim to this invoice (Draft-only)."""
 
     invoice = Invoice.query.get_or_404(invoice_id)
 
     if not _invoice_is_draft(invoice):
-        return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
+        return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
     claim = invoice.claim
 
@@ -857,7 +912,7 @@ def invoice_add_uninvoiced(invoice_id: int):
             )
             items = items_any
         else:
-            return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
+            return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
     for item in items:
         item.invoice_id = invoice.id
@@ -865,10 +920,10 @@ def invoice_add_uninvoiced(invoice_id: int):
     _calculate_invoice_totals(invoice)
     db.session.commit()
 
-    return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
+    return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
 
-@bp.route("/billing/<int:invoice_id>/delete", methods=["POST"])
+@bp.route("/billing/<int:invoice_id>/delete", methods=["POST"], endpoint="invoice_delete_invoices")
 def invoice_delete(invoice_id: int):
     """Delete a Draft invoice and return its items to the claim."""
 
@@ -876,7 +931,7 @@ def invoice_delete(invoice_id: int):
 
     if not _invoice_is_draft(invoice):
         flash("Only Draft invoices can be deleted.", "warning")
-        return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
+        return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
     claim_id = invoice.claim_id
 
@@ -893,24 +948,24 @@ def invoice_delete(invoice_id: int):
     return redirect(url_for("main.claim_detail", claim_id=claim_id))
 
 
-@bp.route("/billing/<int:invoice_id>/items/<int:item_id>/remove", methods=["POST"])
+@bp.route("/billing/<int:invoice_id>/items/<int:item_id>/remove", methods=["POST"], endpoint="invoice_remove_item_invoices")
 def invoice_remove_item(invoice_id: int, item_id: int):
     """Remove a single billable item from a Draft invoice."""
 
     invoice = Invoice.query.get_or_404(invoice_id)
 
     if not _invoice_is_draft(invoice):
-        return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
+        return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
     item = BillableItem.query.get_or_404(item_id)
 
     # Only allow removing items that belong to this invoice.
     if getattr(item, "invoice_id", None) != invoice.id:
-        return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
+        return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
     item.invoice_id = None
 
     _calculate_invoice_totals(invoice)
     db.session.commit()
 
-    return redirect(url_for("main.invoice_detail", invoice_id=invoice.id))
+    return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))

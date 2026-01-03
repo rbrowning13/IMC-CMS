@@ -130,8 +130,8 @@
   }
   .rp-dl dd { margin: 2px 0 0 0; color: var(--ink); font-size: 0.98rem; }
 
-  .rp-section { margin-top: 22px; break-inside: avoid; page-break-inside: avoid; }
-  .rp-section h3 { margin: 0 0 8px 0; font-size: 1.05rem; font-weight: 700; color: var(--ink); break-after: avoid; page-break-after: avoid; }
+  .rp-section { margin-top: 22px; }
+  .rp-section h3 { margin: 0 0 8px 0; font-size: 1.05rem; font-weight: 700; color: var(--ink); }
   .rp-body { color: var(--ink); line-height: 1.5; font-size: 0.98rem; }
   .rp-na { color: var(--muted); }
 
@@ -219,20 +219,6 @@
     max-width: 360px;
   }
 
-  /* Face sheet page break (cover page before the report) */
-  .rp-pagebreak {
-    height: 1px;
-    background: transparent;
-    margin: 0;
-  }
-
-  @media print {
-    .rp-pagebreak {
-      page-break-after: always;
-      break-after: page;
-      height: 0;
-    }
-  }
 
   .rp-facesheet-title {
     margin: 0;
@@ -247,7 +233,7 @@
     color: var(--muted) !important;
   }
 
-  .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+  .avoid-break { }
 
   @media print {
     .no-print { display: none !important; }
@@ -411,6 +397,9 @@
           {% for p in _providers %}
             <div class="rp-provider">
               <p class="rp-pname">{{ p.name or '—' }}</p>
+              {% if p.specialty %}
+                <p class="rp-pline"><strong>Specialty:</strong> {{ p.specialty }}</p>
+              {% endif %}
 
               {% if p.address1 or p.address2 or p.city or p.state or p.postal_code %}
                 <p class="rp-pline">
@@ -563,6 +552,7 @@
     {% endif %}
 
     {% if cm_activities and cm_activities|length > 0 %}
+      {% set cm_activities = cm_activities|sort(attribute='date_of_service') %}
       <div class="rp-rule" style="margin-top: 26px;"></div>
 
       <div class="rp-section">

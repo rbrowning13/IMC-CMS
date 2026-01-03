@@ -168,7 +168,10 @@ def billing_list():
     """List invoices (Billing page) with canonical A/R math + buckets."""
 
     settings = Settings.query.first()
-    invoices = Invoice.query.order_by(Invoice.id.desc()).all()
+    invoices = Invoice.query.order_by(
+        Invoice.invoice_date.desc().nullslast(),
+        Invoice.id.desc()
+    ).all()
 
     # payment_terms_default is now numeric days (stored as string or int depending on data)
     def _terms_days(s: Settings | None) -> int:
@@ -612,4 +615,51 @@ def billable_delete(claim_id, item_id):
         message="Are you sure you want to delete this billable item?",
         cancel_url=url_for("main.claim_detail", claim_id=claim.id),
         confirm_url=url_for("main.billable_delete", claim_id=claim.id, item_id=item.id),
+    )
+
+
+# --- Invoice detail route ---
+
+
+@bp.route("/billing/<int:invoice_id>")
+def invoice_detail(invoice_id: int):
+    """Show a single invoice page with ordered line items and payments."""
+    inv = Invoice.query.get_or_404(invoice_id)
+    settings = Settings.query.first()
+    math = _get_invoice_math(inv, settings)
+
+    # Ordered line items: by service date (asc, nullslast), then id (asc)
+    line_items = (
+        BillableItem.query.filter_by(invoice_id=inv.id)
+        .order_by(BillableItem.date_of_service.asc().nullslast(), BillableItem.id.asc())
+        .all()
+    )
+
+    # Payments: order by paid_date (asc, nullslast), then id (asc)
+    # Use the correct field depending on Payment model
+    # We assume paid_date exists; if not, try payment_date, else date
+    if hasattr(Payment, "paid_date"):
+        payment_date_col = Payment.paid_date
+    elif hasattr(Payment, "payment_date"):
+        payment_date_col = Payment.payment_date
+    else:
+        payment_date_col = Payment.date
+    payments = (
+        Payment.query.filter_by(invoice_id=inv.id)
+        .order_by(payment_date_col.asc().nullslast(), Payment.id.asc())
+        .all()
+    )
+
+    return render_template(
+        "invoice_detail.html",
+        active_page="billing",
+        invoice=inv,
+        line_items=line_items,
+        payments=payments,
+        invoice_math=math,
+        # Back-compat fields (optional)
+        invoice_total=math["invoice_total"],
+        amount_paid=math["amount_paid"],
+        balance_due=math["balance_due"],
+        settings=settings,
     )
