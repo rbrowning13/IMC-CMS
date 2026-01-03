@@ -55,9 +55,11 @@
       <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary btn-sm">
         Back to Claim
       </a>
-      <a href="{{ url_for('main.report_print', claim_id=claim.id, report_id=report.id) }}"
-         class="btn btn-outline-secondary btn-sm">
-        Preview / Print
+      <a href="{{ url_for('main.report_pdf', claim_id=claim.id, report_id=report.id, view=1) }}"
+         class="btn btn-outline-secondary btn-sm"
+         target="_blank"
+         rel="noopener">
+        View PDF
       </a>
       <a href="{{ url_for('main.report_pdf', claim_id=claim.id, report_id=report.id) }}"
          class="btn btn-outline-primary btn-sm">
@@ -418,17 +420,8 @@
                             <td class="text-end">
                               <a href="{{ url_for('main.report_document_download', report_document_id=d.id) }}"
                                  class="btn btn-sm btn-outline-secondary me-1">
-                                Open
+                                Download
                               </a>
-
-                              <button
-                                type="submit"
-                                class="btn btn-sm btn-outline-secondary me-1"
-                                formaction="{{ url_for('main.report_document_open_location', report_document_id=d.id) }}"
-                                formmethod="post"
-                              >
-                                Open Location
-                              </button>
 
                               <button
                                 type="submit"

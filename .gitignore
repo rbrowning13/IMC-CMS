@@ -48,3 +48,6 @@ dist/
 
 # Generated/static artifacts
 app/static/logos/
+
+# Local document storage (runtime)
+documents/

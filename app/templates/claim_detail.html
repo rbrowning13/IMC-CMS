@@ -3,6 +3,42 @@
 
 {% block content %}
 <div class="container-fluid">
+  <style>
+    /* Subtle zebra striping for billables table (like Excel alternating rows)
+       Use Bootstrap table CSS variables so it persists (not just on hover). */
+    #billables-table tbody tr:nth-child(even):not(.billable-locked) {
+      --bs-table-bg: #fafafa;
+    }
+
+    /* Billable items linked to non-Draft invoices should look locked */
+    #billables-table tr.billable-locked {
+      --bs-table-bg: #f2f2f2;
+      --bs-table-color: #666;
+      background: #f2f2f2 !important;
+      color: #666;
+    }
+    /* Ensure cell backgrounds also follow the row background (Bootstrap can override) */
+    #billables-table tr.billable-locked > * {
+      background-color: #f2f2f2 !important;
+      border-color: rgba(0, 0, 0, 0.12);
+    }
+
+    /* If table-hover is enabled, keep locked rows from changing color on hover */
+    #billables-table.table-hover tbody tr.billable-locked:hover {
+      background: #f2f2f2 !important;
+    }
+    #billables-table.table-hover tbody tr.billable-locked:hover > * {
+      background-color: #f2f2f2 !important;
+    }
+
+    #billables-table tr.billable-locked .btn {
+      opacity: 0.55;
+      pointer-events: none; /* belt + suspenders even though they're disabled */
+    }
+    #billables-table tr.billable-locked .badge {
+      opacity: 0.9;
+    }
+  </style>
   <!-- Header row -->
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
@@ -233,7 +269,11 @@
                         {% else %}
                           {% set units = 'hr' %}
                         {% endif %}
-                        <tr>
+                        {# If the item is linked to an invoice that is not Draft, treat it as locked #}
+                        {% set inv_row = invoice_map.get(item.invoice_id) if item.invoice_id else None %}
+                        {% set inv_status = (inv_row.status if inv_row and inv_row.status else 'Draft') if item.invoice_id else 'Draft' %}
+                        {% set is_locked = (item.invoice_id and inv_status != 'Draft') %}
+                        <tr class="{% if is_locked %}billable-locked{% endif %}">
                           <td>
                             {% if item.date_of_service %}
                               {{ item.date_of_service.strftime('%m/%d/%Y') }}
@@ -285,18 +325,29 @@
                             {% endif %}
                           </td>
                           <td class="text-end">
-                            <a href="{{ url_for('main.billable_edit', claim_id=claim.id, item_id=item.id) }}"
-                               class="btn btn-outline-secondary btn-sm">
-                              Edit
-                            </a>
-                            <form method="post"
-                                  action="{{ url_for('main.billable_delete', claim_id=claim.id, item_id=item.id) }}"
-                                  class="d-inline"
-                                  onsubmit="return confirm('Delete this item?');">
-                              <button type="submit" class="btn btn-outline-danger btn-sm">
+                            {% if is_locked %}
+                              <button type="button" class="btn btn-outline-secondary btn-sm" disabled
+                                      title="This billable item is locked because the invoice is {{ inv_status }}.">
+                                Edit
+                              </button>
+                              <button type="button" class="btn btn-outline-danger btn-sm" disabled
+                                      title="This billable item is locked because the invoice is {{ inv_status }}.">
                                 Delete
                               </button>
-                            </form>
+                            {% else %}
+                              <a href="{{ url_for('main.billable_edit', claim_id=claim.id, item_id=item.id) }}"
+                                 class="btn btn-outline-secondary btn-sm">
+                                Edit
+                              </a>
+                              <form method="post"
+                                    action="{{ url_for('main.billable_delete', claim_id=claim.id, item_id=item.id) }}"
+                                    class="d-inline"
+                                    onsubmit="return confirm('Delete this item?');">
+                                <button type="submit" class="btn btn-outline-danger btn-sm">
+                                  Delete
+                                </button>
+                              </form>
+                            {% endif %}
                           </td>
                         </tr>
                       {% endfor %}
@@ -627,16 +678,8 @@
 <td class="text-end">
   <a href="{{ url_for('main.claim_document_download', claim_id=claim.id, doc_id=d.id) }}"
      class="btn btn-outline-secondary btn-sm">
-    Open
+    Download
   </a>
-
-  <form method="post"
-        action="{{ url_for('main.claim_document_open_location', claim_id=claim.id, doc_id=d.id) }}"
-        class="d-inline ms-1">
-    <button type="submit" class="btn btn-outline-secondary btn-sm">
-      Open Location
-    </button>
-  </form>
 
   <form method="post"
         action="{{ url_for('main.claim_document_delete', claim_id=claim.id, doc_id=d.id) }}"
@@ -705,7 +748,7 @@
                   </div>
                 </div>
                 <p class="text-muted mt-2 mb-0 small">
-                  Allowed: pdf, doc, docx, rtf, txt, jpg, jpeg, png, mp4, mov, avi. Files are stored under your configured Documents Root on this computer. Use <strong>Open Location</strong> to open the containing folder in Finder/Explorer without making a copy.
+                  Allowed: pdf, doc, docx, rtf, txt, jpg, jpeg, png, mp4, mov, avi. Files are stored under your configured Documents Root on this computer.
                 </p>
               </form>
             </div>

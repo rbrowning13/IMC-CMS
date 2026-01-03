@@ -499,12 +499,32 @@ def payment_delete(payment_id: int):
     return redirect(return_to)
 
 
+def _billable_is_locked(item: BillableItem) -> bool:
+    """Return True if this billable is linked to an invoice that is not Draft."""
+
+    invoice_id = getattr(item, "invoice_id", None)
+    if not invoice_id:
+        return False
+
+    inv = Invoice.query.get(int(invoice_id))
+    status = (getattr(inv, "status", None) or "Draft") if inv else "Draft"
+    return status != "Draft"
+
+
 @bp.route("/claims/<int:claim_id>/billable/<int:item_id>/edit", methods=["GET", "POST"])
 def billable_edit(claim_id, item_id):
     """Edit a billable item for a claim."""
 
     claim = Claim.query.get_or_404(claim_id)
     item = BillableItem.query.filter_by(id=item_id, claim_id=claim.id).first_or_404()
+
+    if _billable_is_locked(item):
+        flash(
+            "This billable item is locked because it has been included on a sent invoice. "
+            "Set the invoice back to Draft to edit it.",
+            "error",
+        )
+        return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
     # Build billable activity choices from the BillingActivityCode table.
     db_codes = (
@@ -597,9 +617,12 @@ def billable_delete(claim_id, item_id):
     claim = Claim.query.get_or_404(claim_id)
     item = BillableItem.query.filter_by(id=item_id, claim_id=claim.id).first_or_404()
 
-    # If your model uses a different relationship/field, adjust this check.
-    if getattr(item, "invoice_id", None):
-        flash("That billable is already linked to an invoice and cannot be deleted.", "warning")
+    if _billable_is_locked(item):
+        flash(
+            "That billable is locked because it has been included on a sent invoice. "
+            "Set the invoice back to Draft to delete it.",
+            "error",
+        )
         return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
     if request.method == "POST":

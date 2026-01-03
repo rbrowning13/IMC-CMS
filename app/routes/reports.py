@@ -1519,6 +1519,10 @@ def report_pdf(claim_id, report_id):
     regen_raw = (request.args.get("regen") or "").strip().lower()
     regen = regen_raw in {"1", "true", "yes"}
 
+    # Support inline view (?view=1, ?view=true, ?view=yes) or download (default)
+    view_raw = (request.args.get("view") or "").strip().lower()
+    view = view_raw in {"1", "true", "yes"}
+
     # Determine when the report last changed (prefer updated_at; fall back to created_at).
     report_updated = getattr(report, "updated_at", None) or getattr(report, "created_at", None)
 
@@ -1546,12 +1550,15 @@ def report_pdf(claim_id, report_id):
             art_bytes = getattr(latest_art, "content", None)
             if art_bytes:
                 dl_name = getattr(latest_art, "download_filename", None) or filename
-                return send_file(
+                resp = send_file(
                     io.BytesIO(art_bytes),
                     mimetype="application/pdf",
-                    as_attachment=True,
+                    as_attachment=not view,
                     download_name=dl_name,
                 )
+                if view:
+                    resp.headers["Content-Disposition"] = f'inline; filename="{dl_name}"'
+                return resp
 
     # Render the existing print view to PDF using Chromium.
     # Use an absolute URL so Chromium can load assets correctly.
@@ -1585,12 +1592,15 @@ def report_pdf(claim_id, report_id):
     db.session.add(art)
     db.session.commit()
 
-    return send_file(
+    resp = send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
-        as_attachment=True,
+        as_attachment=not view,
         download_name=filename,
     )
+    if view:
+        resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+    return resp
 
 
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/delete", methods=["GET", "POST"])

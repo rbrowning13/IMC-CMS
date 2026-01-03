@@ -30,7 +30,7 @@
     </div>
   </div>
 
-  <div class="card shadow-sm">
+  <div class="card">
     <div class="card-body">
       <div class="row pb-2 mb-2 align-items-center">
         <!-- Business info with optional logo -->
@@ -399,14 +399,15 @@
   }
 
   #invoice-print-root .card {
-    border: 0;
-    background: transparent;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
   }
 
   #invoice-print-root .card-body {
     background: #ffffff;
-    border: 2px solid rgba(0,0,0,0.15);
-    border-radius: 12px;
+    border: 0;
+    border-radius: 0;
     padding: 22px 22px;
 
     /* Kill any inherited/inset accent bar at the top */

@@ -16,9 +16,11 @@
         {% endif %}
       </div>
       <div class="d-flex gap-2">
-        <a href="{{ url_for('main.invoice_print_invoices', invoice_id=invoice.id) }}"
-           class="btn btn-sm btn-outline-secondary">
-          Preview / Print
+        <a href="{{ url_for('main.invoice_pdf_invoices', invoice_id=invoice.id, view=1) }}"
+           class="btn btn-sm btn-outline-secondary"
+           target="_blank"
+           rel="noopener">
+          View PDF
         </a>
         <a href="{{ url_for('main.invoice_pdf_invoices', invoice_id=invoice.id) }}"
            class="btn btn-sm btn-outline-primary">

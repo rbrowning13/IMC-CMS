@@ -926,6 +926,9 @@ def invoice_pdf(invoice_id: int):
     regen_raw = (request.args.get("regen") or "").strip().lower()
     regen = regen_raw in {"1", "true", "yes"}
 
+    view_raw = (request.args.get("view") or "").strip().lower()
+    view = view_raw in {"1", "true", "yes"}
+
     # Determine when the invoice last changed (prefer updated_at; fall back to created_at).
     invoice_updated = getattr(invoice, "updated_at", None) or getattr(invoice, "created_at", None)
 
@@ -956,13 +959,16 @@ def invoice_pdf(invoice_id: int):
                 art_bytes = getattr(latest_art, "content", None)
                 if art_bytes:
                     dl_name = getattr(latest_art, "download_filename", None) or filename
-                    return send_file(
+                    resp = send_file(
                         BytesIO(art_bytes),
                         mimetype="application/pdf",
-                        as_attachment=True,
+                        as_attachment=(not view),
                         download_name=dl_name,
                         max_age=0,
                     )
+                    if view:
+                        resp.headers["Content-Disposition"] = f'inline; filename="{dl_name}"'
+                    return resp
 
     print_url = url_for("main.invoice_print_invoices", invoice_id=invoice.id, _external=True)
 
@@ -975,13 +981,16 @@ def invoice_pdf(invoice_id: int):
 
     _store_invoice_pdf_artifact(invoice, pdf_bytes, filename)
 
-    return send_file(
+    resp = send_file(
         BytesIO(pdf_bytes),
         mimetype="application/pdf",
-        as_attachment=True,
+        as_attachment=(not view),
         download_name=filename,
         max_age=0,
     )
+    if view:
+        resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+    return resp
 
 @bp.route("/billing/<int:invoice_id>/update", methods=["POST"], endpoint="invoice_update_invoices")
 def invoice_update(invoice_id: int):
