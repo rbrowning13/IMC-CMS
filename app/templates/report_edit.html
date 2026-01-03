@@ -59,7 +59,7 @@
          class="btn btn-outline-secondary btn-sm">
         Preview / Print
       </a>
-      <a href="{{ url_for('main.report_print', claim_id=claim.id, report_id=report.id, download=1) }}"
+      <a href="{{ url_for('main.report_pdf', claim_id=claim.id, report_id=report.id) }}"
          class="btn btn-outline-primary btn-sm">
         Download PDF
       </a>

@@ -20,7 +20,7 @@
            class="btn btn-sm btn-outline-secondary">
           Preview / Print
         </a>
-        <a href="{{ url_for('main.invoice_print_invoices', invoice_id=invoice.id, download=1) }}"
+        <a href="{{ url_for('main.invoice_pdf_invoices', invoice_id=invoice.id) }}"
            class="btn btn-sm btn-outline-primary">
           Download PDF
         </a>

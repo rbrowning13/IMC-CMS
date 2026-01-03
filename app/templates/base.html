@@ -2,7 +2,156 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{% block title %}Impact CMS{% endblock %}</title>
+  {#
+    Tab title policy:
+    - Pages can set `page_title` in render_template() for a contextual title.
+      We prefer: "LastName, FirstName, ClaimNumber" (no extra "Claim" text).
+    - If `page_title` is provided, the final browser tab title becomes:
+        "<page_title> – Impact CMS"
+    - If `page_title` is not provided, templates may still override `{% block title %}`.
+  #}
+  <title>
+    {#
+      Browser tab title policy:
+      Prefer: "Last, First - ClaimNumber - Impact CMS" when we can infer a claim context.
+      Otherwise: "<page_title> - Impact CMS".
+    #}
+
+    {# Try to discover a claim object from common contexts #}
+    {% set _ctx_claim = None %}
+    {% if claim is defined and claim %}
+      {% set _ctx_claim = claim %}
+    {% elif report is defined and report and report.claim %}
+      {% set _ctx_claim = report.claim %}
+    {% elif invoice is defined and invoice and invoice.claim %}
+      {% set _ctx_claim = invoice.claim %}
+    {% endif %}
+
+    {# Extract claimant + claim number using best-effort attribute fallbacks #}
+    {% set _last = '' %}
+    {% set _first = '' %}
+    {% set _claimno = '' %}
+    {% set _display_name = '' %}
+
+    {% if _ctx_claim %}
+      {# Claim number fallbacks #}
+      {% set _claimno = (_ctx_claim.claim_number if _ctx_claim.claim_number is defined else '') %}
+      {% if not _claimno %}{% set _claimno = (_ctx_claim.claim_no if _ctx_claim.claim_no is defined else '') %}{% endif %}
+      {% if not _claimno %}{% set _claimno = (_ctx_claim.number if _ctx_claim.number is defined else '') %}{% endif %}
+
+      {# Prefer explicit first/last fields if present #}
+      {% set _last = (_ctx_claim.claimant_last_name if _ctx_claim.claimant_last_name is defined else '') %}
+      {% if not _last %}{% set _last = (_ctx_claim.claimant_last if _ctx_claim.claimant_last is defined else '') %}{% endif %}
+
+      {% set _first = (_ctx_claim.claimant_first_name if _ctx_claim.claimant_first_name is defined else '') %}
+      {% if not _first %}{% set _first = (_ctx_claim.claimant_first if _ctx_claim.claimant_first is defined else '') %}{% endif %}
+
+      {# Single-field claimant name fallbacks ("First Last" or "Last, First") #}
+      {% if (not _last and not _first) %}
+        {% set _raw_name = '' %}
+        {% if _ctx_claim.claimant_name is defined %}{% set _raw_name = _ctx_claim.claimant_name %}{% endif %}
+        {% if (not _raw_name) and (_ctx_claim.claimant is defined) %}{% set _raw_name = _ctx_claim.claimant %}{% endif %}
+        {% if _raw_name %}
+          {% set _raw_name = (_raw_name | string) | trim %}
+          {% if ',' in _raw_name %}
+            {# Already "Last, First" #}
+            {% set _display_name = _raw_name %}
+          {% else %}
+            {# Assume "First Last" (or "First Middle Last") #}
+            {% set _parts = _raw_name.split() %}
+            {% if _parts|length >= 2 %}
+              {% set _display_name = _parts[-1] ~ ', ' ~ (_parts[0:-1] | join(' ')) %}
+            {% else %}
+              {% set _display_name = _raw_name %}
+            {% endif %}
+          {% endif %}
+        {% endif %}
+      {% endif %}
+    {% endif %}
+
+    {% set _has_claim_bits = (_last or _first or _display_name or _claimno) %}
+
+    {# Compose the clean claim-based title when claim bits are available #}
+    {% if _has_claim_bits %}
+      {% if _display_name %}
+        {% set _name = _display_name %}
+      {% else %}
+        {% set _name = (_last ~ ', ' ~ _first) if (_last and _first) else (_last or _first) %}
+      {% endif %}
+
+      {# Desired format: "Last, First - ClaimNumber - Impact CMS" (NO extra "Claim" text) #}
+      {# Optional report context: add "<Type> Report <N>" so multiple report tabs are distinguishable #}
+      {% set _report_suffix = '' %}
+      {% if report is defined and report %}
+        {# Determine report type label #}
+        {% set _rtype = (report.report_type if report.report_type is defined else '') %}
+        {% if not _rtype and (report.type if report.type is defined else '') %}
+          {% set _rtype = report.type %}
+        {% endif %}
+        {% if _rtype %}
+          {% set _rtype = (_rtype | string) | trim %}
+          {# Normalize common stored values -> pretty labels #}
+          {% if _rtype|lower == 'initial' %}{% set _rtype = 'Initial' %}{% endif %}
+          {% if _rtype|lower == 'progress' %}{% set _rtype = 'Progress' %}{% endif %}
+          {% if _rtype|lower == 'closure' %}{% set _rtype = 'Closure' %}{% endif %}
+        {% endif %}
+
+        {# Determine report sequence number within the claim (best-effort).
+           Prefer route-provided numbers (matches UI header), then fall back to sorting claim.reports.
+        #}
+        {% set _rnum = none %}
+
+        {# Prefer any explicit context variables the report pages may set #}
+        {% if report_display_number is defined and report_display_number %}
+          {% set _rnum = report_display_number %}
+        {% elif report_number is defined and report_number %}
+          {% set _rnum = report_number %}
+        {% elif report_seq is defined and report_seq %}
+          {% set _rnum = report_seq %}
+        {% elif report_index is defined and report_index %}
+          {% set _rnum = report_index %}
+        {% endif %}
+
+        {# If still unknown, try to compute from claim.reports when available #}
+        {% if not _rnum and report.claim is defined and report.claim and report.claim.reports is defined and report.claim.reports %}
+          {# Sort reports by DOS start/end (fallback created_at, then id) #}
+          {% set _sorted = report.claim.reports
+            | sort(attribute='id')
+            | sort(attribute='created_at')
+            | sort(attribute='dos_end')
+            | sort(attribute='dos_start')
+          %}
+          {% for r in _sorted %}
+            {% if r and (r.id is defined) and (report.id is defined) and (r.id == report.id) %}
+              {% set _rnum = loop.index %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+
+        {# Match on-screen header wording: e.g., "Progress Report 3" #}
+        {% if _rtype and _rnum %}
+          {% set _report_suffix = _rtype ~ ' Report ' ~ _rnum %}
+        {% elif _rtype %}
+          {% set _report_suffix = _rtype ~ ' Report' %}
+        {% endif %}
+      {% endif %}
+
+      {% set _core = (_name ~ ' - ' ~ _claimno) if (_name and _claimno) else (_name or _claimno) %}
+      {% if _report_suffix %}
+        {% set _core = _core ~ ' - ' ~ _report_suffix %}
+      {% endif %}
+      {{ _core }} - Impact CMS
+
+    {# Otherwise, use page_title if provided #}
+    {% elif page_title %}
+      {% set _pt = (page_title | string) | trim %}
+      {{ _pt }} - Impact CMS
+
+    {# Fallback for pages that still override the block title #}
+    {% else %}
+      {% block title %}Impact CMS{% endblock %}
+    {% endif %}
+  </title>
 
   <!-- Bootstrap 5 CSS (CDN) -->
   <link

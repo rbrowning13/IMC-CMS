@@ -12,16 +12,29 @@ Registered via app/routes/__init__.py by importing this module.
 """
 
 from __future__ import annotations
+from io import BytesIO
+import re
 
 from datetime import date, datetime
 from typing import Optional
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import current_app, flash, redirect, render_template, request, send_file, url_for
 from sqlalchemy import func
 
 from .. import db
 from ..models import BillableItem, Claim, Invoice, Report
+# Optional: PDF artifacts (newer versions)
+try:
+    from ..models import DocumentArtifact  # type: ignore
+except Exception:  # pragma: no cover
+    DocumentArtifact = None  # type: ignore
 
+# Optional Playwright import for server-side Chromium PDF generation.
+try:
+    from playwright.sync_api import sync_playwright
+except Exception:  # pragma: no cover
+    sync_playwright = None
+    
 # Payments are defined in some versions of this project; keep optional.
 try:
     from ..models import Payment  # type: ignore
@@ -474,6 +487,143 @@ def _compute_totals_from_items(invoice: Invoice, rates: dict) -> dict:
         "total_expenses": float(total_expenses),
     }
 
+# -----------------------------------------------------------------------------
+# PDF generation + artifact storage (Option B)
+# -----------------------------------------------------------------------------
+
+def _safe_slug(value: str, max_len: int = 80) -> str:
+    value = (value or "").strip()
+    if not value:
+        return ""
+    value = re.sub(r"\s+", " ", value)
+    value = re.sub(r"[^A-Za-z0-9._\- ]+", "", value)
+    value = value.strip().replace(" ", "_")
+    return value[:max_len]
+
+
+def _invoice_pdf_filename(invoice: Invoice) -> str:
+    """Human filename for invoice PDF downloads."""
+    claim = getattr(invoice, "claim", None)
+
+    last = _safe_slug(getattr(claim, "claimant_last", "") if claim else "")
+    first = _safe_slug(getattr(claim, "claimant_first", "") if claim else "")
+
+    claim_no = _safe_slug(getattr(claim, "claim_number", "") if claim else "")
+    inv_no = _safe_slug(getattr(invoice, "invoice_number", "") or f"INV-{getattr(invoice, 'id', '')}")
+
+    inv_date = getattr(invoice, "invoice_date", None) or getattr(invoice, "created_at", None)
+    date_str = ""
+    try:
+        if isinstance(inv_date, datetime):
+            date_str = inv_date.strftime("%Y-%m-%d")
+        elif isinstance(inv_date, date):
+            date_str = inv_date.strftime("%Y-%m-%d")
+    except Exception:
+        date_str = ""
+
+    name_part = ""
+    if last or first:
+        if last and first:
+            name_part = f"{last},{first}"
+        else:
+            name_part = last or first
+
+    parts = [p for p in [name_part, claim_no, inv_no, "Invoice", date_str] if p]
+    base = " - ".join(parts) if parts else f"Invoice-{getattr(invoice, 'id', '')}"
+    return f"{base}.pdf"
+
+
+def _store_invoice_pdf_artifact(invoice: Invoice, pdf_bytes: bytes, filename: str):
+    """Persist the generated invoice PDF as a DocumentArtifact (DB-backed), if available."""
+    if DocumentArtifact is None:
+        return None
+
+    try:
+        artifact = DocumentArtifact(
+            claim_id=invoice.claim_id,
+            invoice_id=invoice.id,
+            artifact_type="invoice_pdf",
+            content_type="application/pdf",
+            download_filename=filename,
+            file_size_bytes=len(pdf_bytes),
+            storage_backend="db",
+            content=pdf_bytes,
+            created_at=datetime.utcnow(),
+        )
+
+        db.session.add(artifact)
+        db.session.commit()
+        return artifact
+    except Exception:
+        # Never break user flow if artifact persistence fails
+        db.session.rollback()
+        return None
+
+
+
+
+# New: Playwright PDF rendering from print URL
+def _render_pdf_from_url_playwright(url: str) -> bytes:
+    """Render the given URL to PDF using headless Chromium (Playwright).
+
+    Notes:
+    - Synchronous; acceptable for this single-user app.
+    - Copies request cookies so authenticated print pages render.
+    """
+    if sync_playwright is None:
+        raise RuntimeError("Playwright is not available")
+
+    cookies = []
+    try:
+        for name, value in (request.cookies or {}).items():
+            cookies.append({"name": name, "value": value, "url": request.host_url})
+    except Exception:
+        cookies = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+
+        if cookies:
+            try:
+                context.add_cookies(cookies)
+            except Exception:
+                pass
+
+        page = context.new_page()
+        page.goto(url, wait_until="networkidle")
+
+        try:
+            page.emulate_media(media="print")
+        except Exception:
+            pass
+
+        pdf_bytes = page.pdf(
+            format="Letter",
+            print_background=True,
+            prefer_css_page_size=True,
+            margin={
+                "top": "0in",
+                "right": "0in",
+                "bottom": "0in",
+                "left": "0in",
+            },
+        )
+
+        try:
+            page.close()
+        except Exception:
+            pass
+        try:
+            context.close()
+        except Exception:
+            pass
+        try:
+            browser.close()
+        except Exception:
+            pass
+
+    return pdf_bytes
 
 # -----------------------------------------------------------------------------
 # Routes
@@ -757,6 +907,81 @@ def invoice_print(invoice_id: int):
         amount_paid=(fin.get("paid_total", 0.0) if isinstance(fin, dict) else 0.0),
     )
 
+@bp.route("/billing/<int:invoice_id>/pdf", endpoint="invoice_pdf_invoices")
+def invoice_pdf(invoice_id: int):
+    """Generate + download an invoice PDF (and store it as a DB artifact if available)."""
+
+    invoice = Invoice.query.get_or_404(invoice_id)
+
+    settings = None
+    try:
+        from .helpers import _ensure_settings
+        settings = _ensure_settings()
+    except Exception:
+        settings = None
+
+    filename = _invoice_pdf_filename(invoice)
+
+    # By default, reuse the latest stored PDF artifact so we don't generate a new one on every click.
+    regen_raw = (request.args.get("regen") or "").strip().lower()
+    regen = regen_raw in {"1", "true", "yes"}
+
+    # Determine when the invoice last changed (prefer updated_at; fall back to created_at).
+    invoice_updated = getattr(invoice, "updated_at", None) or getattr(invoice, "created_at", None)
+
+    if (not regen) and DocumentArtifact is not None:
+        latest_q = DocumentArtifact.query.filter_by(
+            claim_id=invoice.claim_id,
+            invoice_id=invoice.id,
+            artifact_type="invoice_pdf",
+        )
+        if hasattr(DocumentArtifact, "storage_backend"):
+            latest_q = latest_q.filter_by(storage_backend="db")
+
+        latest_art = (
+            latest_q.order_by(DocumentArtifact.created_at.desc().nullslast(), DocumentArtifact.id.desc())
+            .first()
+        )
+
+        if latest_art is not None:
+            art_created = getattr(latest_art, "created_at", None)
+            is_fresh = True
+            if art_created is not None and invoice_updated is not None:
+                try:
+                    is_fresh = art_created >= invoice_updated
+                except Exception:
+                    is_fresh = True
+
+            if is_fresh:
+                art_bytes = getattr(latest_art, "content", None)
+                if art_bytes:
+                    dl_name = getattr(latest_art, "download_filename", None) or filename
+                    return send_file(
+                        BytesIO(art_bytes),
+                        mimetype="application/pdf",
+                        as_attachment=True,
+                        download_name=dl_name,
+                        max_age=0,
+                    )
+
+    print_url = url_for("main.invoice_print_invoices", invoice_id=invoice.id, _external=True)
+
+    try:
+        pdf_bytes = _render_pdf_from_url_playwright(print_url)
+    except Exception as e:
+        current_app.logger.exception("Invoice PDF generation failed")
+        flash(f"Invoice PDF generation failed: {e}", "danger")
+        return redirect(url_for("main.invoice_print_invoices", invoice_id=invoice.id))
+
+    _store_invoice_pdf_artifact(invoice, pdf_bytes, filename)
+
+    return send_file(
+        BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+        max_age=0,
+    )
 
 @bp.route("/billing/<int:invoice_id>/update", methods=["POST"], endpoint="invoice_update_invoices")
 def invoice_update(invoice_id: int):

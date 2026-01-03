@@ -1,2 +1,21 @@
+# Core web framework
 Flask>=2.3,<3.0
+
+# Database / ORM
 Flask-SQLAlchemy>=3.1
+SQLAlchemy>=2.0
+psycopg2-binary>=2.9
+
+# Migrations
+alembic>=1.13
+Flask-Migrate>=4.0
+
+# Server / deployment
+gunicorn>=21.2
+
+# PDF generation (Chromium via Playwright)
+playwright>=1.41
+
+# Utilities
+python-dotenv>=1.0
+Werkzeug>=2.3

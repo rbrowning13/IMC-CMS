@@ -75,6 +75,7 @@ def _ensure_settings() -> Settings:
 
 
 
+
 def _table_exists(table_name: str) -> bool:
     """Return True if the given table exists in the current DB."""
 
@@ -84,6 +85,43 @@ def _table_exists(table_name: str) -> bool:
         # If inspection fails for any reason, be conservative and assume it exists
         # so we don't silently skip deletes.
         return True
+
+
+# ---- claimant title helpers ----
+
+def _claimant_title_name(raw: str | None) -> str:
+    """Best-effort formatting for tab titles.
+
+    Stored data is typically one string (often "Last, First" or "First Last").
+    We normalize to "Last, First" when possible.
+    """
+
+    name = (raw or "").strip()
+    if not name:
+        return "Claim"
+
+    # Already "Last, First" style
+    if "," in name:
+        parts = [p.strip() for p in name.split(",", 1)]
+        last = parts[0]
+        first = parts[1] if len(parts) > 1 else ""
+        return f"{last}, {first}".strip().strip(",")
+
+    # Try "First Last" -> "Last, First"
+    bits = [b for b in name.split() if b.strip()]
+    if len(bits) >= 2:
+        first = " ".join(bits[:-1])
+        last = bits[-1]
+        return f"{last}, {first}"
+
+    return name
+
+
+def _claim_page_title(claim: Claim, suffix: str | None = None) -> str:
+    base = _claimant_title_name(getattr(claim, "claimant_name", None))
+    if suffix:
+        return f"{base} — {suffix}"
+    return base
 
 
 # ---- carry-forward helper ----
@@ -246,6 +284,7 @@ def claims_list():
     return render_template(
         "claims_list.html",
         active_page="claims",
+        page_title="Claims",
         claims=filtered_claims,
         billing_summary=billing_summary,
         dormant_info=dormant_info,
@@ -350,6 +389,7 @@ def new_claim():
     return render_template(
         "claim_new.html",
         active_page="claims",
+        page_title="New Claim",
         carriers=carriers,
         employers=employers,
         carrier_contacts=carrier_contacts,
@@ -455,9 +495,11 @@ def claim_edit(claim_id: int):
             db.session.commit()
             return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
+    title = _claim_page_title(claim, "Edit Claim")
     return render_template(
         "claim_edit.html",
         active_page="claims",
+        page_title=title,
         claim=claim,
         error=error,
         carriers=carriers,
@@ -634,9 +676,11 @@ def claim_detail(claim_id: int):
     else:
         billable_activity_choices = []
 
+    title = _claim_page_title(claim, "Claim")
     return render_template(
         "claim_detail.html",
         active_page="claims",
+        page_title=title,
         claim=claim,
         settings=settings,
         billable_items=billable_items,

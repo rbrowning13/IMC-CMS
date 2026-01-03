@@ -250,7 +250,6 @@
     <a href="{{ url_for('main.report_edit', claim_id=claim.id, report_id=report.id) }}" class="btn btn-outline-primary btn-sm">Back to Report</a>
     <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-primary btn-sm">Back to Claim</a>
     <button type="button" class="btn btn-outline-primary btn-sm" onclick="window.print()">Print</button>
-    <a href="{{ url_for('main.report_print', claim_id=claim.id, report_id=report.id, download=1) }}" class="btn btn-outline-primary btn-sm" rel="noopener">Download PDF</a>
   </div>
 </div>
 

@@ -36,12 +36,13 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-# Optional WeasyPrint import for PDF generation.
-# We catch any Exception here and fall back to HTML = None.
+
+# Optional Playwright import for server-side Chromium PDF generation.
+# If not installed/available, PDF routes should fail gracefully.
 try:
-    from weasyprint import HTML
+    from playwright.sync_api import sync_playwright
 except Exception:
-    HTML = None
+    sync_playwright = None
 
 from ..extensions import db
 from ..models import (
@@ -53,6 +54,7 @@ from ..models import (
     ReportDocument,
     Settings,
     BarrierOption,
+    DocumentArtifact,
 )
 
 from . import bp
@@ -80,9 +82,185 @@ def _allowed_file(filename: str) -> bool:
     return ext in allowed
 
 
+
 def _safe_segment(text: str) -> str:
     """Filesystem-safe name chunk."""
     return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in (text or ""))
+
+
+# ---- PDF filename helper ----
+
+def _build_report_pdf_filename(claim: Claim, report: Report, display_report_number: int | None) -> str:
+    """Human-friendly filename for report PDF downloads."""
+    claimant = _claimant_last_first(getattr(claim, "claimant_name", None))
+    claimant_seg = _safe_segment(claimant).strip("_")
+
+    claim_no = (getattr(claim, "claim_number", None) or "").strip()
+    claim_no_seg = _safe_segment(claim_no).strip("_")
+
+    rt_raw = (getattr(report, "report_type", None) or "").strip().lower()
+    rt = rt_raw.title() if rt_raw else "Report"
+
+    num = f"{display_report_number}" if display_report_number else f"{getattr(report, 'id', '')}".strip()
+    num_seg = _safe_segment(num).strip("_")
+
+    # Prefer DOS end; fall back to today.
+    d = getattr(report, "dos_end", None) or getattr(report, "created_at", None)
+    if isinstance(d, datetime):
+        d = d.date()
+    if not isinstance(d, date):
+        d = date.today()
+    d_seg = d.strftime("%Y-%m-%d")
+
+    parts = [p for p in [claimant_seg, claim_no_seg] if p]
+    left = "_".join(parts) if parts else f"claim_{claim.id}"
+
+    middle = "_".join([p for p in [rt, ("Report" if "report" not in rt.lower() else "")] if p]).replace("__", "_")
+    middle = _safe_segment(middle).strip("_") or "Report"
+
+    right = "_".join([p for p in [num_seg, d_seg] if p])
+
+    filename = f"{left}_{middle}_{right}.pdf".replace("__", "_")
+    return filename
+
+# --- Playwright PDF rendering helper ---
+def _render_pdf_from_url_playwright(url: str) -> bytes:
+    """Render the given URL to PDF using headless Chromium (Playwright).
+
+    Notes:
+    - This is synchronous and intended for single-user, low-concurrency use.
+    - We copy request cookies into the browser context so authenticated print pages render.
+    """
+    if sync_playwright is None:
+        raise RuntimeError("Playwright is not available")
+
+    # Copy current request cookies so /print routes that require auth still render.
+    cookies = []
+    try:
+        for name, value in (request.cookies or {}).items():
+            cookies.append({"name": name, "value": value, "url": request.host_url})
+    except Exception:
+        cookies = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+
+        if cookies:
+            try:
+                context.add_cookies(cookies)
+            except Exception:
+                pass
+
+        page = context.new_page()
+        # Prefer networkidle so CSS/assets finish loading.
+        page.goto(url, wait_until="networkidle")
+
+        # Ensure we use print media rules.
+        try:
+            page.emulate_media(media="print")
+        except Exception:
+            pass
+
+        pdf_bytes = page.pdf(
+            format="Letter",
+            print_background=True,
+            prefer_css_page_size=True,
+            margin={
+                "top": "0in",
+                "right": "0in",
+                "bottom": "0in",
+                "left": "0in",
+            },
+        )
+
+        try:
+            page.close()
+        except Exception:
+            pass
+        try:
+            context.close()
+        except Exception:
+            pass
+        try:
+            browser.close()
+        except Exception:
+            pass
+
+    return pdf_bytes
+
+# New route: artifact download
+@bp.route("/artifacts/<int:artifact_id>/download")
+def artifact_download(artifact_id: int):
+    """Download a stored PDF artifact from the database."""
+    art = DocumentArtifact.query.get_or_404(artifact_id)
+
+    data = getattr(art, "data", None)
+    if data is None:
+        # Back-compat if the column was named differently
+        data = getattr(art, "content", None)
+
+    if not data:
+        flash("Artifact file is missing.", "danger")
+        return redirect(url_for("main.claims_list"))
+
+    filename = getattr(art, "download_filename", None) or getattr(art, "filename", None) or "document.pdf"
+    content_type = getattr(art, "content_type", None) or "application/pdf"
+
+    return send_file(
+        io.BytesIO(data),
+        mimetype=content_type,
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+# ---- Tab title helpers ----
+
+def _claimant_last_first(name: str | None) -> str:
+    """Return claimant name formatted as 'Last, First' when possible."""
+    if not name:
+        return ""
+
+    s = " ".join((name or "").strip().split())
+    if not s:
+        return ""
+
+    # If it already looks like "Last, First", keep it.
+    if "," in s:
+        return s
+
+    parts = s.split(" ")
+    if len(parts) == 1:
+        return parts[0]
+
+    first = parts[0]
+    last = parts[-1]
+    middle = " ".join(parts[1:-1]).strip()
+
+    if middle:
+        return f"{last}, {first} {middle}"
+
+    return f"{last}, {first}"
+
+
+def _build_report_page_title(claim: Claim, report: Report, display_report_number: int | None) -> str:
+    """Browser tab title for report pages."""
+    claimant = _claimant_last_first(getattr(claim, "claimant_name", None))
+    claim_no = (getattr(claim, "claim_number", None) or "").strip()
+
+    rt = (getattr(report, "report_type", None) or "").strip().title() or "Report"
+
+    if display_report_number:
+        report_part = f"{rt} Report #{display_report_number}"
+    else:
+        report_part = f"{rt} Report"
+
+    parts = [p for p in [claimant, claim_no, report_part] if p]
+    if parts:
+        return " - ".join(parts) + " - Impact CMS"
+
+    return "Impact CMS"
 
 
 
@@ -596,6 +774,14 @@ def report_detail(claim_id, report_id):
 
     settings = _ensure_settings()
 
+    display_report_number = _compute_claim_report_number(claim.id, report.id)
+    try:
+        setattr(report, "display_report_number", display_report_number)
+    except Exception:
+        pass
+
+    page_title = _build_report_page_title(claim, report, display_report_number)
+
     return render_template(
         "report_detail.html",
         active_page="claims",
@@ -604,6 +790,9 @@ def report_detail(claim_id, report_id):
         settings=settings,
         barriers_by_category=barriers_by_category,
         selected_barrier_ids=selected_barrier_ids,
+        page_title=page_title,
+        display_report_number=display_report_number,
+        report_display_number=display_report_number,
     )
 
 
@@ -748,6 +937,8 @@ def report_edit(claim_id, report_id):
         setattr(report, "display_report_number", display_report_number)
     except Exception:
         pass
+
+    page_title = _build_report_page_title(claim, report, display_report_number)
 
     # --- PCP / Family Doctor field back-compat ---
     # DB/schema may store this as `initial_primary_care_provider` (preferred) but
@@ -1087,6 +1278,8 @@ def report_edit(claim_id, report_id):
         providers=providers,
         approved_provider_ids=approved_provider_ids,
         display_report_number=display_report_number,
+        page_title=page_title,
+        report_display_number=display_report_number,
     )
 
 
@@ -1260,6 +1453,8 @@ def report_print(claim_id, report_id):
     except Exception:
         pass
 
+    page_title = _build_report_page_title(claim, report, display_report_number)
+
     cm_activities: list[dict] = []
     if report.dos_start and report.dos_end:
         q = (
@@ -1299,86 +1494,102 @@ def report_print(claim_id, report_id):
         cm_items=cm_items,
         barriers=barriers,
         display_report_number=display_report_number,
+        page_title=page_title,
+        report_display_number=display_report_number,
     )
+
 
 
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/pdf")
 def report_pdf(claim_id, report_id):
-    """Generate a PDF of the report using the same template as report_print."""
+    """Generate a PDF of the report by snapshotting the /print route via headless Chromium."""
     claim = Claim.query.get_or_404(claim_id)
     report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
 
-    documents = (
-        ReportDocument.query.filter_by(report_id=report.id)
-        .order_by(ReportDocument.id.desc())
-        .all()
-    )
-
-    settings = _ensure_settings()
-
-    barriers = _get_selected_barriers(report)
-
     display_report_number = _compute_claim_report_number(claim.id, report.id)
-
     try:
         setattr(report, "display_report_number", display_report_number)
     except Exception:
         pass
 
-    if HTML is None:
-        flash("PDF generation is not available (WeasyPrint is not installed).", "danger")
-        return redirect(url_for("main.report_print", claim_id=claim.id, report_id=report.id))
+    # Build the canonical filename (stable, user-friendly)
+    filename = _build_report_pdf_filename(claim, report, display_report_number)
 
-    # Build Case Manager Activities list (must match report_print)
-    cm_activities: list[dict] = []
-    if report.dos_start and report.dos_end:
-        q = (
-            BillableItem.query.filter_by(claim_id=claim.id)
-            .filter(BillableItem.date_of_service.isnot(None))
-            .filter(BillableItem.date_of_service >= report.dos_start)
-            .filter(BillableItem.date_of_service <= report.dos_end)
-        )
-        q = q.filter(BillableItem.activity_code != "EXP")
+    # By default, reuse the latest stored PDF artifact so we don't generate a new one on every click.
+    regen_raw = (request.args.get("regen") or "").strip().lower()
+    regen = regen_raw in {"1", "true", "yes"}
 
-        items = (
-            q.order_by(
-                BillableItem.date_of_service.asc().nullslast(),
-                BillableItem.created_at.asc(),
-            ).all()
-        )
+    # Determine when the report last changed (prefer updated_at; fall back to created_at).
+    report_updated = getattr(report, "updated_at", None) or getattr(report, "created_at", None)
 
-        for item in items:
-            cm_activities.append(
-                {
-                    "date_of_service": item.date_of_service,
-                    "activity_code": item.activity_code or "",
-                    "description": item.description or "",
-                    "notes": item.notes or "",
-                }
-            )
+    latest_q = DocumentArtifact.query.filter_by(claim_id=claim.id, report_id=report.id, artifact_type="report_pdf")
+    if hasattr(DocumentArtifact, "storage_backend"):
+        latest_q = latest_q.filter_by(storage_backend="db")
 
-    cm_items = cm_activities  # back-compat
-
-    html = render_template(
-        "report_print.html",
-        active_page="claims",
-        claim=claim,
-        report=report,
-        settings=settings,
-        documents=documents,
-        cm_activities=cm_activities,
-        cm_items=cm_items,
-        barriers=barriers,
-        display_report_number=display_report_number,
+    latest_art = (
+        latest_q.order_by(DocumentArtifact.created_at.desc().nullslast(), DocumentArtifact.id.desc())
+        .first()
     )
 
-    pdf_bytes = HTML(string=html, base_url=current_app.root_path).write_pdf()
+    if (not regen) and latest_art is not None:
+        art_created = getattr(latest_art, "created_at", None)
+        # If we have timestamps, only reuse when the artifact is at least as new as the report.
+        # If timestamps are missing, still reuse to avoid duplicate PDFs.
+        is_fresh = True
+        if art_created is not None and report_updated is not None:
+            try:
+                is_fresh = art_created >= report_updated
+            except Exception:
+                is_fresh = True
+
+        if is_fresh:
+            art_bytes = getattr(latest_art, "content", None)
+            if art_bytes:
+                dl_name = getattr(latest_art, "download_filename", None) or filename
+                return send_file(
+                    io.BytesIO(art_bytes),
+                    mimetype="application/pdf",
+                    as_attachment=True,
+                    download_name=dl_name,
+                )
+
+    # Render the existing print view to PDF using Chromium.
+    # Use an absolute URL so Chromium can load assets correctly.
+    print_url = url_for(
+        "main.report_print",
+        claim_id=claim.id,
+        report_id=report.id,
+        _external=True,
+    )
+
+    try:
+        pdf_bytes = _render_pdf_from_url_playwright(print_url)
+    except Exception as e:
+        current_app.logger.exception("Report PDF generation failed")
+        flash(f"PDF generation failed: {e}", "danger")
+        return redirect(url_for("main.report_print", claim_id=claim.id, report_id=report.id))
+
+    # Store as a DB artifact (Option B)
+    art = DocumentArtifact(
+        claim_id=claim.id,
+        report_id=report.id,
+        artifact_type="report_pdf",
+        content_type="application/pdf",
+        download_filename=filename,
+        file_size_bytes=len(pdf_bytes),
+        storage_backend="db",
+        content=pdf_bytes,
+        created_at=datetime.utcnow(),
+    )
+
+    db.session.add(art)
+    db.session.commit()
 
     return send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
         as_attachment=True,
-        download_name=f"report_claim{claim.id}_report{report.id}.pdf",
+        download_name=filename,
     )
 
 

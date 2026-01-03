@@ -266,6 +266,13 @@ class Claim(db.Model):
         back_populates="claim",
         cascade="all, delete-orphan",
     )
+
+    artifacts = db.relationship(
+        "DocumentArtifact",
+        back_populates="claim",
+        cascade="all, delete-orphan",
+        order_by="DocumentArtifact.created_at",
+    )
     reports = db.relationship(
         "Report",
         back_populates="claim",
@@ -334,6 +341,54 @@ class ReportDocument(db.Model):
 
     def __repr__(self):
         return f"<ReportDocument {self.original_filename}>"
+
+
+# ============================================================
+#  PDF / ARTIFACT STORAGE (Reports + Invoices)
+# ============================================================
+
+class DocumentArtifact(db.Model):
+    """Persisted generated artifacts (PDFs) for reports/invoices.
+
+    Supports either:
+      - DB-backed storage (content bytes in `content`), or
+      - Filesystem-backed storage (absolute/relative path in `stored_path`).
+
+    We keep a human-friendly `download_filename` so browser downloads are sane.
+    """
+
+    __tablename__ = "document_artifact"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Ownership / scoping
+    claim_id = db.Column(db.Integer, db.ForeignKey("claim.id"), nullable=False)
+    claim = db.relationship("Claim", back_populates="artifacts")
+
+    # Optional links (exactly one is typical, but not enforced at DB level)
+    report_id = db.Column(db.Integer, db.ForeignKey("report.id"))
+    invoice_id = db.Column(db.Integer, db.ForeignKey("invoice.id"))
+
+    # What is this?
+    artifact_type = db.Column(db.String(50), nullable=False)  # e.g., "report_pdf", "invoice_pdf"
+
+    # Human / UX
+    download_filename = db.Column(db.String(255), nullable=False)
+
+    # Storage
+    storage_backend = db.Column(db.String(10), nullable=False, default="db")  # "db" or "fs"
+    stored_path = db.Column(db.String(512))  # used when storage_backend == "fs"
+    content_type = db.Column(db.String(120), default="application/pdf")
+    content = db.Column(db.LargeBinary)  # used when storage_backend == "db"
+
+    # Metadata
+    file_size_bytes = db.Column(db.Integer)
+    sha256 = db.Column(db.String(64))
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<DocumentArtifact {self.artifact_type} claim={self.claim_id} id={self.id}>"
 
 
 # ============================================================
@@ -456,6 +511,13 @@ class Report(db.Model):
         cascade="all, delete-orphan",
     )
 
+    artifacts = db.relationship(
+        "DocumentArtifact",
+        primaryjoin="Report.id==foreign(DocumentArtifact.report_id)",
+        cascade="all, delete-orphan",
+        order_by="DocumentArtifact.created_at",
+    )
+
     billables = db.relationship("BillableItem", back_populates="report")
 
     def __repr__(self):
@@ -549,6 +611,13 @@ class Invoice(db.Model):
     notes = db.Column(db.Text)
 
     items = db.relationship("BillableItem", backref="invoice", lazy=True)
+
+    artifacts = db.relationship(
+        "DocumentArtifact",
+        primaryjoin="Invoice.id==foreign(DocumentArtifact.invoice_id)",
+        cascade="all, delete-orphan",
+        order_by="DocumentArtifact.created_at",
+    )
 
     # Payments applied to this invoice (Billing / A/R)
     payments = db.relationship(
