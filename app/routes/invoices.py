@@ -462,7 +462,7 @@ def _compute_totals_from_items(invoice: Invoice, rates: dict) -> dict:
             invoice_total += qty
         elif code_u in telephonic_codes:
             total_hours += qty
-            invoice_total += qty * telephonic_rate
+            invoice_total += qty * hourly_rate
         else:
             total_hours += qty
             invoice_total += qty * hourly_rate
