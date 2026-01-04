@@ -65,6 +65,16 @@
          class="btn btn-outline-primary btn-sm">
         Download PDF
       </a>
+
+      <form method="post"
+            action="{{ url_for('main.report_pdf_regenerate', claim_id=claim.id, report_id=report.id) }}"
+            class="d-inline"
+            target="_blank"
+            onsubmit="return confirm('Regenerate the report PDF? This will create a new saved PDF version.');">
+        <button type="submit" class="btn btn-outline-warning btn-sm">
+          Regenerate PDF
+        </button>
+      </form>
     </div>
   </div>
 

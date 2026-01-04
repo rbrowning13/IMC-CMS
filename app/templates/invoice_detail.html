@@ -22,10 +22,21 @@
            rel="noopener">
           View PDF
         </a>
+
         <a href="{{ url_for('main.invoice_pdf_invoices', invoice_id=invoice.id) }}"
            class="btn btn-sm btn-outline-primary">
           Download PDF
         </a>
+
+        <form method="post"
+              action="{{ url_for('main.invoice_pdf_regenerate_invoices', invoice_id=invoice.id) }}"
+              class="d-inline"
+              target="_blank"
+              onsubmit="return confirm('Regenerate the invoice PDF? This will create a new saved PDF version.');">
+          <button type="submit" class="btn btn-sm btn-outline-warning">
+            Regenerate PDF
+          </button>
+        </form>
       </div>
     </div>
   </div>

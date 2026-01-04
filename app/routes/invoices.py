@@ -932,6 +932,45 @@ def invoice_pdf(invoice_id: int):
     # Determine when the invoice last changed (prefer updated_at; fall back to created_at).
     invoice_updated = getattr(invoice, "updated_at", None) or getattr(invoice, "created_at", None)
 
+    # Consider upstream data that affects the printed invoice but may not bump invoice.updated_at.
+    # We treat the PDF artifact as stale if any of these are newer than the artifact.
+    effective_updated = invoice_updated
+
+    # Claim / carrier / employer changes can affect the header.
+    claim = getattr(invoice, "claim", None)
+    claim_updated = getattr(claim, "updated_at", None) or getattr(claim, "created_at", None) if claim else None
+
+    carrier = getattr(claim, "carrier", None) if claim else None
+    carrier_updated = getattr(carrier, "updated_at", None) or getattr(carrier, "created_at", None) if carrier else None
+
+    employer = getattr(claim, "employer", None) if claim else None
+    employer_updated = getattr(employer, "updated_at", None) or getattr(employer, "created_at", None) if employer else None
+
+    settings_updated = getattr(settings, "updated_at", None) or getattr(settings, "created_at", None) if settings else None
+
+    # Invoice line items (billables) influence totals and line display.
+    items_updated = None
+    try:
+        items = BillableItem.query.filter_by(invoice_id=invoice.id).all()
+        times = []
+        for it in items or []:
+            t = getattr(it, "updated_at", None) or getattr(it, "created_at", None)
+            if t is not None:
+                times.append(t)
+        if times:
+            items_updated = max(times)
+    except Exception:
+        items_updated = None
+
+    for t in (claim_updated, carrier_updated, employer_updated, settings_updated, items_updated):
+        if t is None:
+            continue
+        try:
+            if effective_updated is None or t > effective_updated:
+                effective_updated = t
+        except Exception:
+            pass
+
     if (not regen) and DocumentArtifact is not None:
         latest_q = DocumentArtifact.query.filter_by(
             claim_id=invoice.claim_id,
@@ -949,9 +988,9 @@ def invoice_pdf(invoice_id: int):
         if latest_art is not None:
             art_created = getattr(latest_art, "created_at", None)
             is_fresh = True
-            if art_created is not None and invoice_updated is not None:
+            if art_created is not None and effective_updated is not None:
                 try:
-                    is_fresh = art_created >= invoice_updated
+                    is_fresh = art_created >= effective_updated
                 except Exception:
                     is_fresh = True
 
@@ -991,6 +1030,20 @@ def invoice_pdf(invoice_id: int):
     if view:
         resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
     return resp
+
+
+# Explicit endpoint to force PDF regeneration
+@bp.route("/billing/<int:invoice_id>/pdf/regenerate", methods=["POST"], endpoint="invoice_pdf_regenerate_invoices")
+def invoice_pdf_regenerate(invoice_id: int):
+    """Force regeneration of the invoice PDF artifact, then open the PDF inline."""
+    return redirect(
+        url_for(
+            "main.invoice_pdf_invoices",
+            invoice_id=invoice_id,
+            regen=1,
+            view=1,
+        )
+    )
 
 @bp.route("/billing/<int:invoice_id>/update", methods=["POST"], endpoint="invoice_update_invoices")
 def invoice_update(invoice_id: int):

@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Application version
-APP_VERSION = "0.4.2"
+APP_VERSION = "0.4.3"
 
 # Minimal imports for the shared SQLAlchemy instance
 try:

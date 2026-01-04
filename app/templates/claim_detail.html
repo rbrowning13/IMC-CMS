@@ -104,8 +104,18 @@
             <dt class="col-sm-4">DOB</dt>
             <dd class="col-sm-8">{{ claim.dob|format_date or "—" }}</dd>
 
+
             <dt class="col-sm-4">DOI</dt>
             <dd class="col-sm-8">{{ claim.doi|format_date or "—" }}</dd>
+
+            <dt class="col-sm-4">Surgery Date</dt>
+            <dd class="col-sm-8">
+              {% if claim.surgery_date is defined %}
+                {{ claim.surgery_date|format_date or "—" }}
+              {% else %}
+                —
+              {% endif %}
+            </dd>
 
             <dt class="col-sm-4">Address</dt>
             <dd class="col-sm-8">

@@ -339,6 +339,9 @@
 
           <dt>Claim State</dt>
           <dd>{{ claim.claim_state or '—' }}</dd>
+
+          <dt>Surgery Date</dt>
+          <dd>{% if claim.surgery_date %}{{ claim.surgery_date|format_date('%m/%d/%Y') }}{% else %}—{% endif %}</dd>
         </dl>
 
         <dl class="rp-dl">

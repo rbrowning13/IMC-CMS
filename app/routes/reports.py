@@ -1526,6 +1526,42 @@ def report_pdf(claim_id, report_id):
     # Determine when the report last changed (prefer updated_at; fall back to created_at).
     report_updated = getattr(report, "updated_at", None) or getattr(report, "created_at", None)
 
+    # Also consider changes to any providers referenced by this report.
+    # If a provider changes (e.g., specialty/address), the previously-generated PDF may be stale.
+    provider_updated = None
+    try:
+        provider_ids = (
+            db.session.query(ReportApprovedProvider.provider_id)
+            .filter(ReportApprovedProvider.report_id == report.id)
+            .all()
+        )
+        provider_ids = [pid for (pid,) in provider_ids]
+        if not provider_ids and getattr(report, "treating_provider_id", None):
+            provider_ids = [report.treating_provider_id]
+
+        if provider_ids:
+            # Find the newest updated_at among referenced providers.
+            # Fall back to created_at if updated_at is missing.
+            prov_rows = Provider.query.filter(Provider.id.in_(provider_ids)).all()
+            prov_times = []
+            for p in prov_rows:
+                t = getattr(p, "updated_at", None) or getattr(p, "created_at", None)
+                if t is not None:
+                    prov_times.append(t)
+            if prov_times:
+                provider_updated = max(prov_times)
+    except Exception:
+        provider_updated = None
+
+    # The effective "source updated" timestamp for staleness checks.
+    effective_updated = report_updated
+    if provider_updated is not None:
+        try:
+            if effective_updated is None or provider_updated > effective_updated:
+                effective_updated = provider_updated
+        except Exception:
+            pass
+
     latest_q = DocumentArtifact.query.filter_by(claim_id=claim.id, report_id=report.id, artifact_type="report_pdf")
     if hasattr(DocumentArtifact, "storage_backend"):
         latest_q = latest_q.filter_by(storage_backend="db")
@@ -1537,12 +1573,12 @@ def report_pdf(claim_id, report_id):
 
     if (not regen) and latest_art is not None:
         art_created = getattr(latest_art, "created_at", None)
-        # If we have timestamps, only reuse when the artifact is at least as new as the report.
+        # If we have timestamps, only reuse when the artifact is at least as new as the report or referenced providers.
         # If timestamps are missing, still reuse to avoid duplicate PDFs.
         is_fresh = True
-        if art_created is not None and report_updated is not None:
+        if art_created is not None and effective_updated is not None:
             try:
-                is_fresh = art_created >= report_updated
+                is_fresh = art_created >= effective_updated
             except Exception:
                 is_fresh = True
 
@@ -1601,6 +1637,21 @@ def report_pdf(claim_id, report_id):
     if view:
         resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
     return resp
+
+
+@bp.route("/claims/<int:claim_id>/reports/<int:report_id>/pdf/regenerate", methods=["POST"])
+def report_pdf_regenerate(claim_id, report_id):
+    """Force regeneration of the report PDF artifact, then open the PDF inline."""
+    # We reuse the existing PDF route with `regen=1` and `view=1`.
+    return redirect(
+        url_for(
+            "main.report_pdf",
+            claim_id=claim_id,
+            report_id=report_id,
+            regen=1,
+            view=1,
+        )
+    )
 
 
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/delete", methods=["GET", "POST"])

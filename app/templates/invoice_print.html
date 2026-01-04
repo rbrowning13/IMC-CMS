@@ -376,8 +376,8 @@
 
       {% if settings.invoice_footer_text %}
         <hr class="ip-hr">
-        <div class="small text-muted" style="white-space: pre-wrap;">
-          {{ settings.invoice_footer_text }}
+        <div class="small text-muted ip-footer-text">
+          {{ settings.invoice_footer_text|trim }}
         </div>
       {% endif %}
 
@@ -469,6 +469,13 @@
   #invoice-print-root .ip-totals td {
     background: #ffffff !important;
     border-color: rgba(0,0,0,0.18) !important;
+  }
+
+  /* Footer text: preserve line breaks but avoid weird indentation from stored leading spaces */
+  #invoice-print-root .ip-footer-text {
+    white-space: pre-line;
+    margin: 0;
+    padding: 0;
   }
 
 
