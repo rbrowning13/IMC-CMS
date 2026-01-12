@@ -41,11 +41,11 @@
             <div class="row g-3 mt-1">
               <div class="col-md-6">
                 <label class="form-label">Fax</label>
-                <input type="text" name="to_fax" class="form-control" value="{{ form.to_fax or '' }}">
+                <input type="text" name="to_fax" class="form-control phone-mask" value="{{ form.to_fax or '' }}">
               </div>
               <div class="col-md-6">
                 <label class="form-label">Phone</label>
-                <input type="text" name="to_phone" class="form-control" value="{{ form.to_phone or '' }}">
+                <input type="text" name="to_phone" class="form-control phone-mask" value="{{ form.to_phone or '' }}">
               </div>
             </div>
 
@@ -69,11 +69,11 @@
             <div class="row g-3 mt-1">
               <div class="col-md-6">
                 <label class="form-label">Phone</label>
-                <input type="text" name="from_phone" class="form-control" value="{{ form.from_phone or (settings.phone if settings and settings.phone is defined else '') }}">
+                <input type="text" name="from_phone" class="form-control phone-mask" value="{{ form.from_phone or (settings.phone if settings and settings.phone is defined else '') }}">
               </div>
               <div class="col-md-6">
                 <label class="form-label">Fax</label>
-                <input type="text" name="from_fax" class="form-control" value="{{ form.from_fax or (settings.fax if settings and settings.fax is defined else '') }}">
+                <input type="text" name="from_fax" class="form-control phone-mask" value="{{ form.from_fax or (settings.fax if settings and settings.fax is defined else '') }}">
               </div>
             </div>
 
@@ -155,6 +155,53 @@
   const formEl = document.getElementById('fax-cover-form');
   const previewBtn = document.getElementById('fax-preview-btn');
   const pdfBtn = document.getElementById('fax-pdf-btn');
+
+  // --- Phone/Fax input masking (10-digit US format) ---
+  function _digits10(v) {
+    return (v || '').toString().replace(/\D/g, '').slice(0, 10);
+  }
+
+  function _formatPhone10(v) {
+    const d = _digits10(v);
+    if (!d) return '';
+    if (d.length < 4) return '(' + d;
+    if (d.length < 7) return '(' + d.slice(0, 3) + ') ' + d.slice(3);
+    return '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
+  }
+
+  function _applyPhoneMask(el) {
+    if (!el) return;
+
+    function handler() {
+      const start = el.selectionStart || 0;
+      const before = (el.value || '').slice(0, start);
+      const digitsBefore = before.replace(/\D/g, '').length;
+
+      const next = _formatPhone10(el.value);
+      el.value = next;
+
+      // Reposition caret near where the same digit-count would land.
+      // (Not perfect, but good enough and avoids jumping to end every time.)
+      if (typeof el.setSelectionRange === 'function') {
+        let pos = 0;
+        let seen = 0;
+        while (pos < el.value.length && seen < digitsBefore) {
+          if (/\d/.test(el.value.charAt(pos))) seen++;
+          pos++;
+        }
+        el.setSelectionRange(pos, pos);
+      }
+    }
+
+    el.addEventListener('input', handler);
+    el.addEventListener('blur', handler);
+
+    // Normalize any pre-filled values (from Settings or query params)
+    handler();
+  }
+
+  document.querySelectorAll('input.phone-mask').forEach(_applyPhoneMask);
+  // --- End phone/fax masking ---
 
   function openWithQueryParams(btn) {
     if (!btn || !formEl) return;
@@ -251,6 +298,9 @@
         if (faxEl) faxEl.value = to_fax || '';
         if (phoneEl) phoneEl.value = to_phone || '';
         if (emailEl) emailEl.value = to_email || '';
+
+        if (faxEl) faxEl.dispatchEvent(new Event('input', { bubbles: true }));
+        if (phoneEl) phoneEl.dispatchEvent(new Event('input', { bubbles: true }));
 
         // Keep the search box clean; don't append type/role here (it can already be in the label)
         input.value = safeName;
