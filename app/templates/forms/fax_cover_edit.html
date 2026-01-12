@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container" style="max-width: 1100px;">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="mb-1">Fax Cover Sheet</h1>
+      <div class="text-muted" style="font-size: 0.95rem;">
+        Tip: Use the Search box to pull To details from carriers, employers, providers, claimants, and contacts.
+      </div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('main.forms_index') }}">
+        ← Back to Forms
+      </a>
+    </div>
+  </div>
+
+  <form method="post" id="fax-cover-form">
+    <div class="card mb-4">
+      <div class="card-body">
+
+        <div class="mb-3 position-relative">
+          <label class="form-label">Search</label>
+          <input id="fax-to-search"
+                 type="text"
+                 class="form-control"
+                 placeholder="Start typing a name..."
+                 autocomplete="off">
+          <div id="fax-to-results" class="list-group mt-2" style="display:none; position:absolute; left:0; right:0; z-index:1050; max-height: 320px; overflow:auto;"></div>
+          <div class="form-text">Click a result to fill the To fields (you can still edit everything manually).</div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <h5 class="mb-2">To</h5>
+
+            <label class="form-label">To (Name)</label>
+            <input type="text" name="to_name" class="form-control" value="{{ form.to_name or '' }}">
+
+            <div class="row g-3 mt-1">
+              <div class="col-md-6">
+                <label class="form-label">Fax</label>
+                <input type="text" name="to_fax" class="form-control" value="{{ form.to_fax or '' }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Phone</label>
+                <input type="text" name="to_phone" class="form-control" value="{{ form.to_phone or '' }}">
+              </div>
+            </div>
+
+            <div class="mt-2">
+              <label class="form-label">Email</label>
+              <input type="text" name="to_email" class="form-control" value="{{ form.to_email or '' }}">
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <h5 class="mb-2">From</h5>
+
+            <label class="form-label">From (Business)</label>
+            <input type="text" name="from_business" class="form-control" value="{{ form.from_business or (settings.business_name if settings else '') }}">
+
+            <div class="mt-2">
+              <label class="form-label">Case Manager</label>
+              <input type="text" name="from_case_manager" class="form-control" value="{{ form.from_case_manager or (settings.responsible_case_manager if settings and settings.responsible_case_manager is defined else '') }}">
+            </div>
+
+            <div class="row g-3 mt-1">
+              <div class="col-md-6">
+                <label class="form-label">Phone</label>
+                <input type="text" name="from_phone" class="form-control" value="{{ form.from_phone or (settings.phone if settings and settings.phone is defined else '') }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Fax</label>
+                <input type="text" name="from_fax" class="form-control" value="{{ form.from_fax or (settings.fax if settings and settings.fax is defined else '') }}">
+              </div>
+            </div>
+
+            <div class="mt-2">
+              <label class="form-label">Email</label>
+              <input type="text" name="from_email" class="form-control" value="{{ form.from_email or (settings.email if settings and settings.email is defined else '') }}">
+            </div>
+          </div>
+        </div>
+
+        <hr class="my-4">
+
+        <div class="row g-3">
+          <div class="col-md-9">
+            <label class="form-label">Re / Subject</label>
+            <input type="text" name="subject" class="form-control" value="{{ form.subject or '' }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Pages</label>
+            <input type="text" name="pages" class="form-control" placeholder="e.g. 12" value="{{ form.pages or '' }}">
+          </div>
+        </div>
+
+        <div class="mt-3">
+          <label class="form-label">Description of contents</label>
+          <textarea name="message" class="form-control" rows="6">{{ form.message or '' }}</textarea>
+        </div>
+
+        <div class="d-flex gap-2 mt-4">
+          {% set _print_url = (print_url if print_url is defined and print_url else None) %}
+          {% set _pdf_url = (pdf_url if pdf_url is defined and pdf_url else None) %}
+
+          {% if claim %}
+            {% if not _print_url %}{% set _print_url = url_for('main.fax_cover_print', claim_id=claim.id) %}{% endif %}
+            {% if not _pdf_url %}{% set _pdf_url = url_for('main.fax_cover_pdf', claim_id=claim.id) %}{% endif %}
+          {% else %}
+            {# Standalone mode: prefer explicit route-provided URLs #}
+            {% if not _print_url and (print_endpoint is defined and print_endpoint) %}
+              {% set _print_url = url_for(print_endpoint) %}
+            {% endif %}
+            {% if not _pdf_url and (pdf_endpoint is defined and pdf_endpoint) %}
+              {% set _pdf_url = url_for(pdf_endpoint) %}
+            {% endif %}
+            {# Back-compat fallbacks if endpoints weren't passed #}
+            {% if not _print_url %}
+              {% set _print_url = url_for('main.fax_cover_print_standalone') %}
+            {% endif %}
+            {% if not _pdf_url %}
+              {% set _pdf_url = url_for('main.fax_cover_pdf_standalone') %}
+            {% endif %}
+          {% endif %}
+
+          <button
+            id="fax-preview-btn"
+            type="button"
+            class="btn btn-outline-secondary"
+            data-open-url="{{ _print_url }}"
+          >Preview / Print</button>
+
+          <button
+            id="fax-pdf-btn"
+            type="button"
+            class="btn btn-outline-secondary"
+            data-open-url="{{ _pdf_url }}"
+          >View PDF</button>
+        </div>
+
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+(function () {
+  const input = document.getElementById('fax-to-search');
+  const box = document.getElementById('fax-to-results');
+  if (!input || !box) return;
+
+  const formEl = document.getElementById('fax-cover-form');
+  const previewBtn = document.getElementById('fax-preview-btn');
+  const pdfBtn = document.getElementById('fax-pdf-btn');
+
+  function openWithQueryParams(btn) {
+    if (!btn || !formEl) return;
+    const base = btn.getAttribute('data-open-url');
+    if (!base) return;
+
+    const u = new URL(base, window.location.origin);
+    const fd = new FormData(formEl);
+
+    let hasMessage = false;
+    let hasContents = false;
+    let messageVal = '';
+    let contentsVal = '';
+
+    for (const [k, v] of fd.entries()) {
+      const val = (v ?? '').toString();
+      u.searchParams.set(k, val);
+      if (k === 'message') {
+        hasMessage = true;
+        messageVal = val;
+      }
+      if (k === 'contents') {
+        hasContents = true;
+        contentsVal = val;
+      }
+    }
+
+    // Back/forward compatibility: some templates/routes use `message`, others use `contents`.
+    if (hasMessage && !hasContents) {
+      u.searchParams.set('contents', messageVal);
+    }
+    if (hasContents && !hasMessage) {
+      u.searchParams.set('message', contentsVal);
+    }
+
+    window.open(u.toString(), '_blank');
+  }
+
+  if (previewBtn) previewBtn.addEventListener('click', () => openWithQueryParams(previewBtn));
+  if (pdfBtn) pdfBtn.addEventListener('click', () => openWithQueryParams(pdfBtn));
+
+  let timer = null;
+
+  function hide() {
+    box.style.display = 'none';
+    box.innerHTML = '';
+  }
+
+  function show(items) {
+    box.innerHTML = '';
+    if (!items || !items.length) {
+      hide();
+      return;
+    }
+
+    function pick(obj, keys) {
+      for (const k of keys) {
+        if (obj && obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') {
+          return String(obj[k]);
+        }
+      }
+      return '';
+    }
+
+    for (const it of items) {
+      const name = pick(it, ['label', 'display', 'display_name', 'name', 'title', 'text', 'value', 'to_name', 'company', 'business']);
+      const type = pick(it, ['type', 'kind', 'entity_type', 'role', 'category']);
+
+      const a = document.createElement('button');
+      a.type = 'button';
+      a.className = 'list-group-item list-group-item-action';
+
+      // Render: Name (bold) + optional type/role on the right, similar to prior UX.
+      const safeName = name || '(unnamed)';
+      const hasDash = safeName.includes('—') || safeName.includes('-');
+      const hasTypeAlready = type ? safeName.toLowerCase().includes(String(type).toLowerCase()) : false;
+      const safeType = (type && !hasDash && !hasTypeAlready)
+        ? ` <span class="text-muted" style="font-weight:600;">— ${type}</span>`
+        : '';
+      a.innerHTML = `<span style="font-weight:600;">${safeName}</span>${safeType}`;
+
+      a.addEventListener('click', () => {
+        const to_name = pick(it, ['to_name', 'name', 'display_name', 'label', 'company', 'business', 'title', 'text', 'value']);
+        const to_fax = pick(it, ['to_fax', 'fax', 'fax_number', 'faxNumber', 'contact_fax', 'contactFax']);
+        const to_phone = pick(it, ['to_phone', 'phone', 'phone_number', 'phoneNumber', 'contact_phone', 'contactPhone']);
+        const to_email = pick(it, ['to_email', 'email', 'email_address', 'emailAddress', 'contact_email', 'contactEmail']);
+
+        const nameEl = document.querySelector('input[name="to_name"]');
+        const faxEl = document.querySelector('input[name="to_fax"]');
+        const phoneEl = document.querySelector('input[name="to_phone"]');
+        const emailEl = document.querySelector('input[name="to_email"]');
+
+        if (nameEl) nameEl.value = to_name || '';
+        if (faxEl) faxEl.value = to_fax || '';
+        if (phoneEl) phoneEl.value = to_phone || '';
+        if (emailEl) emailEl.value = to_email || '';
+
+        // Keep the search box clean; don't append type/role here (it can already be in the label)
+        input.value = safeName;
+        hide();
+      });
+
+      box.appendChild(a);
+    }
+
+    box.style.display = 'block';
+  }
+
+  async function run(q) {
+    const url = new URL('{{ url_for('main.api_fax_cover_search') }}', window.location.origin);
+    url.searchParams.set('q', q);
+
+    const resp = await fetch(url.toString(), {
+      headers: {
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    if (!resp.ok) return [];
+
+    const data = await resp.json();
+
+    // Support either: [..items..] OR {results:[..items..]} OR {items:[..items..]}
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    if (data && Array.isArray(data.items)) return data.items;
+
+    return [];
+  }
+
+  input.addEventListener('keyup', () => {
+    const q = (input.value || '').trim();
+    if (timer) window.clearTimeout(timer);
+    if (q.length < 2) {
+      hide();
+      return;
+    }
+    timer = window.setTimeout(async () => {
+      try {
+        const items = await run(q);
+        show(items);
+      } catch (e) {
+        hide();
+      }
+    }, 200);
+  });
+
+  input.addEventListener('input', () => {
+    // Trigger the same behavior as keyup for paste/autofill
+    const evt = new KeyboardEvent('keyup', { bubbles: true });
+    input.dispatchEvent(evt);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (e.target === input || box.contains(e.target)) return;
+    hide();
+  });
+})();
+</script>
+
+{% endblock %}

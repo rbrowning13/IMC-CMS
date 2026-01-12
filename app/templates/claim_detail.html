@@ -4,32 +4,6 @@
 {% block content %}
 <div class="container-fluid">
   <style>
-    /* Subtle zebra striping for billables table (like Excel alternating rows)
-       Use Bootstrap table CSS variables so it persists (not just on hover). */
-    #billables-table tbody tr:nth-child(even):not(.billable-locked) {
-      --bs-table-bg: #fafafa;
-    }
-
-    /* Billable items linked to non-Draft invoices should look locked */
-    #billables-table tr.billable-locked {
-      --bs-table-bg: #f2f2f2;
-      --bs-table-color: #666;
-      background: #f2f2f2 !important;
-      color: #666;
-    }
-    /* Ensure cell backgrounds also follow the row background (Bootstrap can override) */
-    #billables-table tr.billable-locked > * {
-      background-color: #f2f2f2 !important;
-      border-color: rgba(0, 0, 0, 0.12);
-    }
-
-    /* If table-hover is enabled, keep locked rows from changing color on hover */
-    #billables-table.table-hover tbody tr.billable-locked:hover {
-      background: #f2f2f2 !important;
-    }
-    #billables-table.table-hover tbody tr.billable-locked:hover > * {
-      background-color: #f2f2f2 !important;
-    }
 
     #billables-table tr.billable-locked .btn {
       opacity: 0.55;

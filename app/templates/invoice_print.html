@@ -284,6 +284,22 @@
         This prevents invoice_print from drifting to default settings rates when carrier-specific rates exist.
       #}
 
+      {# Effective rates for display (prefer fin if provided, else carrier overrides settings). #}
+      {% set c = claim.carrier if claim and claim.carrier else none %}
+      {% set hourly_rate_effective = (c.hourly_rate if c and c.hourly_rate is not none else settings.hourly_rate) or 0 %}
+      {% set mileage_rate_effective = (c.mileage_rate if c and c.mileage_rate is not none else settings.mileage_rate) or 0 %}
+
+      {# If the route provided effective rates via fin, prefer them (handles telephonic logic, etc.). #}
+      {% if _fin and (_fin is mapping) %}
+        {% set _hr = _fin.get('effective_hourly_rate') or _fin.get('hourly_rate') %}
+        {% set _mr = _fin.get('effective_mileage_rate') or _fin.get('mileage_rate') %}
+        {% if _hr is not none %}{% set hourly_rate_effective = _hr %}{% endif %}
+        {% if _mr is not none %}{% set mileage_rate_effective = _mr %}{% endif %}
+      {% elif _fin %}
+        {% if _fin.effective_hourly_rate is defined %}{% set hourly_rate_effective = _fin.effective_hourly_rate %}{% elif _fin.hourly_rate is defined %}{% set hourly_rate_effective = _fin.hourly_rate %}{% endif %}
+        {% if _fin.effective_mileage_rate is defined %}{% set mileage_rate_effective = _fin.effective_mileage_rate %}{% elif _fin.mileage_rate is defined %}{% set mileage_rate_effective = _fin.mileage_rate %}{% endif %}
+      {% endif %}
+
       {% set total_amount = 0 %}
 
       {% set fin_hourly_subtotal = none %}
@@ -304,12 +320,7 @@
       {% if fin_hourly_subtotal is not none or fin_mileage_subtotal is not none or fin_expenses_subtotal is not none %}
         {% set total_amount = (fin_hourly_subtotal or 0) + (fin_mileage_subtotal or 0) + (fin_expenses_subtotal or 0) %}
       {% else %}
-        {# Effective rates (carrier overrides settings). #}
-        {% set c = claim.carrier if claim and claim.carrier else none %}
-        {% set hourly_rate = (c.hourly_rate if c and c.hourly_rate is not none else settings.hourly_rate) or 0 %}
-        {% set mileage_rate = (c.mileage_rate if c and c.mileage_rate is not none else settings.mileage_rate) or 0 %}
-
-        {# All hours are billed at hourly_rate (telephonic claims are handled at the claim level; not per-code). #}
+        {# All hours are billed at hourly_rate_effective (telephonic claims are handled at the claim level; not per-code). #}
         {% set hourly_hours = hours_total or 0 %}
 
         {% if _fin and (_fin is mapping) %}
@@ -318,7 +329,7 @@
           {% if _fin.hours_total is defined %}{% set hourly_hours = _fin.hours_total %}{% elif _fin.hours is defined %}{% set hourly_hours = _fin.hours %}{% endif %}
         {% endif %}
 
-        {% set total_amount = (hourly_hours * hourly_rate) + ((miles_total or 0) * mileage_rate) + (expenses_total or 0) %}
+        {% set total_amount = (hourly_hours * hourly_rate_effective) + ((miles_total or 0) * mileage_rate_effective) + (expenses_total or 0) %}
       {% endif %}
 
       {# Balance due is derived from total_amount and paid_total to stay consistent. #}
@@ -334,13 +345,17 @@
           <table class="table table-sm mb-0 ip-totals">
             <tbody class="small">
               <tr>
-                <th class="text-end">Billable hours</th>
+                <th class="text-end">
+                  Hours{% if (hours_total or 0) > 0 %} (${{ "%.2f"|format(hourly_rate_effective or 0) }}/hr){% endif %}
+                </th>
                 <td class="text-end" style="width: 8rem;">
                   {{ "%.2f"|format(hours_total or 0) }}
                 </td>
               </tr>
               <tr>
-                <th class="text-end">Mileage (miles)</th>
+                <th class="text-end">
+                  Mileage{% if (miles_total or 0) > 0 %} (${{ "%.2f"|format(mileage_rate_effective or 0) }}/mi){% endif %}
+                </th>
                 <td class="text-end">
                   {{ "%.2f"|format(miles_total or 0) }}
                 </td>
@@ -462,6 +477,11 @@
     display: inline-table;
     width: auto;
     margin-left: auto;
+  }
+
+  /* Totals labels must stay single-line (no wrapping) */
+  #invoice-print-root .ip-totals th {
+    white-space: nowrap;
   }
 
   /* Totals box: light rows + subtle separators */

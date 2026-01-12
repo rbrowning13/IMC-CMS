@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fax Cover Sheet</title>
+
+    {# Reuse app CSS so typography matches the rest of the system (but do NOT rely on bootstrap grid here) #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <style>
+      /* Print/PDF: always black on white, no app chrome */
+      html, body {
+        background: #fff !important;
+        color: #000 !important;
+      }
+
+      /* Avoid muted/grayed text in output (dark mode inherits sometimes) */
+      .text-muted, .text-secondary, .opacity-75, .opacity-50 {
+        color: #000 !important;
+        opacity: 1 !important;
+      }
+
+      body { margin: 0; }
+
+      /* Page sizing similar to report/invoice print */
+      .fax-page {
+        max-width: 8.5in;
+        margin: 0 auto;
+        /* slightly larger print margins */
+        padding: 0.90in 0.90in;
+        box-sizing: border-box;
+        /* smaller, cleaner type for the whole sheet */
+        font-size: 12px;
+        line-height: 1.25;
+      }
+
+      .fax-header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 24px;
+      }
+
+      .fax-header-left {
+        display: flex;
+        align-items: flex-end;
+        gap: 14px;
+        min-width: 0;
+      }
+
+      .fax-logo {
+        display: block;
+        max-height: 56px;
+        width: auto;
+        object-fit: contain;
+      }
+
+      .fax-title {
+        margin: 0;
+        font-size: 28px;
+        font-weight: 800;
+        line-height: 1.05;
+        color: #000;
+      }
+
+      .fax-date {
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+        color: #000;
+      }
+
+      .fax-hr {
+        border: 0;
+        border-top: 2px solid #b8b8b8;
+        margin: 12px 0 14px;
+      }
+
+      .fax-box {
+        border: 2px solid #b8b8b8;
+        border-radius: 12px;
+        padding: 12px 14px;
+        background: #fff;
+      }
+
+      .fax-box.compact {
+        padding: 12px 14px;
+      }
+
+      .fax-kv td.value {
+        color: #000;
+      }
+
+      /* The From box often has longer wrapped values; tighten it slightly */
+      .fax-box-from table.fax-kv {
+        font-size: 11px;
+        line-height: 1.15;
+      }
+
+      .fax-grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        /* bring the two top boxes a bit closer */
+        gap: 18px;
+      }
+
+      .fax-section-title {
+        margin: 0 0 6px;
+        font-size: 14px;
+        font-weight: 800;
+        color: #000;
+      }
+
+      /* Key/value table (stable across browsers/PDF) */
+      table.fax-kv {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      table.fax-kv td {
+        padding: 1px 0;
+        vertical-align: top;
+        color: #000;
+      }
+
+      table.fax-kv td.label {
+        width: 78px;
+        font-weight: 800;
+        padding-right: 10px;
+        white-space: nowrap;
+      }
+
+      /* Preserve newlines in message */
+      .prewrap { white-space: pre-wrap; }
+
+      /* Print-only: hide controls if they ever appear */
+      @media print {
+        .d-print-none { display: none !important; }
+      }
+    </style>
+  </head>
+
+  <body>
+    {#
+      Fax Cover Print/PDF template
+
+      Key points:
+      - Playwright/Chromium PDF rendering often cannot load relative /static URLs unless they are absolute.
+        So we normalize the logo src to an absolute URL using request.url_root when needed.
+      - The PDF endpoint may pass data via querystring; provide fallbacks from request.args.
+    #}
+
+    {# ------------------------------
+       Data fallbacks (querystring + form)
+       ------------------------------ #}
+
+    {# Prefer explicit template variables from the route; otherwise fall back to request.args / request.form.
+       (Some routes use GET querystrings; others may POST form-encoded values.)
+       Also support a few alias keys used in earlier iterations.
+    #}
+
+    {% set _args = request.args %}
+    {% set _form = request.form %}
+
+    {% macro pick(var_val, keys) -%}
+      {%- if var_val is defined and var_val -%}
+        {{- var_val -}}
+      {%- else -%}
+        {%- set _v = '' -%}
+        {%- for k in keys -%}
+          {%- if not _v and _args.get(k) -%}{%- set _v = _args.get(k) -%}{%- endif -%}
+          {%- if not _v and _form.get(k) -%}{%- set _v = _form.get(k) -%}{%- endif -%}
+        {%- endfor -%}
+        {{- _v -}}
+      {%- endif -%}
+    {%- endmacro %}
+
+    {% set to_name  = pick(to_name,  ['to_name','to','toName','name','to_name_text']) %}
+    {% set to_fax   = pick(to_fax,   ['to_fax','fax','toFax','to_fax_text']) %}
+    {% set to_phone = pick(to_phone, ['to_phone','phone','toPhone','to_phone_text']) %}
+    {% set to_email = pick(to_email, ['to_email','email','toEmail','to_email_text']) %}
+
+    {% set from_name         = pick(from_name,         ['from_name','from_business','business','fromName']) %}
+    {% set from_case_manager = pick(from_case_manager, ['from_case_manager','case_manager','fromCaseManager']) %}
+    {% set from_phone        = pick(from_phone,        ['from_phone','fromPhone']) %}
+    {% set from_fax          = pick(from_fax,          ['from_fax','fromFax']) %}
+    {% set from_email        = pick(from_email,        ['from_email','fromEmail']) %}
+
+    {% set subject  = pick(subject,  ['subject','re_subject','re','reSubject']) %}
+    {# "contents" historically has also been called "message" or "description" #}
+    {% set contents = pick(contents, ['contents','message','description','content','contents_description']) %}
+    {% set pages    = pick(pages,    ['pages','page_count','pageCount']) %}
+
+    {% set now = pick(now, ['now','date','timestamp']) %}
+
+    {# ------------------------------
+       Logo resolution
+       ------------------------------ #}
+
+    {# Prefer the precomputed logo_url from the route; fallback to Settings fields below. #}
+    {% set _logo_src_primary = (logo_url if logo_url is defined and logo_url else '') %}
+
+    {# Common Settings field used elsewhere in the app (if present). #}
+    {% if not _logo_src_primary and settings and settings.logo_url is defined and settings.logo_url %}
+      {% set _logo_src_primary = settings.logo_url|string %}
+    {% endif %}
+
+    {% set _logo_src_fallback1 = '' %}
+    {% set _logo_src_fallback2 = url_for('static', filename='img/logo.png') %}
+
+    {# Legacy fallback: derive a /static URL from Settings fields if logo_url wasn't provided. #}
+    {% if not _logo_src_primary %}
+      {# If Settings has a logo_path, it is usually something like: uploads/<file> (relative to /static/) #}
+      {% if settings and settings.logo_path is defined and settings.logo_path %}
+        {% set _p = (settings.logo_path or '')|string %}
+        {% set _p = _p.replace('\\', '/') %}
+
+        {# Normalize common stored prefixes to a static-relative path #}
+        {% if 'app/static/' in _p %}
+          {% set _p = _p.split('app/static/', 1)[1] %}
+        {% elif 'static/' in _p %}
+          {% set _p = _p.split('static/', 1)[1] %}
+        {% endif %}
+
+        {% if _p.startswith('/static/') %}
+          {% set _p = _p[8:] %}
+        {% elif _p.startswith('static/') %}
+          {% set _p = _p[7:] %}
+        {% endif %}
+        {% set _p = _p.lstrip('/') %}
+
+        {% if _p.startswith('http://') or _p.startswith('https://') %}
+          {% set _logo_src_primary = _p %}
+        {% else %}
+          {% set _logo_src_primary = url_for('static', filename=_p) %}
+        {% endif %}
+
+      {# Older installs: logo_filename may be only a basename. Try uploads/<filename> and then logos/<filename>. #}
+      {% elif settings and settings.logo_filename is defined and settings.logo_filename %}
+        {% set _f = (settings.logo_filename or '')|string %}
+        {% set _f = _f.replace('\\', '/') %}
+
+        {% if 'app/static/' in _f %}
+          {% set _f = _f.split('app/static/', 1)[1] %}
+        {% elif 'static/' in _f %}
+          {% set _f = _f.split('static/', 1)[1] %}
+        {% endif %}
+
+        {% if _f.startswith('/static/') %}
+          {% set _f = _f[8:] %}
+        {% elif _f.startswith('static/') %}
+          {% set _f = _f[7:] %}
+        {% endif %}
+        {% set _f = _f.lstrip('/') %}
+
+        {% if _f.startswith('http://') or _f.startswith('https://') %}
+          {% set _logo_src_primary = _f %}
+        {% else %}
+          {% set _logo_src_primary = url_for('static', filename='uploads/' ~ _f) %}
+          {% set _logo_src_fallback1 = url_for('static', filename='logos/' ~ _f) %}
+        {% endif %}
+      {% endif %}
+    {% endif %}
+
+    {# If we computed a primary static URL, also set a reasonable fallback for the common uploads path #}
+    {% if _logo_src_primary and not _logo_src_fallback1 and settings and settings.logo_filename is defined and settings.logo_filename %}
+      {% set _logo_src_fallback1 = url_for('static', filename='uploads/' ~ (settings.logo_filename|string)) %}
+    {% endif %}
+
+    {# ------------------------------
+       Absolutize logo URLs for PDF rendering
+       ------------------------------ #}
+
+    {% set _base = (request.url_root or '') %}
+    {% set _base = _base.rstrip('/') %}
+
+    {% set _logo_src_primary_abs = _logo_src_primary %}
+    {% if _logo_src_primary_abs and _logo_src_primary_abs.startswith('/') %}
+      {% set _logo_src_primary_abs = _base ~ _logo_src_primary_abs %}
+    {% endif %}
+
+    {% set _logo_src_fallback1_abs = _logo_src_fallback1 %}
+    {% if _logo_src_fallback1_abs and _logo_src_fallback1_abs.startswith('/') %}
+      {% set _logo_src_fallback1_abs = _base ~ _logo_src_fallback1_abs %}
+    {% endif %}
+
+    {% set _logo_src_fallback2_abs = _logo_src_fallback2 %}
+    {% if _logo_src_fallback2_abs and _logo_src_fallback2_abs.startswith('/') %}
+      {% set _logo_src_fallback2_abs = _base ~ _logo_src_fallback2_abs %}
+    {% endif %}
+
+    <div class="fax-page">
+      {% if request.args.get('debug') == '1' %}
+        <div class="fax-box" style="margin-bottom: 18px; border-style: dashed;">
+          <h2 class="fax-section-title">DEBUG (remove later)</h2>
+          <div style="font-size: 12px;">
+            <div><strong>request.method:</strong> {{ request.method }}</div>
+            <div><strong>args:</strong></div>
+            <pre style="white-space: pre-wrap; margin: 6px 0 12px;">{{ request.args.to_dict(flat=False) | tojson(indent=2) }}</pre>
+            <div><strong>form:</strong></div>
+            <pre style="white-space: pre-wrap; margin: 6px 0;">{{ request.form.to_dict(flat=False) | tojson(indent=2) }}</pre>
+          </div>
+        </div>
+      {% endif %}
+      <div class="fax-header">
+        <div class="fax-header-left">
+          {% if _logo_src_primary_abs %}
+            <img
+              src="{{ _logo_src_primary_abs }}"
+              alt="Logo"
+              class="fax-logo"
+              onerror="this.onerror=null;{% if _logo_src_fallback1_abs %}this.src='{{ _logo_src_fallback1_abs }}';this.onerror=function(){this.onerror=null;this.src='{{ _logo_src_fallback2_abs }}';};{% else %}this.src='{{ _logo_src_fallback2_abs }}';{% endif %}"
+            >
+          {% endif %}
+          <h1 class="fax-title">Fax Cover Sheet</h1>
+        </div>
+        <div class="fax-date">{{ now }}</div>
+      </div>
+
+      <hr class="fax-hr">
+
+      <div class="fax-grid-2">
+        <div class="fax-box">
+          <section>
+            <h2 class="fax-section-title">To</h2>
+            <table class="fax-kv">
+              <tr><td class="label">Name</td><td class="value">{{ to_name }}</td></tr>
+              <tr><td class="label">Fax</td><td class="value">{{ to_fax }}</td></tr>
+              <tr><td class="label">Phone</td><td class="value">{{ to_phone }}</td></tr>
+              <tr><td class="label">Email</td><td class="value">{{ to_email }}</td></tr>
+            </table>
+          </section>
+        </div>
+
+        <div class="fax-box fax-box-from">
+          <section>
+            <h2 class="fax-section-title">From</h2>
+            <table class="fax-kv">
+              <tr><td class="label">Business</td><td class="value">{{ from_name }}</td></tr>
+              <tr><td class="label">Case Manager</td><td class="value">{{ from_case_manager }}</td></tr>
+              <tr><td class="label">Phone</td><td class="value">{{ from_phone }}</td></tr>
+              <tr><td class="label">Fax</td><td class="value">{{ from_fax }}</td></tr>
+              <tr><td class="label">Email</td><td class="value">{{ from_email }}</td></tr>
+            </table>
+          </section>
+        </div>
+      </div>
+
+      <div class="fax-box" style="margin-top: 14px;">
+        <section>
+          <h2 class="fax-section-title">Re / Subject</h2>
+          <div style="margin-bottom: 14px; color:#000;">{{ subject }}</div>
+
+          <h2 class="fax-section-title">Description of contents</h2>
+          <div class="prewrap" style="margin-bottom: 14px; color:#000;">{{ contents }}</div>
+
+          <h2 class="fax-section-title">Pages</h2>
+          <div style="font-size: 13px; font-weight: 700; color:#000;">{{ pages }}</div>
+        </section>
+      </div>
+    </div>
+  </body>
+</html>

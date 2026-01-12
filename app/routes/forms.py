@@ -1,15 +1,26 @@
 """Forms / templates routes.
 
-This module is intentionally self-contained and keeps its UI in simple
-`render_template_string` blocks so we don't have to maintain separate template
-files yet. Later we can move these into proper Jinja templates.
+Forms live in dedicated Jinja templates under `templates/forms/`.
+Routes in this module coordinate data + rendering and (when needed) Playwright PDF output.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import quote as url_quote
 
-from flask import flash, redirect, request, render_template_string, url_for, jsonify
+from flask import (
+    flash,
+    redirect,
+    request,
+    render_template,
+    render_template_string,
+    url_for,
+    jsonify,
+    make_response,
+    current_app,
+)
+from playwright.sync_api import sync_playwright
 
 from sqlalchemy import or_
 
@@ -17,6 +28,7 @@ from . import bp
 from app import db
 from app.models import Settings
 from app.models import Carrier, Employer, Provider, Claim, Contact, ContactRole
+
 
 
 def _ensure_settings() -> Settings:
@@ -27,6 +39,45 @@ def _ensure_settings() -> Settings:
         db.session.add(settings)
         db.session.commit()
     return settings
+
+
+def _settings_logo_url(settings: Settings) -> str | None:
+    """Best-effort logo URL for templates.
+
+    Supports several possible Settings field names (historical drift) and normalizes
+    relative paths into a /static/... URL.
+    """
+
+    candidates = [
+        getattr(settings, "logo_url", None),
+        getattr(settings, "logo_path", None),
+        getattr(settings, "logo_filename", None),
+        getattr(settings, "logo_file", None),
+        getattr(settings, "logo", None),
+    ]
+
+    raw = ""
+    for c in candidates:
+        if c:
+            raw = str(c).strip()
+            if raw:
+                break
+
+    if not raw:
+        return None
+
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+
+    # Absolute local paths won't work in the browser unless they're under /static/
+    if raw.startswith("/") and "/static/" not in raw:
+        return None
+
+    if "/static/" in raw:
+        rel = raw.split("/static/", 1)[1].lstrip("/")
+        return url_for("static", filename=rel)
+
+    return url_for("static", filename=raw.lstrip("/"))
 
 
 def _fmt_phone(phone: str | None, ext: str | None) -> str:
@@ -69,6 +120,163 @@ def _safe_or_ilike(model, term: str, fields: list[str]):
             except Exception:
                 pass
     return or_(*clauses) if clauses else None
+
+
+# Helper: get first non-empty value from form/args for any alias key
+def _get_form_or_args(*keys: str) -> str:
+    """Return first non-empty value from request.form/request.args for any of the given keys."""
+    for k in keys:
+        v = (request.form.get(k) or request.args.get(k) or "").strip()
+        if v:
+            return v
+    return ""
+
+
+# Helper: Normalize fax cover payload from request.form / request.args
+def _fax_cover_payload_from_request(settings: Settings) -> dict:
+    """Normalize fax cover payload from request.form / request.args.
+
+    We support multiple historical key names because the edit/print templates and JS have changed a few times.
+    """
+
+    # To
+    to_name = _get_form_or_args("to_name", "to", "toName", "recipient_name", "recipient")
+    to_fax = _get_form_or_args("to_fax", "toFax", "fax", "recipient_fax")
+    to_phone = _get_form_or_args("to_phone", "toPhone", "phone", "recipient_phone")
+    to_email = _get_form_or_args("to_email", "toEmail", "email", "recipient_email")
+
+    # From defaults
+    from_name_default = (settings.business_name or "").strip()
+    from_phone_default = (getattr(settings, "phone", "") or "").strip()
+    from_email_default = (getattr(settings, "email", "") or "").strip()
+    from_fax_default = (getattr(settings, "fax", "") or "").strip()
+    case_manager_name_default = (getattr(settings, "responsible_case_manager", "") or "").strip()
+
+    from_name = (_get_form_or_args("from_name", "from", "fromName") or from_name_default).strip()
+    from_phone = (_get_form_or_args("from_phone", "fromPhone") or from_phone_default).strip()
+    from_fax = (_get_form_or_args("from_fax", "fromFax") or from_fax_default).strip()
+    from_email = (_get_form_or_args("from_email", "fromEmail") or from_email_default).strip()
+    from_case_manager = (
+        _get_form_or_args("from_case_manager", "fromCaseManager", "case_manager") or case_manager_name_default
+    ).strip()
+
+    # Meta
+    pages = _get_form_or_args("pages", "page_count", "num_pages", "pageCount")
+    subject = _get_form_or_args("subject", "re_subject", "re", "regarding")
+
+    # The bottom section has drifted between keys; capture both.
+    contents = _get_form_or_args(
+        "contents",
+        "contents_description",
+        "description",
+        "description_of_contents",
+        "message",
+        "body",
+    )
+    message = _get_form_or_args("message", "note", "notes", "body")
+
+    # If only one was provided, mirror it so templates using either name still populate.
+    if contents and not message:
+        message = contents
+    if message and not contents:
+        contents = message
+
+    return {
+        "to_name": to_name,
+        "to_fax": to_fax,
+        "to_phone": to_phone,
+        "to_email": to_email,
+        "from_name": from_name,
+        "from_case_manager": from_case_manager,
+        "from_phone": from_phone,
+        "from_fax": from_fax,
+        "from_email": from_email,
+        "pages": pages,
+        "subject": subject,
+        "contents": contents,
+        "message": message,
+    }
+
+
+def _playwright_pdf_from_url(url: str, *, page_size: str = "Letter") -> bytes:
+    """Render the given URL to PDF via headless Chromium and return PDF bytes."""
+
+    # Keep timeouts conservative to avoid hanging a request.
+    nav_timeout_ms = int(current_app.config.get("PDF_NAV_TIMEOUT_MS", 20_000))
+    pdf_timeout_ms = int(current_app.config.get("PDF_RENDER_TIMEOUT_MS", 20_000))
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ],
+        )
+        context = browser.new_context()
+        page = context.new_page()
+        page.set_default_navigation_timeout(nav_timeout_ms)
+        page.set_default_timeout(nav_timeout_ms)
+
+        # Ensure we only return once the page is fully rendered.
+        page.goto(url, wait_until="networkidle")
+        # Bump timeout for the render step (some Playwright versions don't accept timeout= on page.pdf)
+        page.set_default_timeout(pdf_timeout_ms)
+        pdf_bytes = page.pdf(
+            format=page_size,
+            print_background=True,
+            margin={"top": "0.5in", "right": "0.5in", "bottom": "0.5in", "left": "0.5in"},
+        )
+
+        context.close()
+        browser.close()
+
+    return pdf_bytes
+
+
+@bp.route("/forms/fax-cover/<int:claim_id>/pdf", methods=["GET", "POST"])
+def fax_cover_pdf(claim_id: int):
+    """Generate a Fax Cover Sheet PDF (in-memory) via Playwright and return it inline."""
+
+    settings = _ensure_settings()
+    claim = Claim.query.get_or_404(claim_id)
+
+    # Use helper to normalize payload
+    payload = _fax_cover_payload_from_request(settings)
+
+    # IMPORTANT: generate PDF from the real print URL (same HTML as preview),
+    # so static assets (logo/CSS) load correctly and PDF matches preview.
+    print_url = url_for(
+        "main.fax_cover_print",
+        claim_id=claim.id,
+        _external=True,
+        to_name=payload["to_name"],
+        to_fax=payload["to_fax"],
+        to_phone=payload["to_phone"],
+        to_email=payload["to_email"],
+        from_name=payload["from_name"],
+        from_case_manager=payload["from_case_manager"],
+        from_phone=payload["from_phone"],
+        from_fax=payload["from_fax"],
+        from_email=payload["from_email"],
+        pages=payload["pages"],
+        subject=payload["subject"],
+        message=payload["message"],
+        contents=payload["contents"],
+    )
+
+    try:
+        pdf_bytes = _playwright_pdf_from_url(print_url)
+    except Exception as e:
+        flash(f"Could not generate PDF: {e}", "error")
+        return redirect(url_for("main.fax_cover_edit", claim_id=claim.id))
+
+    filename = f"Fax_Cover_{datetime.now().strftime('%Y-%m-%d')}.pdf"
+    resp = make_response(pdf_bytes)
+    resp.headers["Content-Type"] = "application/pdf"
+    resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+    return resp
 
 
 @bp.route("/forms")
@@ -120,12 +328,25 @@ def api_fax_cover_search():
     term = q
     results: list[dict] = []
 
-    def add_result(*, kind: str, display: str, name: str = "", phone: str = "", fax: str = "", email: str = ""):
+    def add_result(
+        *,
+        kind: str,
+        display: str,
+        name: str = "",
+        phone: str = "",
+        fax: str = "",
+        email: str = "",
+    ):
+        # Provide stable keys expected by the autocomplete JS.
+        # `label` is the human-facing line in the dropdown.
         results.append(
             {
                 "kind": kind,
-                "display": display,
-                "name": name,
+                "type": kind,  # alias
+                "kind_label": kind.title(),
+                "display": name or display,
+                "label": display,
+                "name": name or display,
                 "phone": phone,
                 "fax": fax,
                 "email": email,
@@ -137,10 +358,16 @@ def api_fax_cover_search():
         clause = _safe_or_ilike(Provider, term, ["name", "city", "email", "phone"])  # type: ignore[name-defined]
         if clause is not None:
             for p in Provider.query.filter(clause).order_by(Provider.name.asc()).limit(20).all():
+                p_name = (getattr(p, "name", "") or "").strip()
+                p_spec = (getattr(p, "specialty", "") or "").strip()
+                if p_spec:
+                    label = f"{p_name} — {p_spec} (Provider)"
+                else:
+                    label = f"{p_name} (Provider)"
                 add_result(
                     kind="provider",
-                    display=f"{(getattr(p, 'name', '') or '').strip()} (Provider)",
-                    name=(getattr(p, "name", "") or "").strip(),
+                    display=label,
+                    name=p_name,
                     phone=_fmt_phone(getattr(p, "phone", None), getattr(p, "phone_ext", None)),
                     fax=(getattr(p, "fax", "") or "").strip(),
                     email=(getattr(p, "email", "") or "").strip(),
@@ -247,7 +474,7 @@ def api_fax_cover_search():
                     bits.append(role_label)
                 display = " — ".join([b for b in bits if b])
                 if parent_display:
-                    display = f"{display} (Contact @ {parent_display})"
+                    display = f"{display} (Contact) @ {parent_display}"
                 else:
                     display = f"{display} (Contact)"
 
@@ -262,11 +489,11 @@ def api_fax_cover_search():
     except Exception:
         pass
 
-    # De-dupe by display + kind
+    # De-dupe by label (or display) + kind
     seen = set()
     deduped = []
     for r in results:
-        key = (r.get("kind"), r.get("display"))
+        key = (r.get("kind"), r.get("label") or r.get("display"))
         if key in seen:
             continue
         seen.add(key)
@@ -275,316 +502,195 @@ def api_fax_cover_search():
     return jsonify({"results": deduped[:50]})
 
 
+
+
+
+# New Fax Cover Sheet routes using Jinja templates
+
 @bp.route("/forms/fax-cover", methods=["GET", "POST"])
 def forms_fax_cover():
-    """Fax cover sheet generator.
-
-    This intentionally mirrors the original behavior from the legacy monolithic
-    routes.py: an edit mode (form) and a preview/print mode.
-
-    NOTE: the "Search" box is a placeholder for the future contact lookup
-    endpoint (api.py) — it does not perform live lookup yet.
-    """
+    """Standalone Fax Cover Sheet (no claim required)."""
 
     settings = _ensure_settings()
 
-    # Defaults from Settings (editable in the Settings UI)
+    # Defaults from Settings
     from_name_default = (settings.business_name or "").strip()
     from_phone_default = (getattr(settings, "phone", "") or "").strip()
     from_email_default = (getattr(settings, "email", "") or "").strip()
     from_fax_default = (getattr(settings, "fax", "") or "").strip()
-
-    # Optional: if present in Settings
     case_manager_name_default = (getattr(settings, "responsible_case_manager", "") or "").strip()
 
-    # Form values (POST overrides)
-    to_name = (request.form.get("to_name") or "").strip()
-    to_fax = (request.form.get("to_fax") or "").strip()
-    to_phone = (request.form.get("to_phone") or "").strip()
-    to_email = (request.form.get("to_email") or "").strip()
+    form = {
+        "to_name": (request.form.get("to_name") or "").strip(),
+        "to_fax": (request.form.get("to_fax") or "").strip(),
+        "to_phone": (request.form.get("to_phone") or "").strip(),
+        "to_email": (request.form.get("to_email") or "").strip(),
+        "from_name": (request.form.get("from_name") or from_name_default).strip(),
+        "from_phone": (request.form.get("from_phone") or from_phone_default).strip(),
+        "from_fax": (request.form.get("from_fax") or from_fax_default).strip(),
+        "from_email": (request.form.get("from_email") or from_email_default).strip(),
+        "from_case_manager": (request.form.get("from_case_manager") or case_manager_name_default).strip(),
+        "pages": (request.form.get("pages") or "").strip(),
+        "subject": (request.form.get("subject") or "").strip(),
+        "message": (request.form.get("message") or "").strip(),
+    }
 
-    from_name = (request.form.get("from_name") or from_name_default).strip()
-    from_phone = (request.form.get("from_phone") or from_phone_default).strip()
-    from_fax = (request.form.get("from_fax") or from_fax_default).strip()
-    from_email = (request.form.get("from_email") or from_email_default).strip()
-    from_case_manager = (request.form.get("from_case_manager") or case_manager_name_default).strip()
-
-    subject = (request.form.get("subject") or "").strip()
-    pages = (request.form.get("pages") or "").strip()
-    contents = (request.form.get("contents") or "").strip()
-
-    mode = (request.form.get("mode") or "edit").strip().lower()
-
-    # Preview/print mode
-    if request.method == "POST" and mode == "preview":
-        preview_html = """
-{% extends "base.html" %}
-{% block content %}
-  <div class="d-print-none mb-3">
-    <a class="btn btn-outline-secondary" href="{{ url_for('main.forms_fax_cover') }}">← Back to Edit</a>
-    <button class="btn btn-primary" onclick="window.print()">Print</button>
-  </div>
-
-  <div class="border rounded p-4 bg-white">
-    <div class="d-flex align-items-center justify-content-between">
-      <h1 class="h3 m-0">Fax Cover Sheet</h1>
-      <div class="text-muted">{{ now }}</div>
-    </div>
-
-    <hr>
-
-    <div class="row">
-      <div class="col-md-6">
-        <h2 class="h5">To</h2>
-        <dl class="row mb-0">
-          <dt class="col-4">Name</dt><dd class="col-8">{{ to_name }}</dd>
-          <dt class="col-4">Fax</dt><dd class="col-8">{{ to_fax }}</dd>
-          <dt class="col-4">Phone</dt><dd class="col-8">{{ to_phone }}</dd>
-          <dt class="col-4">Email</dt><dd class="col-8">{{ to_email }}</dd>
-        </dl>
-      </div>
-
-      <div class="col-md-6">
-        <h2 class="h5">From</h2>
-        <dl class="row mb-0">
-          <dt class="col-4">Business</dt><dd class="col-8">{{ from_name }}</dd>
-          <dt class="col-4">Case Manager</dt><dd class="col-8">{{ from_case_manager }}</dd>
-          <dt class="col-4">Phone</dt><dd class="col-8">{{ from_phone }}</dd>
-          <dt class="col-4">Fax</dt><dd class="col-8">{{ from_fax }}</dd>
-          <dt class="col-4">Email</dt><dd class="col-8">{{ from_email }}</dd>
-        </dl>
-      </div>
-    </div>
-
-    <hr>
-
-    <div class="row">
-      <div class="col-md-8">
-        <h2 class="h5">Re / Subject</h2>
-        <div class="mb-3">{{ subject }}</div>
-
-        <h2 class="h5">Description of contents</h2>
-        <div style="white-space: pre-wrap;">{{ contents }}</div>
-      </div>
-
-      <div class="col-md-4">
-        <h2 class="h5">Pages</h2>
-        <div class="display-6">{{ pages }}</div>
-      </div>
-    </div>
-
-  </div>
-{% endblock %}
-"""
-
-        return render_template_string(
-            preview_html,
-            active_page="forms",
-            settings=settings,
-            now=datetime.now().strftime("%m/%d/%Y %I:%M %p"),
-            to_name=to_name,
-            to_fax=to_fax,
-            to_phone=to_phone,
-            to_email=to_email,
-            from_name=from_name,
-            from_case_manager=from_case_manager,
-            from_phone=from_phone,
-            from_fax=from_fax,
-            from_email=from_email,
-            subject=subject,
-            pages=pages,
-            contents=contents,
-        )
-
-    # Edit mode
-    edit_html = """
-{% extends "base.html" %}
-{% block content %}
-  <div class="d-flex align-items-center justify-content-between mb-3">
-    <h1 class="m-0">Fax Cover Sheet</h1>
-    <a class="btn btn-outline-secondary" href="{{ url_for('main.forms_index') }}">← Back to Forms</a>
-  </div>
-
-  <p class="text-muted">
-    Tip: Use the Search box to pull To details from carriers, employers, providers, claimants, and contacts.
-  </p>
-
-  <form method="post" class="mb-4">
-    <input type="hidden" name="mode" value="preview">
-
-    <div class="row g-3">
-      <div class="col-12">
-        <label class="form-label">Search</label>
-        <input class="form-control" id="faxSearch" autocomplete="off" placeholder="Start typing a name...">
-        <div id="faxSearchResults" class="list-group mt-2" style="max-height: 260px; overflow:auto; display:none;"></div>
-        <div class="form-text">Searches carriers, employers, providers, claimants, and contacts.</div>
-      </div>
-
-      <div class="col-md-6">
-        <h2 class="h5 mt-2">To</h2>
-
-        <label class="form-label">To (Name)</label>
-        <input class="form-control" name="to_name" value="{{ to_name }}">
-
-        <div class="row g-2 mt-1">
-          <div class="col-md-6">
-            <label class="form-label">Fax</label>
-            <input class="form-control" name="to_fax" value="{{ to_fax }}">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Phone</label>
-            <input class="form-control" name="to_phone" value="{{ to_phone }}">
-          </div>
-        </div>
-
-        <div class="row g-2 mt-1">
-          <div class="col-12">
-            <label class="form-label">Email</label>
-            <input class="form-control" name="to_email" value="{{ to_email }}">
-          </div>
-        </div>
-      </div>
-
-      <div class="col-md-6">
-        <h2 class="h5 mt-2">From</h2>
-
-        <label class="form-label">From (Business)</label>
-        <input class="form-control" name="from_name" value="{{ from_name }}">
-
-        <label class="form-label mt-2">Case Manager</label>
-        <input class="form-control" name="from_case_manager" value="{{ from_case_manager }}">
-
-        <div class="row g-2 mt-1">
-          <div class="col-md-6">
-            <label class="form-label">Phone</label>
-            <input class="form-control" name="from_phone" value="{{ from_phone }}">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Fax</label>
-            <input class="form-control" name="from_fax" value="{{ from_fax }}">
-          </div>
-        </div>
-
-        <label class="form-label mt-2">Email</label>
-        <input class="form-control" name="from_email" value="{{ from_email }}">
-      </div>
-
-      <div class="col-12">
-        <h2 class="h5 mt-2">Details</h2>
-
-        <div class="row g-2">
-          <div class="col-md-8">
-            <label class="form-label">Re / Subject</label>
-            <input class="form-control" name="subject" value="{{ subject }}">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Pages</label>
-            <input class="form-control" name="pages" value="{{ pages }}" placeholder="e.g. 12">
-          </div>
-        </div>
-
-        <label class="form-label mt-2">Description of contents</label>
-        <textarea class="form-control" name="contents" rows="5">{{ contents }}</textarea>
-      </div>
-
-      <div class="col-12 d-flex gap-2">
-        <button class="btn btn-primary" type="submit">Preview / Print</button>
-        <a class="btn btn-outline-secondary" href="{{ url_for('main.forms_fax_cover') }}">Reset</a>
-      </div>
-    </div>
-  </form>
-  <script>
-    (function() {
-      const input = document.getElementById('faxSearch');
-      const results = document.getElementById('faxSearchResults');
-
-      const toName = document.querySelector('input[name="to_name"]');
-      const toFax = document.querySelector('input[name="to_fax"]');
-      const toPhone = document.querySelector('input[name="to_phone"]');
-      const toEmail = document.querySelector('input[name="to_email"]');
-
-      let timer = null;
-
-      function hideResults() {
-        results.style.display = 'none';
-        results.innerHTML = '';
-      }
-
-      function showResults(items) {
-        results.innerHTML = '';
-        if (!items || items.length === 0) {
-          hideResults();
-          return;
-        }
-
-        items.forEach((item) => {
-          const a = document.createElement('button');
-          a.type = 'button';
-          a.className = 'list-group-item list-group-item-action';
-          a.textContent = item.display || item.name || '(result)';
-          a.addEventListener('click', () => {
-            if (item.name && toName) toName.value = item.name;
-            if (item.fax && toFax) toFax.value = item.fax;
-            if (item.phone && toPhone) toPhone.value = item.phone;
-            if (item.email && toEmail) toEmail.value = item.email;
-            hideResults();
-          });
-          results.appendChild(a);
-        });
-
-        results.style.display = 'block';
-      }
-
-      async function runSearch(q) {
-        const url = new URL("{{ url_for('main.api_fax_cover_search') }}", window.location.origin);
-        url.searchParams.set('q', q);
-        const resp = await fetch(url.toString(), { headers: { 'Accept': 'application/json' } });
-        if (!resp.ok) return [];
-        const data = await resp.json();
-        return (data && data.results) ? data.results : [];
-      }
-
-      input.addEventListener('input', () => {
-        const q = (input.value || '').trim();
-        if (timer) clearTimeout(timer);
-        if (q.length < 2) {
-          hideResults();
-          return;
-        }
-        timer = setTimeout(async () => {
-          try {
-            const items = await runSearch(q);
-            showResults(items);
-          } catch (e) {
-            hideResults();
-          }
-        }, 200);
-      });
-
-      document.addEventListener('click', (e) => {
-        if (!results.contains(e.target) && e.target !== input) {
-          hideResults();
-        }
-      });
-    })();
-  </script>
-{% endblock %}
-"""
-
-    return render_template_string(
-        edit_html,
+    return render_template(
+        "forms/fax_cover_edit.html",
         active_page="forms",
+        claim=None,
         settings=settings,
-        to_name=to_name,
-        to_fax=to_fax,
-        to_phone=to_phone,
-        to_email=to_email,
-        from_name=from_name,
-        from_case_manager=from_case_manager,
-        from_phone=from_phone,
-        from_fax=from_fax,
-        from_email=from_email,
-        subject=subject,
-        pages=pages,
-        contents=contents,
+        form=form,
+        today=datetime.now().strftime("%m/%d/%Y"),
+        logo_url=_settings_logo_url(settings),
+        search_url=url_for("main.api_fax_cover_search"),
+        pdf_url=url_for("main.fax_cover_pdf_standalone"),
+        print_url=url_for("main.fax_cover_print_standalone"),
+    )
+
+# Standalone HTML print route for Fax Cover Sheet (no claim)
+@bp.route("/forms/fax-cover/print", methods=["GET", "POST"])
+def fax_cover_print_standalone():
+    """Standalone Fax Cover Sheet HTML print view (no claim)."""
+
+    settings = _ensure_settings()
+
+    payload = _fax_cover_payload_from_request(settings)
+
+    return render_template(
+        "forms/fax_cover_print.html",
+        active_page="forms",
+        claim=None,
+        settings=settings,
+        logo_url=_settings_logo_url(settings),
+        now=datetime.now().strftime("%m/%d/%Y %I:%M %p"),
+        to_name=payload["to_name"],
+        to_fax=payload["to_fax"],
+        to_phone=payload["to_phone"],
+        to_email=payload["to_email"],
+        from_name=payload["from_name"],
+        from_case_manager=payload["from_case_manager"],
+        from_phone=payload["from_phone"],
+        from_fax=payload["from_fax"],
+        from_email=payload["from_email"],
+        pages=payload["pages"],
+        subject=payload["subject"],
+        contents=payload["contents"],
+        message=payload["message"],
+        to=payload["to_name"],
+    )
+# Standalone (no-claim) Fax Cover Sheet PDF route
+@bp.route("/forms/fax-cover/pdf", methods=["GET", "POST"])
+def fax_cover_pdf_standalone():
+    """Generate a standalone Fax Cover Sheet PDF (no claim) via Playwright and return it inline."""
+    settings = _ensure_settings()
+
+    payload = _fax_cover_payload_from_request(settings)
+
+    # IMPORTANT: generate PDF from the real print URL (same HTML as preview)
+    print_url = url_for(
+        "main.fax_cover_print_standalone",
+        _external=True,
+        to_name=payload["to_name"],
+        to_fax=payload["to_fax"],
+        to_phone=payload["to_phone"],
+        to_email=payload["to_email"],
+        from_name=payload["from_name"],
+        from_case_manager=payload["from_case_manager"],
+        from_phone=payload["from_phone"],
+        from_fax=payload["from_fax"],
+        from_email=payload["from_email"],
+        pages=payload["pages"],
+        subject=payload["subject"],
+        message=payload["message"],
+        contents=payload["contents"],
+    )
+
+    try:
+        pdf_bytes = _playwright_pdf_from_url(print_url)
+    except Exception as e:
+        flash(f"Could not generate PDF: {e}", "error")
+        return redirect(url_for("main.forms_fax_cover"))
+
+    filename = f"Fax_Cover_{datetime.now().strftime('%Y-%m-%d')}.pdf"
+    resp = make_response(pdf_bytes)
+    resp.headers["Content-Type"] = "application/pdf"
+    resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+    return resp
+
+
+@bp.route("/forms/fax-cover/<int:claim_id>", methods=["GET", "POST"])
+def fax_cover_edit(claim_id: int):
+    """Edit screen for the fax cover sheet (no persistence; POST just re-renders)."""
+
+    settings = _ensure_settings()
+    claim = Claim.query.get_or_404(claim_id)
+
+    # Defaults from Settings
+    from_name_default = (settings.business_name or "").strip()
+    from_phone_default = (getattr(settings, "phone", "") or "").strip()
+    from_email_default = (getattr(settings, "email", "") or "").strip()
+    from_fax_default = (getattr(settings, "fax", "") or "").strip()
+    case_manager_name_default = (getattr(settings, "responsible_case_manager", "") or "").strip()
+
+    # Form values (POST overrides). Keep names aligned with fax_cover_edit.html.
+    form = {
+        "to_name": (request.form.get("to_name") or "").strip(),
+        "to_fax": (request.form.get("to_fax") or "").strip(),
+        "to_phone": (request.form.get("to_phone") or "").strip(),
+        "to_email": (request.form.get("to_email") or "").strip(),
+        "from_name": (request.form.get("from_name") or from_name_default).strip(),
+        "from_phone": (request.form.get("from_phone") or from_phone_default).strip(),
+        "from_fax": (request.form.get("from_fax") or from_fax_default).strip(),
+        "from_email": (request.form.get("from_email") or from_email_default).strip(),
+        "from_case_manager": (request.form.get("from_case_manager") or case_manager_name_default).strip(),
+        "pages": (request.form.get("pages") or "").strip(),
+        "subject": (request.form.get("subject") or "").strip(),
+        "message": (request.form.get("message") or "").strip(),
+    }
+
+    return render_template(
+        "forms/fax_cover_edit.html",
+        active_page="forms",
+        claim=claim,
+        settings=settings,
+        form=form,
+        today=datetime.now().strftime("%m/%d/%Y"),
+        logo_url=_settings_logo_url(settings),
+        search_url=url_for("main.api_fax_cover_search"),
+        pdf_url=url_for("main.fax_cover_pdf", claim_id=claim.id),
+        print_url=url_for("main.fax_cover_print", claim_id=claim.id),
+    )
+
+
+@bp.route("/forms/fax-cover/<int:claim_id>/print", methods=["GET", "POST"])
+def fax_cover_print(claim_id: int):
+    """HTML print view for the fax cover sheet (used for browser print)."""
+
+    settings = _ensure_settings()
+    claim = Claim.query.get_or_404(claim_id)
+
+    payload = _fax_cover_payload_from_request(settings)
+
+    return render_template(
+        "forms/fax_cover_print.html",
+        active_page="forms",
+        claim=claim,
+        settings=settings,
+        logo_url=_settings_logo_url(settings),
+        now=datetime.now().strftime("%m/%d/%Y %I:%M %p"),
+        to_name=payload["to_name"],
+        to_fax=payload["to_fax"],
+        to_phone=payload["to_phone"],
+        to_email=payload["to_email"],
+        from_name=payload["from_name"],
+        from_case_manager=payload["from_case_manager"],
+        from_phone=payload["from_phone"],
+        from_fax=payload["from_fax"],
+        from_email=payload["from_email"],
+        pages=payload["pages"],
+        subject=payload["subject"],
+        contents=payload["contents"],
+        message=payload["message"],
+        to=payload["to_name"],
     )
