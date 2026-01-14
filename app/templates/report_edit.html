@@ -179,67 +179,148 @@
           </div>
           <div class="card-body small">
             <div class="row g-3">
+              <div class="col-12">
+  <label class="form-label form-label-sm mb-1">AI instructions (optional)</label>
+  <input
+    type="text"
+    id="ai_user_prompt"
+    class="form-control form-control-sm"
+    placeholder="Optional: tell AI what to do (e.g., ‘summarize my notes, 2 sentences, no filler’)">
+  <div class="form-text">
+    Tip: Gina can type quick instructions here before clicking any <span class="fw-semibold">AI draft</span>.
+  </div>
+</div>
             {% if report.report_type == 'initial' %}
             <!-- Primary Care Provider / Family Doctor (Initial report only) -->
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Primary Care Provider / Family Doctor</label>
               <input type="text"
                      name="primary_care_provider"
+                     id="primary_care_provider_field"
                      class="form-control form-control-sm"
                      value="{{ (report.primary_care_provider if report.primary_care_provider is defined else '') or (claim.primary_care_provider if claim.primary_care_provider is defined else '') or '' }}">
               <div class="form-text">Initial report only (not shown on later reports).</div>
             </div>
             <!-- Diagnosis -->
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Diagnosis</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Diagnosis</label>
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('initial_diagnosis', 'initial_diagnosis_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
               <textarea name="initial_diagnosis"
+                        id="initial_diagnosis_field"
                         class="form-control form-control-sm"
                         rows="2">{{ report.initial_diagnosis or "" }}</textarea>
             </div>
 
             <!-- Mechanism of injury -->
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Mechanism of Injury</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Mechanism of Injury</label>
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('initial_mechanism_of_injury', 'initial_mechanism_of_injury_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
               <textarea name="initial_mechanism_of_injury"
+                        id="initial_mechanism_of_injury_field"
                         class="form-control form-control-sm"
                         rows="2">{{ report.initial_mechanism_of_injury or "" }}</textarea>
             </div>
 
             <!-- Co-existing conditions -->
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Concurrent Conditions</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Concurrent Conditions</label>
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('initial_coexisting_conditions', 'initial_coexisting_conditions_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
               <textarea name="initial_coexisting_conditions"
+                        id="initial_coexisting_conditions_field"
                         class="form-control form-control-sm"
                         rows="2">{{ report.initial_coexisting_conditions or "" }}</textarea>
             </div>
 
             <!-- Surgical history -->
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Surgical History</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Surgical History</label>
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('initial_surgical_history', 'initial_surgical_history_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
               <textarea name="initial_surgical_history"
+                        id="initial_surgical_history_field"
                         class="form-control form-control-sm"
                         rows="2">{{ report.initial_surgical_history or "" }}</textarea>
             </div>
 
             <!-- Medications -->
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Medications</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Medications</label>
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('initial_medications', 'initial_medications_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
               <textarea name="initial_medications"
+                        id="initial_medications_field"
                         class="form-control form-control-sm"
                         rows="2">{{ report.initial_medications or "" }}</textarea>
             </div>
 
             <!-- Diagnostics -->
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Diagnostics</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Diagnostics</label>
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('initial_diagnostics', 'initial_diagnostics_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
               <textarea name="initial_diagnostics"
+                        id="initial_diagnostics_field"
                         class="form-control form-control-sm"
                         rows="2">{{ report.initial_diagnostics or "" }}</textarea>
             </div>
 
             <!-- Employment status (Initial only) -->
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Employment Status</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Employment Status</label>
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('employment_status', 'employment_status_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
               <textarea name="employment_status"
                         id="employment_status_field"
                         class="form-control form-control-sm"
@@ -247,17 +328,100 @@
             </div>
             {% endif %}
 
+            {% if report.report_type != 'initial' %}
             <!-- Current status / treatment plan -->
             <div class="col-12">
               <div class="d-flex justify-content-between align-items-center">
                 <label class="form-label form-label-sm mb-0">Current Status / Treatment Plan</label>
-                {% if report.report_type != 'initial' %}
-                <button type="button"
-                        class="btn btn-link btn-sm p-0"
-                        onclick="rollForwardField('status_treatment_plan', 'status_treatment_plan_field')">
-                  Roll forward from last report
-                </button>
-                {% endif %}
+                <div>
+                  {% if report.report_type != 'initial' %}
+                  <button type="button"
+                          class="btn btn-outline-secondary btn-sm btn-action"
+                          onclick="rollForwardField('status_treatment_plan', 'status_treatment_plan_field')">
+                    Roll forward
+                  </button>
+                  {% endif %}
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('status_treatment_plan', 'status_treatment_plan_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
+              <textarea name="status_treatment_plan"
+                        id="status_treatment_plan_field"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.status_treatment_plan or "" }}</textarea>
+            </div>
+            {% endif %}
+
+            {% if report.report_type != 'initial' %}
+            <!-- Work status -->
+            <div class="col-12">
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Work Status</label>
+                <div>
+                  {% if report.report_type != 'initial' %}
+                  <button type="button"
+                          class="btn btn-outline-secondary btn-sm btn-action"
+                          onclick="rollForwardField('work_status', 'work_status_field')">
+                    Roll forward
+                  </button>
+                  {% endif %}
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('work_status', 'work_status_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
+              <textarea name="work_status"
+                        id="work_status_field"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.work_status or "" }}</textarea>
+            </div>
+            {% endif %}
+
+
+            {% if report.report_type != 'closure' and report.report_type != 'initial' %}
+            <!-- Case management plan -->
+            <div class="col-12">
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Case Management Plan</label>
+                <div>
+                  {% if report.report_type != 'initial' %}
+                  <button type="button"
+                          class="btn btn-outline-secondary btn-sm btn-action"
+                          onclick="rollForwardField('case_management_plan', 'case_management_plan_field')">
+                    Roll forward
+                  </button>
+                  {% endif %}
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('case_management_plan', 'case_management_plan_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
+              <textarea name="case_management_plan"
+                        id="case_management_plan_field"
+                        class="form-control form-control-sm"
+                        rows="2">{{ report.case_management_plan or "" }}</textarea>
+            </div>
+            {% endif %}
+            {% if report.report_type == 'initial' %}
+
+            <!-- Current status / treatment plan (Initial) -->
+            <div class="col-12">
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Current Status / Treatment Plan</label>
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('status_treatment_plan', 'status_treatment_plan_field')">
+                    AI draft
+                  </button>
+                </div>
               </div>
               <textarea name="status_treatment_plan"
                         id="status_treatment_plan_field"
@@ -265,17 +429,17 @@
                         rows="2">{{ report.status_treatment_plan or "" }}</textarea>
             </div>
 
-            <!-- Work status -->
+            <!-- Work status (Initial) -->
             <div class="col-12">
               <div class="d-flex justify-content-between align-items-center">
                 <label class="form-label form-label-sm mb-0">Work Status</label>
-                {% if report.report_type != 'initial' %}
-                <button type="button"
-                        class="btn btn-link btn-sm p-0"
-                        onclick="rollForwardField('work_status', 'work_status_field')">
-                  Roll forward from last report
-                </button>
-                {% endif %}
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('work_status', 'work_status_field')">
+                    AI draft
+                  </button>
+                </div>
               </div>
               <textarea name="work_status"
                         id="work_status_field"
@@ -283,25 +447,24 @@
                         rows="2">{{ report.work_status or "" }}</textarea>
             </div>
 
-
-            {% if report.report_type != 'closure' %}
-            <!-- Case management plan -->
+            <!-- Case management plan (Initial) -->
             <div class="col-12">
               <div class="d-flex justify-content-between align-items-center">
                 <label class="form-label form-label-sm mb-0">Case Management Plan</label>
-                {% if report.report_type != 'initial' %}
-                <button type="button"
-                        class="btn btn-link btn-sm p-0"
-                        onclick="rollForwardField('case_management_plan', 'case_management_plan_field')">
-                  Roll forward from last report
-                </button>
-                {% endif %}
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('case_management_plan', 'case_management_plan_field')">
+                    AI draft
+                  </button>
+                </div>
               </div>
               <textarea name="case_management_plan"
                         id="case_management_plan_field"
                         class="form-control form-control-sm"
                         rows="2">{{ report.case_management_plan or "" }}</textarea>
             </div>
+
             {% endif %}
             </div>
           </div>
@@ -378,14 +541,32 @@
               </select>
             </div>
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Closure Details</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Closure Details</label>
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('closure_details', 'closure_details_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
               <textarea name="closure_details"
                         id="closure_details_field"
                         class="form-control form-control-sm"
                         rows="2">{{ report.closure_details or "" }}</textarea>
             </div>
             <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Case Management Impact</label>
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label form-label-sm mb-0">Case Management Impact</label>
+                <div>
+                  <button type="button"
+                          class="btn btn-outline-accent btn-sm btn-action"
+                          onclick="aiDraftField('closure_case_management_impact', 'closure_case_management_impact_field')">
+                    AI draft
+                  </button>
+                </div>
+              </div>
               <textarea name="closure_case_management_impact"
                         id="closure_case_management_impact_field"
                         class="form-control form-control-sm"
@@ -581,10 +762,29 @@
     </div>
   </form>
 
+<style>
+  .btn-action {
+    font-size: .75rem;
+    padding: .18rem .55rem;
+    line-height: 1.2;
+    border-radius: 999px;
+  }
+  .btn-outline-accent {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    background: transparent;
+  }
+  .btn-outline-accent:hover,
+  .btn-outline-accent:focus {
+    background: var(--accent-color);
+    color: #fff;
+  }
+</style>
 </div>
 <script>
   (function () {
     const baseUrl = "{{ url_for('main.report_roll_forward', claim_id=claim.id, report_id=report.id, field_name='__FIELD__') }}";
+    const aiBaseUrl = "{{ url_for('main.report_ai_draft_field', claim_id=claim.id, report_id=report.id, field_name='__FIELD__') }}";
 
     function showNotice(message, level) {
       if (!message) return;
@@ -592,6 +792,9 @@
       // Remove any previous roll-forward notice.
       const existing = document.getElementById("rf-floating-alert");
       if (existing) existing.remove();
+      // Remove any previous undo pill.
+      const existingUndo = document.getElementById("ai-undo-pill");
+      if (existingUndo) existingUndo.remove();
 
       // Build a lightweight floating alert.
       const el = document.createElement("div");
@@ -641,6 +844,65 @@
       }
     }
 
+    function showAiUndo(el, previousValue) {
+      if (!el) return;
+
+      // Remove any existing undo pill.
+      const existingUndo = document.getElementById("ai-undo-pill");
+      if (existingUndo) existingUndo.remove();
+
+      const pill = document.createElement("div");
+      pill.id = "ai-undo-pill";
+      pill.style.position = "fixed";
+      pill.style.left = "50%";
+      pill.style.top = "62px";
+      pill.style.transform = "translateX(-50%)";
+      pill.style.zIndex = "9999";
+      pill.style.maxWidth = "min(720px, calc(100vw - 24px))";
+      pill.style.width = "fit-content";
+      pill.style.boxShadow = "0 10px 30px rgba(0,0,0,0.15)";
+
+      pill.className = "alert alert-secondary small";
+      pill.style.padding = "6px 10px";
+      pill.style.display = "flex";
+      pill.style.alignItems = "center";
+      pill.style.gap = "10px";
+
+      const label = document.createElement("span");
+      label.textContent = "AI draft inserted.";
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-sm btn-outline-secondary";
+      btn.textContent = "Undo";
+      btn.style.padding = ".15rem .55rem";
+      btn.style.borderRadius = "999px";
+
+      btn.addEventListener("click", function () {
+        setFieldValue(el, previousValue);
+        const cur = document.getElementById("ai-undo-pill");
+        if (cur) cur.remove();
+        showNotice("Restored previous text.", "success");
+      });
+
+      const hint = document.createElement("span");
+      hint.className = "text-muted";
+      hint.style.fontSize = ".8em";
+      hint.textContent = "Tip: Ctrl+Z also works.";
+
+      pill.appendChild(label);
+      pill.appendChild(btn);
+      pill.appendChild(hint);
+
+      document.body.appendChild(pill);
+
+      // Auto-dismiss after a bit.
+      window.setTimeout(function () {
+        const cur = document.getElementById("ai-undo-pill");
+        if (cur) cur.remove();
+      }, 8000);
+    }
+
     function setFieldValue(el, value) {
       if (!el) return;
 
@@ -676,6 +938,113 @@
         // ignore
       }
     }
+
+    window.aiDraftField = function (fieldName, elementId) {
+      const url = aiBaseUrl.replace("__FIELD__", fieldName);
+      const el = document.getElementById(elementId);
+
+      if (!el) {
+        showNotice("AI draft failed: field not found on page.", "danger");
+        return;
+      }
+
+      // Provide current field text + optional user instructions.
+      const userPromptEl = document.getElementById("ai_user_prompt");
+      const userPrompt = userPromptEl ? (userPromptEl.value || "").trim() : "";
+
+      const payload = {
+        current_text: (el.value || "")
+      };
+
+      if (userPrompt) {
+        payload.user_prompt = userPrompt;
+      }
+
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      })
+        .then(function (response) {
+          const ct = (response.headers.get("content-type") || "").toLowerCase();
+
+          if (response.status === 403) {
+            throw new Error("AI is disabled in Settings.");
+          }
+          if (!response.ok) {
+            // Try to surface a JSON error message if present.
+            return response.json().then(function (errData) {
+              const msg = (errData && (errData.error || errData.message)) ? (errData.error || errData.message) : null;
+              throw new Error(msg ? String(msg) : ("Request failed (" + response.status + ")"));
+            }).catch(function () {
+              throw new Error("Request failed (" + response.status + ")");
+            });
+          }
+          if (ct.indexOf("application/json") === -1) {
+            throw new Error("Unexpected response type");
+          }
+          return response.json();
+        })
+        .then(function (data) {
+          // Preferred: server returns a generated draft.
+          const draft = (data && (data.draft || data.text || data.completion))
+            ? (data.draft || data.text || data.completion)
+            : null;
+
+          if (draft && String(draft).trim() !== "") {
+            const prev = (el && (el.value || "")) ? String(el.value) : "";
+            setFieldValue(el, String(draft));
+            showNotice("AI draft inserted.", "success");
+
+            // Provide a quick undo option (plus Ctrl+Z still works).
+            showAiUndo(el, prev);
+
+            // clear instructions
+            if (userPromptEl) {
+              userPromptEl.value = "";
+            }
+
+            return;
+          }
+
+          // Legacy/back-compat: server returns a prompt to paste into ChatGPT.
+          // If we ever hit this path again, make it explicit so it doesn't confuse users.
+          const prompt = (data && (data.prompt || data.system_prompt || data.user_prompt))
+            ? (data.prompt || data.system_prompt || data.user_prompt)
+            : null;
+
+          if (prompt && String(prompt).trim() !== "") {
+            if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(String(prompt))
+                .then(function () {
+                  showNotice("AI prompt copied to clipboard (legacy mode).", "success");
+                })
+                .catch(function () {
+                  showNotice("AI prompt generated (legacy mode). Clipboard copy failed.", "warning");
+                });
+            } else {
+              showNotice("AI prompt generated (legacy mode). Clipboard unavailable.", "warning");
+            }
+            return;
+          }
+
+          // If neither draft nor prompt exists, show any server-provided message.
+          const msg = (data && (data.error || data.message)) ? (data.error || data.message) : null;
+          if (msg) {
+            showNotice(String(msg), "warning");
+          } else {
+            showNotice("AI draft returned nothing.", "warning");
+          }
+        })
+        .catch(function (error) {
+          console.error("AI draft failed:", error);
+          const msg = (error && error.message) ? error.message : "AI draft failed. Try refreshing the page.";
+          showNotice(msg, "danger");
+        });
+    };
 
     window.rollForwardField = function (fieldName, elementId) {
       const url = baseUrl.replace("__FIELD__", fieldName);

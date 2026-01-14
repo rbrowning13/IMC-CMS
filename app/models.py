@@ -1,6 +1,7 @@
 from datetime import datetime, date
 
 
+import sqlalchemy as sa
 from sqlalchemy.orm import synonym
 from sqlalchemy import Numeric
 
@@ -718,6 +719,26 @@ class Settings(db.Model):
     accent_color = db.Column(db.String(20))
     report_footer_text = db.Column(db.Text)
     invoice_footer_text = db.Column(db.Text)
+
+    # AI / privacy toggles
+    # Master kill-switch for any AI features in the app.
+    # When False, no AI endpoints/features should run or build any external context.
+    ai_enabled = db.Column(
+        db.Boolean,
+        nullable=False,
+        server_default=sa.false(),
+        default=False,
+    )
+
+    # When True, AI context building may include provider names.
+    # Still exclude claimant name, DOB, addresses, phone/fax, email, claim number, etc.
+    # This is only meaningful if ai_enabled is True.
+    ai_allow_provider_names = db.Column(
+        db.Boolean,
+        nullable=False,
+        server_default=sa.false(),
+        default=False,
+    )
 
     # Filesystem root for documents
     documents_root = db.Column(db.String(255))

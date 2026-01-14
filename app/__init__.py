@@ -7,7 +7,7 @@ from datetime import datetime, date
 
 from markupsafe import Markup, escape
 from sqlalchemy.exc import ProgrammingError, OperationalError
-from flask import Flask
+from flask import Flask, request, redirect, current_app
 from flask_migrate import Migrate
 
 from dotenv import load_dotenv
@@ -229,6 +229,67 @@ def create_app():
 
     app.register_blueprint(main_bp)
     app.register_blueprint(mobile_bp, url_prefix="/mobile")
+
+    # ------------------------------------------------------------
+    # Mobile auto-redirect
+    # ------------------------------------------------------------
+    def _is_mobile_user_agent(ua: str) -> bool:
+        if not ua:
+            return False
+        s = ua.lower()
+        # Broad, pragmatic UA sniffing (good enough for our use-case)
+        mobile_tokens = [
+            "iphone",
+            "ipod",
+            "android",
+            "mobile",
+            "ipad",
+            "windows phone",
+        ]
+        return any(tok in s for tok in mobile_tokens)
+
+    @app.before_request
+    def _mobile_redirect():
+        # Only redirect safe, idempotent requests
+        if request.method not in ("GET", "HEAD"):
+            return None
+
+        # Allow forcing desktop via query string
+        if request.args.get("desktop") == "1":
+            return None
+
+        path = request.path or "/"
+
+        # Never redirect these (avoid breaking assets/API/dev tools)
+        skip_prefixes = (
+            "/mobile",
+            "/static",
+            "/api",
+            "/favicon.ico",
+            "/robots.txt",
+        )
+        if path.startswith(skip_prefixes):
+            return None
+
+        # Only redirect on mobile-ish user agents
+        ua = request.headers.get("User-Agent", "")
+        if not _is_mobile_user_agent(ua):
+            return None
+
+        # Candidate mobile path
+        mobile_path = "/mobile" + path
+
+        # Only redirect if the mobile route actually exists
+        try:
+            adapter = current_app.url_map.bind(request.host)
+            adapter.match(mobile_path, method=request.method)
+        except Exception:
+            return None
+
+        # Preserve query string, but keep the ability to force desktop
+        query_string = request.query_string.decode("utf-8") if request.query_string else ""
+        target = mobile_path + ("?" + query_string if query_string else "")
+        return redirect(target, code=302)
 
     @app.context_processor
     def inject_settings():

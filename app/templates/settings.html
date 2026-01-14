@@ -192,6 +192,41 @@
       </div>
     </div>
 
+    <!-- AI Assistant -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header">
+        <h2 class="h6 mb-0">AI Assistant</h2>
+      </div>
+      <div class="card-body">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="ai_enabled" name="ai_enabled" value="1"
+                 {% if settings.ai_enabled %}checked{% endif %}>
+          <label class="form-check-label" for="ai_enabled">
+            Enable AI assistance (optional)
+          </label>
+          <div class="form-text small">
+            When enabled, AI features can help draft multi-line report fields using prior reports and billables.
+          </div>
+        </div>
+
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="ai_allow_provider_names" name="ai_allow_provider_names" value="1"
+                 {% if settings.ai_allow_provider_names %}checked{% endif %}
+                 {% if not settings.ai_enabled %}disabled{% endif %}>
+          <label class="form-check-label" for="ai_allow_provider_names">
+            Allow provider names in AI context
+          </label>
+          <div class="form-text small">
+            Leave off to redact provider names before sending context to the AI.
+          </div>
+        </div>
+
+        <div class="alert alert-warning mt-2 mb-0 py-2 px-3 small">
+          <strong>Privacy note:</strong> AI should never receive claimant identifiers (name, DOB, phone, email, address) or other sensitive details.
+        </div>
+      </div>
+    </div>
+
     <!-- Contact Roles -->
     <div class="card shadow-sm mb-3">
       <div class="card-header">
@@ -297,6 +332,19 @@ function attachPhoneFormatter(input) {
 
 document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll('input[name="phone"], input[name="fax"]').forEach(attachPhoneFormatter);
+
+  const aiEnabled = document.getElementById("ai_enabled");
+  const allowProviderNames = document.getElementById("ai_allow_provider_names");
+  if (aiEnabled && allowProviderNames) {
+    const syncAI = () => {
+      allowProviderNames.disabled = !aiEnabled.checked;
+      if (!aiEnabled.checked) {
+        allowProviderNames.checked = false;
+      }
+    };
+    aiEnabled.addEventListener("change", syncAI);
+    syncAI();
+  }
 });
 </script>
 {% endblock %}

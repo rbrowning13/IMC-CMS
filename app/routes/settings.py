@@ -220,6 +220,10 @@ def settings_view():
         invoice_footer_raw = (form.get("invoice_footer_text") or "").strip()
         documents_root_raw = (form.get("documents_root") or "").strip()
 
+        # AI/privacy toggles (checkboxes: checked = True, missing = False)
+        ai_enabled_raw = "ai_enabled" in form
+        ai_allow_provider_names_raw = "ai_allow_provider_names" in form
+
         # Validate contact-ish fields
         if error is None:
             if phone_raw and not validate_phone_or_fax(phone_raw):
@@ -327,6 +331,11 @@ def settings_view():
                 settings.invoice_footer_text = invoice_footer_raw
             if hasattr(settings, "documents_root") and documents_root_raw:
                 settings.documents_root = documents_root_raw
+            # AI/privacy toggles
+            if hasattr(settings, "ai_enabled"):
+                settings.ai_enabled = ai_enabled_raw
+            if hasattr(settings, "ai_allow_provider_names"):
+                settings.ai_allow_provider_names = ai_allow_provider_names_raw
 
             # Report defaults
             if hasattr(settings, "initial_report_hours") and initial_report_hours is not None:

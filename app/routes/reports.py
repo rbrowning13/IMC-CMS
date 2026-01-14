@@ -15,15 +15,18 @@ IMPORTANT:
 from __future__ import annotations
 
 import io
+import inspect
 import json
 import os
 import sys
 import subprocess
+import traceback
 from pathlib import Path
 from datetime import date, datetime, timedelta
 from collections import defaultdict
 
 from flask import (
+    abort,
     current_app,
     flash,
     jsonify,
@@ -56,6 +59,8 @@ from ..models import (
     BarrierOption,
     DocumentArtifact,
 )
+
+from ..services import ai_service
 
 from . import bp
 
@@ -883,6 +888,7 @@ def report_document_upload(claim_id, report_id):
     return redirect(url_for("main.report_edit", claim_id=claim.id, report_id=report.id))
 
 
+
 @bp.route(
     "/claims/<int:claim_id>/reports/<int:report_id>/roll-forward/<string:field_name>",
     methods=["GET"],
@@ -921,6 +927,138 @@ def report_roll_forward(claim_id, report_id, field_name):
 
     value = getattr(previous, field_name, "") or ""
     return jsonify({"value": value}), 200
+
+
+# ---- AI Draft Field Prompt Route ----
+@bp.route(
+    "/claims/<int:claim_id>/reports/<int:report_id>/ai-draft/<string:field_name>",
+    methods=["GET", "POST"],
+)
+def report_ai_draft_field(claim_id, report_id, field_name):
+    """AI draft/assist for a single report field.
+
+    GET: Return the assembled prompt for preview/inspection (no model call).
+    POST: Generate a draft using the AI provider (returns generated text).
+    """
+    claim = Claim.query.get_or_404(claim_id)
+    report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
+    # Current field value (used as context so the model can revise/extend instead of writing blind)
+    current_value = getattr(report, field_name, "") or ""
+
+    # Keep this aligned with roll-forward: only allow multi-line/long-text fields.
+    allowed_fields = {
+        # Shared long-text fields
+        "status_treatment_plan",
+        "work_status",
+        "employment_status",
+        "case_management_plan",
+        # Initial-specific fields
+        "initial_diagnosis",
+        "initial_mechanism_of_injury",
+        "initial_coexisting_conditions",
+        "initial_surgical_history",
+        "initial_medications",
+        "initial_diagnostics",
+        # Closure-specific fields
+        "closure_details",
+        "closure_case_management_impact",
+    }
+
+    if field_name not in allowed_fields:
+        return jsonify({"error": "Invalid field"}), 400
+
+    settings = Settings.query.first()
+    ai_enabled = bool(getattr(settings, "ai_enabled", False)) if settings else False
+    if not ai_enabled:
+        return jsonify({"error": "AI is disabled in Settings."}), 403
+
+    # Optional freeform guidance from the user (e.g. "Write in Gina's tone, mention latest ortho visit")
+    user_prompt = ""
+    if request.method == "POST":
+        if request.is_json:
+            payload = request.get_json(silent=True) or {}
+            user_prompt = (payload.get("user_prompt") or "").strip()
+        else:
+            user_prompt = (request.form.get("user_prompt") or "").strip()
+
+    # ---- GET: return the assembled prompt for inspection/debug (no model call) ----
+    if request.method == "GET":
+        try:
+            def _call_prompt_builder(**kwargs):
+                """Call ai_service.build_report_field_draft_prompt with only supported kwargs.
+
+                This makes the route resilient when ai_service evolves and avoids 500s from
+                unexpected keyword arguments.
+                """
+                fn = ai_service.build_report_field_draft_prompt
+                sig = inspect.signature(fn)
+                allowed = set(sig.parameters.keys())
+                filtered = {k: v for k, v in kwargs.items() if k in allowed}
+                return fn(**filtered)
+
+            prompt = _call_prompt_builder(
+                claim_id=claim.id,
+                report_id=report.id,
+                field_name=field_name,
+                user_prompt=user_prompt,
+                settings=settings,
+                current_value=current_value,
+                prompt_only=True,
+            )
+
+        except Exception as e:
+            current_app.logger.exception("AI draft prompt build failed")
+            payload = {
+                "ok": False,
+                "error": "AI draft prompt build failed",
+                "detail": str(e),
+                "type": e.__class__.__name__,
+            }
+            if current_app.debug:
+                payload["traceback"] = traceback.format_exc()
+            return jsonify(payload), 500
+
+        # Normalize response contract
+        if isinstance(prompt, dict):
+            return jsonify(prompt), 200
+        return jsonify({"ok": True, "prompt": str(prompt)}), 200
+
+    # ---- POST: generate a draft (may be stubbed until provider is wired) ----
+    try:
+        fn = getattr(ai_service, "generate_report_field", None)
+        if fn is None:
+            raise NotImplementedError("AI draft generation is not wired yet.")
+
+        def _call_generator(**kwargs):
+            fn2 = fn
+            sig2 = inspect.signature(fn2)
+            allowed2 = set(sig2.parameters.keys())
+            filtered2 = {k: v for k, v in kwargs.items() if k in allowed2}
+            return fn2(**filtered2)
+
+        text = _call_generator(
+            claim_id=claim.id,
+            report_id=report.id,
+            field_name=field_name,
+            user_prompt=user_prompt,
+            settings=settings,
+            current_value=current_value,
+        )
+        return jsonify({"ok": True, "text": text}), 200
+
+    except NotImplementedError as e:
+        return jsonify({"ok": False, "error": str(e)}), 501
+    except Exception as e:
+        current_app.logger.exception("AI draft generation failed")
+        payload = {
+            "ok": False,
+            "error": "AI draft generation failed",
+            "detail": str(e),
+            "type": e.__class__.__name__,
+        }
+        if current_app.debug:
+            payload["traceback"] = traceback.format_exc()
+        return jsonify(payload), 500
 
 
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/edit", methods=["GET", "POST"])
