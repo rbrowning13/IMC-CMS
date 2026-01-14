@@ -364,8 +364,9 @@
     <header class="page-header">
       <h1 class="page-title">New Billable Activity</h1>
       {% if claim %}
+        {% set claimant_display = (claim.claimant_name if claim.claimant_name is defined else (claim.claimant_full_name if claim.claimant_full_name is defined else claim.claimant)) %}
         <p class="page-subtitle">
-          {{ claim.claimant or "Unnamed Claimant" }}
+          {{ claimant_display or "Unnamed Claimant" }}
           {% if claim.claim_number %}&nbsp;·&nbsp;Claim #{{ claim.claim_number }}{% endif %}
         </p>
       {% endif %}
@@ -469,6 +470,16 @@
           </div>
         </form>
       </div>
+      <div class="buttons">
+        <button type="submit" form="mobile-billable-form" class="btn-primary">
+          Save Activity
+        </button>
+        {% if claim %}
+          <a href="{{ url_for('mobile.mobile_claims') }}" class="btn-outline">
+            Back to Claim Picker
+          </a>
+        {% endif %}
+      </div>
       {% if recent_items %}
         <div class="card">
           <div class="recent-header">
@@ -505,9 +516,6 @@
     </main>
 
     <div class="buttons">
-      <button type="submit" form="mobile-billable-form" class="btn-primary">
-        Save Activity
-      </button>
       {% if claim %}
         <a href="{{ url_for('mobile.mobile_claims') }}" class="btn-outline">
           Back to Claim Picker
