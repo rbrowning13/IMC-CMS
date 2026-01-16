@@ -447,14 +447,11 @@
 
           <div class="field">
             <label for="description">Description</label>
-            <input
-              type="text"
+            <textarea
               id="description"
               name="description"
-              autocomplete="off"
               placeholder="e.g. CM – review records, phone calls…"
-              value="{{ description or '' }}"
-            >
+            >{{ description or "" }}</textarea>
             <div class="help">
               Short label used on invoices and report tables.
             </div>
@@ -621,17 +618,26 @@
         }
       }
 
-      const notesEl = document.getElementById('notes');
-      function autosize(el) {
+      function autosize(el, maxPx) {
         if (!el) return;
         el.style.height = 'auto';
-        // cap growth so it doesn't become ridiculous on mobile
-        const max = 10 * 24; // ~10 rows
-        el.style.height = Math.min(el.scrollHeight, max) + 'px';
+        el.style.height = Math.min(el.scrollHeight, maxPx) + 'px';
       }
+
+      const descriptionEl = document.getElementById('description');
+      if (descriptionEl) {
+        autosize(descriptionEl, 10 * 24); // ~10 rows (match notes feel)
+        descriptionEl.addEventListener('input', function () {
+          autosize(descriptionEl, 10 * 24);
+        });
+      }
+
+      const notesEl = document.getElementById('notes');
       if (notesEl) {
-        autosize(notesEl);
-        notesEl.addEventListener('input', function () { autosize(notesEl); });
+        autosize(notesEl, 10 * 24); // ~10 rows
+        notesEl.addEventListener('input', function () {
+          autosize(notesEl, 10 * 24);
+        });
       }
     });
   </script>
