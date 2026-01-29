@@ -229,12 +229,42 @@
     }
 
     // ----- Tri-state sorting for claims table -----
+    function extractSortableLastName(fullName) {
+      const raw = (fullName || '').trim();
+      if (!raw) return '';
+
+      // If "Last, First" format, prefer the portion before comma.
+      if (raw.includes(',')) {
+        const parts = raw.split(',');
+        const last = (parts[0] || '').trim().toLowerCase();
+        const rest = (parts.slice(1).join(',') || '').trim().toLowerCase();
+        return last || rest || raw.toLowerCase();
+      }
+
+      // Otherwise assume "First Middle Last" and use last token.
+      const tokens = raw.split(/\s+/).filter(Boolean);
+      if (tokens.length === 0) return '';
+      const last = tokens[tokens.length - 1].toLowerCase();
+      return last || raw.toLowerCase();
+    }
+
     function getSortValue(row, key) {
       switch (key) {
-        case 'claim_number':
-          return (row.children[0].innerText || '').trim().toLowerCase();
-        case 'claimant':
-          return (row.children[1].innerText || '').trim().toLowerCase();
+        case 'claim_number': {
+          const s = (row.children[0].innerText || '').trim();
+          const n = parseInt(s.replace(/[^0-9]/g, ''), 10);
+          if (!Number.isNaN(n)) {
+            // zero-pad for stable string sorting
+            return String(n).padStart(12, '0');
+          }
+          return s.toLowerCase();
+        }
+        case 'claimant': {
+          const full = (row.children[1].innerText || '').trim();
+          const last = extractSortableLastName(full);
+          // secondary key keeps stable ordering for same last names
+          return (last + '|' + full.toLowerCase());
+        }
         case 'carrier':
           return (row.children[2].innerText || '').trim().toLowerCase();
         case 'employer':
@@ -316,6 +346,16 @@
         });
       });
     });
+
+    // Default initial sort: Claimant (by last name) ascending
+    (function defaultSortByClaimant() {
+      const claimantHeader = table.querySelector('th.sortable[data-sort-key="claimant"]');
+      if (!claimantHeader) return;
+
+      // Force state to none so the first click lands on asc.
+      claimantHeader.dataset.sortState = 'none';
+      claimantHeader.click();
+    })();
   });
 </script>
 {% endblock %}

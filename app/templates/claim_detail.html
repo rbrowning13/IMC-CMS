@@ -220,18 +220,23 @@
         </button>
       </h2>
       <div id="billableCollapse" class="accordion-collapse collapse show"
-           aria-labelledby="billableHeading" data-bs-parent="#claimAccordion">
+           aria-labelledby="billableHeading">
         <div class="accordion-body">
 
           <!-- Existing items -->
           <div class="card shadow-sm mb-3">
             <div class="card-body p-0">
               {% if billable_items %}
-                <div class="table-responsive" style="max-height: 14rem; overflow-y: auto;">
+                <div class="d-flex justify-content-between align-items-center px-3 pt-2 pb-1">
+                  <div class="small text-muted">
+                    Default sort: <strong>Entry date</strong> (newest first). Click a column header to sort by that column.
+                  </div>
+                </div>
+                <div class="table-responsive" style="max-height: 28rem; min-height: 14rem; overflow-y: auto; resize: vertical;">
                   <table id="billables-table" class="table table-sm table-hover mb-0 align-middle">
                     <thead class="table-light">
                       <tr>
-                        <th class="sortable" data-sort-key="date"><span>Date</span> <span class="sort-indicator">
+                        <th class="sortable" data-sort-key="dos"><span>DOS</span> <span class="sort-indicator">
                             ↕
                           </span></th>
                         <th class="sortable" data-sort-key="activity"><span>Activity</span> <span class="sort-indicator">↕</span></th>
@@ -257,10 +262,55 @@
                         {% set inv_row = invoice_map.get(item.invoice_id) if item.invoice_id else None %}
                         {% set inv_status = (inv_row.status if inv_row and inv_row.status else 'Draft') if item.invoice_id else 'Draft' %}
                         {% set is_locked = (item.invoice_id and inv_status != 'Draft') %}
-                        <tr class="{% if is_locked %}billable-locked{% endif %}">
+                        {# Compute entry and DOS values for sorting (avoid undefined attribute() helper) #}
+                        {% set entry_dt = none %}
+                        {% if item.created_at is defined and item.created_at %}
+                          {% set entry_dt = item.created_at %}
+                        {% elif item.created is defined and item.created %}
+                          {% set entry_dt = item.created %}
+                        {% elif item.created_on is defined and item.created_on %}
+                          {% set entry_dt = item.created_on %}
+                        {% elif item.entered_at is defined and item.entered_at %}
+                          {% set entry_dt = item.entered_at %}
+                        {% elif item.entry_date is defined and item.entry_date %}
+                          {% set entry_dt = item.entry_date %}
+                        {% endif %}
+
+                        {% set dos_dt = none %}
+                        {% if item.service_date is defined and item.service_date %}
+                          {% set dos_dt = item.service_date %}
+                        {% elif item.date_of_service is defined and item.date_of_service %}
+                          {% set dos_dt = item.date_of_service %}
+                        {% elif item.dos is defined and item.dos %}
+                          {% set dos_dt = item.dos %}
+                        {% elif item.date is defined and item.date %}
+                          {% set dos_dt = item.date %}
+                        {% elif item.performed_on is defined and item.performed_on %}
+                          {% set dos_dt = item.performed_on %}
+                        {% elif item.service_dt is defined and item.service_dt %}
+                          {% set dos_dt = item.service_dt %}
+                        {% endif %}
+
+                        {# Keys: prefer real date/datetime objects; fall back to digit-squash for strings #}
+                        {% if entry_dt and entry_dt.strftime is defined %}
+                          {% set entry_key = entry_dt.strftime('%Y%m%d%H%M%S') %}
+                        {% else %}
+                          {% set entry_key = (entry_dt|string)|replace('-', '')|replace('/', '')|replace(':', '')|replace(' ', '') %}
+                        {% endif %}
+
+                        {% if dos_dt and dos_dt.strftime is defined %}
+                          {% set dos_key = dos_dt.strftime('%Y%m%d') %}
+                        {% else %}
+                          {% set dos_key = (dos_dt|string)|replace('-', '')|replace('/', '')|replace(':', '')|replace(' ', '') %}
+                        {% endif %}
+                        <tr class="{% if is_locked %}billable-locked{% endif %}" data-entry-key="{{ entry_key }}" data-dos-key="{{ dos_key }}">
                           <td>
-                            {% if item.date_of_service %}
-                              {{ item.date_of_service.strftime('%m/%d/%Y') }}
+                            {% if dos_dt %}
+                              {% if dos_dt.strftime is defined %}
+                                {{ dos_dt|format_date }}
+                              {% else %}
+                                {{ dos_dt }}
+                              {% endif %}
                             {% else %}
                               —
                             {% endif %}
@@ -332,6 +382,14 @@
                                 </button>
                               </form>
                             {% endif %}
+
+                            <div class="small text-muted mt-1" style="white-space: nowrap;">
+                              {% if entry_dt %}
+                                Entered: {% if entry_dt.strftime is defined %}{{ entry_dt|format_date }}{% else %}{{ entry_dt }}{% endif %}
+                              {% else %}
+                                Entered: —
+                              {% endif %}
+                            </div>
                           </td>
                         </tr>
                       {% endfor %}
@@ -441,7 +499,7 @@
         </button>
       </h2>
       <div id="reportsCollapse" class="accordion-collapse collapse show"
-           aria-labelledby="reportsHeading" data-bs-parent="#claimAccordion">
+           aria-labelledby="reportsHeading">
         <div class="accordion-body">
 
           <!-- Existing reports table -->
@@ -613,7 +671,7 @@
         </button>
       </h2>
       <div id="documentsCollapse" class="accordion-collapse collapse show"
-           aria-labelledby="documentsHeading" data-bs-parent="#claimAccordion">
+           aria-labelledby="documentsHeading">
         <div class="accordion-body">
 
           <!-- List documents -->
@@ -747,6 +805,51 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+  // Persist Claim Detail accordion open/closed state per-claim
+  (function persistAccordionState() {
+    var accordion = document.getElementById('claimAccordion');
+    if (!accordion) return;
+
+    var storageKey = 'claimAccordionState_' + String({{ claim.id }});
+    var saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    } catch (e) {
+      saved = null;
+    }
+
+    // Restore state only if we have saved data
+    if (saved && typeof saved === 'object') {
+      accordion.querySelectorAll('.accordion-collapse').forEach(function (el) {
+        var id = el.id;
+        if (!id) return;
+        var shouldShow = !!saved[id];
+        // Toggle via classes so we don't depend on bootstrap being loaded at this exact moment
+        if (shouldShow) {
+          el.classList.add('show');
+        } else {
+          el.classList.remove('show');
+        }
+      });
+    }
+
+    function saveState() {
+      var state = {};
+      accordion.querySelectorAll('.accordion-collapse').forEach(function (el) {
+        if (!el.id) return;
+        state[el.id] = el.classList.contains('show');
+      });
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(state));
+      } catch (e) {}
+    }
+
+    // Bootstrap collapse events (if bootstrap is present)
+    accordion.querySelectorAll('.accordion-collapse').forEach(function (el) {
+      el.addEventListener('shown.bs.collapse', saveState);
+      el.addEventListener('hidden.bs.collapse', saveState);
+    });
+  })();
   // Date auto-formatting for inputs with class .js-date-autofmt
   document.querySelectorAll('.js-date-autofmt').forEach(function (input) {
     input.addEventListener('input', function () {
@@ -900,9 +1003,9 @@ document.addEventListener('DOMContentLoaded', function () {
     var cells = row.children;
     if (!cells || cells.length === 0) return '';
     switch (key) {
-      case 'date': {
-        var txt = cells[0].innerText || '';
-        return dateTextToKey(txt);
+      case 'dos': {
+        // Sort by DOS (service date) using the hidden data-dos-key
+        return row.dataset.dosKey || '';
       }
       case 'activity':
         return (cells[1].innerText || '').trim();
@@ -919,6 +1022,35 @@ document.addEventListener('DOMContentLoaded', function () {
         return '';
     }
   });
+
+  // Default billables order: newest-entered first (without setting any "sorted" header state)
+  (function defaultBillablesNewestFirst() {
+    var table = document.getElementById('billables-table');
+    if (!table) return;
+    var tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    if (!rows.length) return;
+
+    rows.sort(function (a, b) {
+      var ka = a.dataset.entryKey || '';
+      var kb = b.dataset.entryKey || '';
+      // Descending (newest first)
+      if (ka < kb) return 1;
+      if (ka > kb) return -1;
+      var ia = parseInt(a.dataset.originalIndex || '0', 10);
+      var ib = parseInt(b.dataset.originalIndex || '0', 10);
+      return ia - ib;
+    });
+
+    rows.forEach(function (r) { tbody.appendChild(r); });
+
+    // Re-seed original order to this default so "none" state returns here
+    rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.forEach(function (row, index) {
+      row.dataset.originalIndex = index;
+    });
+  })();
 
   // Reports table sorter
   setupSortableTable('reports-table', function (row, key) {

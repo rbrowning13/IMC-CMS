@@ -538,21 +538,21 @@ def _render_parent_detail_with_contact_form(
 # -----------------------------------------------------------------------------
 
 
+
+# Dedicated analysis implementation lives in app.routes.analysis.
+# Import at module import time so we don't risk blueprint setup errors on first request.
+try:
+    from .analysis import analysis_index
+except Exception:  # pragma: no cover
+    analysis_index = None
+
+
 @bp.route("/analysis")
 def analysis_view():
-    settings = _ensure_settings()
-    return render_template(
-        "analysis.html",
-        active_page="analysis",
-        settings=settings,
-        avg_open_claim_age_days=0.0,
-        oldest_open_claim_age_days=0.0,
-        open_claims_count=0,
-        closed_claims_count=0,
-        total_claims_count=0,
-        uninvoiced_billable_count=0,
-        uninvoiced_total_amount=0.0,
-    )
+    if analysis_index is None:
+        flash("Analysis module is unavailable.", "warning")
+        return redirect(url_for("main.claims_list"))
+    return analysis_index()
 
 
 @bp.route("/reporting", endpoint="reporting_dashboard")

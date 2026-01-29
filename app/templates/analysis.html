@@ -1,17 +1,33 @@
 {% extends "base.html" %}
 
+{# ---- Safe defaults so the page can render while analysis.py is being built ---- #}
+{% set settings = settings if settings is defined else None %}
+{% set active_claims_count = active_claims_count if active_claims_count is defined else 0 %}
+{% set total_claims = total_claims if total_claims is defined else 0 %}
+{% set avg_open_claim_age_days = avg_open_claim_age_days if avg_open_claim_age_days is defined else none %}
+{% set stale_claims_count = stale_claims_count if stale_claims_count is defined else 0 %}
+{% set uninvoiced_billables = uninvoiced_billables if uninvoiced_billables is defined else 0 %}
+{% set hours_last_30_days = hours_last_30_days if hours_last_30_days is defined else 0 %}
+{% set hours_target_min_30 = hours_target_min_30 if hours_target_min_30 is defined else none %}
+{% set hours_target_max_30 = hours_target_max_30 if hours_target_max_30 is defined else none %}
+{% set total_outstanding_ar = total_outstanding_ar if total_outstanding_ar is defined else 0 %}
+{% set open_invoices = open_invoices if open_invoices is defined else 0 %}
+{% set total_invoices = total_invoices if total_invoices is defined else 0 %}
+{% set ar_aging = ar_aging if ar_aging is defined else {'current': 0, 'days_31_60': 0, 'days_61_90': 0, 'over_90': 0} %}
+{% set ar_by_carrier = ar_by_carrier if ar_by_carrier is defined else [] %}
+
 {% block content %}
 <div class="container-fluid mt-4">
   <h2 class="mb-4">Analysis Dashboard</h2>
 
-  <!-- Top summary cards: claims snapshot -->
+  <!-- Summary Cards -->
   {% if settings and settings.dormant_claim_days %}
     {% set dormant_days = settings.dormant_claim_days %}
   {% else %}
     {% set dormant_days = 60 %}
   {% endif %}
   <div class="row mb-4">
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 mb-3">
       <div class="card stat-card text-center">
         <div class="card-body">
           <div class="stat-label">Active Claims</div>
@@ -22,7 +38,7 @@
         </div>
       </div>
     </div>
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 mb-3">
       <div class="card stat-card text-center">
         <div class="card-body">
           <div class="stat-label">Avg Open Claim Age</div>
@@ -39,18 +55,27 @@
         </div>
       </div>
     </div>
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 mb-3">
       <div class="card stat-card text-center">
         <div class="card-body">
-          <div class="stat-label">Inactive Claims</div>
+          <div class="stat-label">Inactive Claims (>{{ dormant_days }} days)</div>
           <div class="stat-value">{{ stale_claims_count }}</div>
+          <div class="small text-muted mt-2">&nbsp;</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 mb-3">
+      <div class="card stat-card text-center">
+        <div class="card-body">
+          <div class="stat-label">Uninvoiced Billables</div>
+          <div class="stat-value">${{ "%.2f"|format(uninvoiced_billables or 0) }}</div>
           <div class="small text-muted mt-2">&nbsp;</div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Workload + AR summary -->
+  <!-- Workload Summary -->
   <div class="row mb-4">
     <div class="col-md-6 mb-3">
       <div class="card stat-card h-100">
@@ -90,6 +115,7 @@
       </div>
     </div>
 
+    <!-- Billing Summary -->
     <div class="col-md-6 mb-3">
       <div class="card stat-card h-100">
         <div class="card-body">
@@ -106,7 +132,44 @@
     </div>
   </div>
 
-  <!-- Receivables by carrier table -->
+  <!-- Aging Summary -->
+  <h4 class="mt-4 mb-3">Aging Summary</h4>
+  <div class="row mb-4">
+    <div class="col-md-3 mb-3">
+      <div class="card stat-card text-center h-100">
+        <div class="card-body">
+          <div class="stat-label">Current (0-30 days)</div>
+          <div class="stat-value">${{ "%.2f"|format(ar_aging['current'] or 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 mb-3">
+      <div class="card stat-card text-center h-100">
+        <div class="card-body">
+          <div class="stat-label">31-60 days</div>
+          <div class="stat-value">${{ "%.2f"|format(ar_aging['days_31_60'] or 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 mb-3">
+      <div class="card stat-card text-center h-100">
+        <div class="card-body">
+          <div class="stat-label">61-90 days</div>
+          <div class="stat-value">${{ "%.2f"|format(ar_aging['days_61_90'] or 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 mb-3">
+      <div class="card stat-card text-center h-100">
+        <div class="card-body">
+          <div class="stat-label">Over 90 days</div>
+          <div class="stat-value">${{ "%.2f"|format(ar_aging['over_90'] or 0) }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Receivables by Carrier Table -->
   <h4 class="mt-4 mb-3">Outstanding A/R by Carrier</h4>
   <div class="table-responsive">
     <table class="table table-sm table-bordered">

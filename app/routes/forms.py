@@ -7,6 +7,7 @@ Routes in this module coordinate data + rendering and (when needed) Playwright P
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from urllib.parse import quote as url_quote
 
 from flask import (
@@ -19,6 +20,7 @@ from flask import (
     jsonify,
     make_response,
     current_app,
+    session,
 )
 from playwright.sync_api import sync_playwright
 
@@ -40,7 +42,66 @@ def _ensure_settings() -> Settings:
         db.session.commit()
     return settings
 
+def _settings_tz(settings: Settings) -> ZoneInfo:
+    """Resolve the app's local timezone for forms/prints.
 
+    Defaults to Mountain Time to match the business.
+    """
+    tz_name = (
+        (getattr(settings, "time_zone", None) or "")
+        or (getattr(settings, "timezone", None) or "")
+        or (getattr(settings, "tz", None) or "")
+    )
+    tz_name = str(tz_name).strip() if tz_name else ""
+    if not tz_name:
+        tz_name = "America/Denver"
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return ZoneInfo("America/Denver")
+
+
+def _now_local(settings: Settings) -> datetime:
+    return datetime.now(_settings_tz(settings))
+
+
+def _fax_session_key(claim_id: int | None) -> str:
+    return "fax_cover_standalone" if claim_id is None else f"fax_cover_claim_{claim_id}"
+
+
+def _fax_load_from_session(claim_id: int | None) -> dict:
+    data = dict(session.get(_fax_session_key(claim_id)) or {})
+
+    # Standalone fax cover should not persist forever.
+    # Expire standalone drafts after 12 hours.
+    if claim_id is None and data:
+        try:
+            saved_at = data.get("_saved_at")
+            if saved_at:
+                saved_dt = datetime.fromisoformat(str(saved_at))
+                age_seconds = (datetime.utcnow() - saved_dt).total_seconds()
+                if age_seconds > 12 * 3600:
+                    session.pop(_fax_session_key(claim_id), None)
+                    return {}
+        except Exception:
+            # If anything about the timestamp is weird, just treat as not saved.
+            session.pop(_fax_session_key(claim_id), None)
+            return {}
+
+    # Do not leak internal keys into the form dict
+    data.pop("_saved_at", None)
+    return data
+
+
+def _fax_save_to_session(claim_id: int | None, payload: dict) -> None:
+    data = dict(payload or {})
+
+    # Add a timestamp only for the standalone form so it expires.
+    if claim_id is None:
+        data["_saved_at"] = datetime.utcnow().isoformat()
+
+    session[_fax_session_key(claim_id)] = data
+    
 def _settings_logo_url(settings: Settings) -> str | None:
     """Best-effort logo URL for templates.
 
@@ -244,7 +305,7 @@ def fax_cover_pdf(claim_id: int):
 
     # Use helper to normalize payload
     payload = _fax_cover_payload_from_request(settings)
-
+    _fax_save_to_session(claim.id, payload)
     # IMPORTANT: generate PDF from the real print URL (same HTML as preview),
     # so static assets (logo/CSS) load correctly and PDF matches preview.
     print_url = url_for(
@@ -292,7 +353,7 @@ def forms_index():
   </div>
 
   <div class="list-group">
-    <a class="list-group-item list-group-item-action" href="{{ url_for('main.forms_fax_cover') }}">
+    <a class="list-group-item list-group-item-action" href="{{ url_for('main.forms_fax_cover', reset=1) }}">
       <div class="d-flex w-100 justify-content-between">
         <h5 class="mb-1">Fax Cover Sheet</h5>
         <small class="text-muted">Template</small>
@@ -513,6 +574,10 @@ def forms_fax_cover():
 
     settings = _ensure_settings()
 
+    # If opened from the Forms page (reset=1), start fresh.
+    if request.method == "GET" and (request.args.get("reset") in ("1", "true", "yes")):
+        session.pop(_fax_session_key(None), None)
+
     # Defaults from Settings
     from_name_default = (settings.business_name or "").strip()
     from_phone_default = (getattr(settings, "phone", "") or "").strip()
@@ -520,19 +585,29 @@ def forms_fax_cover():
     from_fax_default = (getattr(settings, "fax", "") or "").strip()
     case_manager_name_default = (getattr(settings, "responsible_case_manager", "") or "").strip()
 
+    # On POST, persist draft values to session so "Print/PDF" flows don't lose work.
+    if request.method == "POST":
+        payload = _fax_cover_payload_from_request(settings)
+        _fax_save_to_session(None, payload)
+        flash("Fax cover sheet draft saved.", "success")
+        return redirect(url_for("main.forms_fax_cover"))
+
+    saved = _fax_load_from_session(None)
+
     form = {
-        "to_name": (request.form.get("to_name") or "").strip(),
-        "to_fax": (request.form.get("to_fax") or "").strip(),
-        "to_phone": (request.form.get("to_phone") or "").strip(),
-        "to_email": (request.form.get("to_email") or "").strip(),
-        "from_name": (request.form.get("from_name") or from_name_default).strip(),
-        "from_phone": (request.form.get("from_phone") or from_phone_default).strip(),
-        "from_fax": (request.form.get("from_fax") or from_fax_default).strip(),
-        "from_email": (request.form.get("from_email") or from_email_default).strip(),
-        "from_case_manager": (request.form.get("from_case_manager") or case_manager_name_default).strip(),
-        "pages": (request.form.get("pages") or "").strip(),
-        "subject": (request.form.get("subject") or "").strip(),
-        "message": (request.form.get("message") or "").strip(),
+        "to_name": saved.get("to_name", "").strip(),
+        "to_fax": saved.get("to_fax", "").strip(),
+        "to_phone": saved.get("to_phone", "").strip(),
+        "to_email": saved.get("to_email", "").strip(),
+        "from_name": (saved.get("from_name") or from_name_default).strip(),
+        "from_phone": (saved.get("from_phone") or from_phone_default).strip(),
+        "from_fax": (saved.get("from_fax") or from_fax_default).strip(),
+        "from_email": (saved.get("from_email") or from_email_default).strip(),
+        "from_case_manager": (saved.get("from_case_manager") or case_manager_name_default).strip(),
+        "pages": saved.get("pages", "").strip(),
+        "subject": saved.get("subject", "").strip(),
+        # Templates drift between message/contents; keep both populated.
+        "message": (saved.get("message") or saved.get("contents") or "").strip(),
     }
 
     return render_template(
@@ -541,12 +616,13 @@ def forms_fax_cover():
         claim=None,
         settings=settings,
         form=form,
-        today=datetime.now().strftime("%m/%d/%Y"),
+        today=_now_local(settings).strftime("%m/%d/%Y"),
         logo_url=_settings_logo_url(settings),
         search_url=url_for("main.api_fax_cover_search"),
         pdf_url=url_for("main.fax_cover_pdf_standalone"),
         print_url=url_for("main.fax_cover_print_standalone"),
     )
+
 
 # Standalone HTML print route for Fax Cover Sheet (no claim)
 @bp.route("/forms/fax-cover/print", methods=["GET", "POST"])
@@ -556,6 +632,7 @@ def fax_cover_print_standalone():
     settings = _ensure_settings()
 
     payload = _fax_cover_payload_from_request(settings)
+    _fax_save_to_session(None, payload)
 
     return render_template(
         "forms/fax_cover_print.html",
@@ -563,7 +640,7 @@ def fax_cover_print_standalone():
         claim=None,
         settings=settings,
         logo_url=_settings_logo_url(settings),
-        now=datetime.now().strftime("%m/%d/%Y %I:%M %p"),
+        now=_now_local(settings).strftime("%m/%d/%Y %I:%M %p"),
         to_name=payload["to_name"],
         to_fax=payload["to_fax"],
         to_phone=payload["to_phone"],
@@ -579,6 +656,8 @@ def fax_cover_print_standalone():
         message=payload["message"],
         to=payload["to_name"],
     )
+
+
 # Standalone (no-claim) Fax Cover Sheet PDF route
 @bp.route("/forms/fax-cover/pdf", methods=["GET", "POST"])
 def fax_cover_pdf_standalone():
@@ -586,6 +665,7 @@ def fax_cover_pdf_standalone():
     settings = _ensure_settings()
 
     payload = _fax_cover_payload_from_request(settings)
+    _fax_save_to_session(None, payload)
 
     # IMPORTANT: generate PDF from the real print URL (same HTML as preview)
     print_url = url_for(
@@ -621,10 +701,19 @@ def fax_cover_pdf_standalone():
 
 @bp.route("/forms/fax-cover/<int:claim_id>", methods=["GET", "POST"])
 def fax_cover_edit(claim_id: int):
-    """Edit screen for the fax cover sheet (no persistence; POST just re-renders)."""
+    """Edit screen for the fax cover sheet (persists draft values in session)."""
 
     settings = _ensure_settings()
     claim = Claim.query.get_or_404(claim_id)
+
+    # On POST, persist draft values so users can Print/PDF and return without losing work.
+    if request.method == "POST":
+        payload = _fax_cover_payload_from_request(settings)
+        _fax_save_to_session(claim.id, payload)
+        flash("Fax cover sheet draft saved.", "success")
+        return redirect(url_for("main.fax_cover_edit", claim_id=claim.id))
+
+    saved = _fax_load_from_session(claim.id)
 
     # Defaults from Settings
     from_name_default = (settings.business_name or "").strip()
@@ -633,20 +722,21 @@ def fax_cover_edit(claim_id: int):
     from_fax_default = (getattr(settings, "fax", "") or "").strip()
     case_manager_name_default = (getattr(settings, "responsible_case_manager", "") or "").strip()
 
-    # Form values (POST overrides). Keep names aligned with fax_cover_edit.html.
+    # Form values. Default to saved session draft on GET.
     form = {
-        "to_name": (request.form.get("to_name") or "").strip(),
-        "to_fax": (request.form.get("to_fax") or "").strip(),
-        "to_phone": (request.form.get("to_phone") or "").strip(),
-        "to_email": (request.form.get("to_email") or "").strip(),
-        "from_name": (request.form.get("from_name") or from_name_default).strip(),
-        "from_phone": (request.form.get("from_phone") or from_phone_default).strip(),
-        "from_fax": (request.form.get("from_fax") or from_fax_default).strip(),
-        "from_email": (request.form.get("from_email") or from_email_default).strip(),
-        "from_case_manager": (request.form.get("from_case_manager") or case_manager_name_default).strip(),
-        "pages": (request.form.get("pages") or "").strip(),
-        "subject": (request.form.get("subject") or "").strip(),
-        "message": (request.form.get("message") or "").strip(),
+        "to_name": saved.get("to_name", "").strip(),
+        "to_fax": saved.get("to_fax", "").strip(),
+        "to_phone": saved.get("to_phone", "").strip(),
+        "to_email": saved.get("to_email", "").strip(),
+        "from_name": (saved.get("from_name") or from_name_default).strip(),
+        "from_phone": (saved.get("from_phone") or from_phone_default).strip(),
+        "from_fax": (saved.get("from_fax") or from_fax_default).strip(),
+        "from_email": (saved.get("from_email") or from_email_default).strip(),
+        "from_case_manager": (saved.get("from_case_manager") or case_manager_name_default).strip(),
+        "pages": saved.get("pages", "").strip(),
+        "subject": saved.get("subject", "").strip(),
+        # Templates drift between message/contents; keep both populated.
+        "message": (saved.get("message") or saved.get("contents") or "").strip(),
     }
 
     return render_template(
@@ -655,7 +745,7 @@ def fax_cover_edit(claim_id: int):
         claim=claim,
         settings=settings,
         form=form,
-        today=datetime.now().strftime("%m/%d/%Y"),
+        today=_now_local(settings).strftime("%m/%d/%Y"),
         logo_url=_settings_logo_url(settings),
         search_url=url_for("main.api_fax_cover_search"),
         pdf_url=url_for("main.fax_cover_pdf", claim_id=claim.id),
@@ -671,6 +761,7 @@ def fax_cover_print(claim_id: int):
     claim = Claim.query.get_or_404(claim_id)
 
     payload = _fax_cover_payload_from_request(settings)
+    _fax_save_to_session(claim.id, payload)
 
     return render_template(
         "forms/fax_cover_print.html",
@@ -678,7 +769,7 @@ def fax_cover_print(claim_id: int):
         claim=claim,
         settings=settings,
         logo_url=_settings_logo_url(settings),
-        now=datetime.now().strftime("%m/%d/%Y %I:%M %p"),
+        now=_now_local(settings).strftime("%m/%d/%Y %I:%M %p"),
         to_name=payload["to_name"],
         to_fax=payload["to_fax"],
         to_phone=payload["to_phone"],
