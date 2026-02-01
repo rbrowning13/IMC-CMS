@@ -19,7 +19,57 @@
   <div class="card">
     <div class="card-body">
       <form method="post">
+
         {% include "_claim_form.html" %}
+
+        <hr class="my-4">
+
+        <h2 class="h6 mb-3">Treating Providers</h2>
+
+        <div class="mb-3">
+          <label class="form-label">Select treating provider(s)</label>
+          <input
+            type="text"
+            id="provider_search"
+            class="form-control form-control-sm mb-2"
+            placeholder="Search providers…"
+            autocomplete="off"
+          >
+
+          {# New Claim: no preselected providers #}
+          {% set _sel_ids = [] %}
+
+          <div class="border rounded p-2">
+            <div class="small text-muted mb-1">Selected</div>
+            <div id="provider_selected" class="mb-2">
+              {# rows will be moved here by JS on load #}
+            </div>
+
+            <div class="small text-muted mb-1">Search results</div>
+            <div id="provider_results" style="max-height: 220px; overflow-y: auto;">
+              {% for provider in providers %}
+                <div class="form-check mb-1 provider-row" style="position: relative;">
+                  <input
+                    class="form-check-input js-accent-check provider-checkbox"
+                    type="checkbox"
+                    name="provider_ids"
+                    id="provider_{{ provider.id }}"
+                    value="{{ provider.id }}"
+                    {% if provider.id in _sel_ids %}checked{% endif %}
+                    style="position: relative; z-index: 5; pointer-events: auto; accent-color: var(--accent-color);"
+                  >
+                  <label class="form-check-label provider-label" for="provider_{{ provider.id }}" style="position: relative; z-index: 5; pointer-events: auto; cursor: pointer;">
+                    {{ provider.name }}
+                  </label>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="form-text">
+            Type to search. Selected providers stay pinned at the top.
+          </div>
+        </div>
 
         <div class="d-flex justify-content-end mt-3">
           <a href="{{ url_for('main.claims_list') }}" class="btn btn-sm btn-outline-secondary me-2">
@@ -158,6 +208,171 @@
       });
 
       ensureClaimantPhoneExtField();
+    })();
+  </script>
+  <script>
+    (function () {
+      // Surgery Dates UX:
+      // - Claim-owned list of (date, optional description)
+      // - Add/remove rows client-side; server will persist
+
+      const surgeryList = document.getElementById("surgery_list");
+      const surgeryAdd = document.getElementById("surgery_add");
+      const surgeryEmpty = document.getElementById("surgery_empty");
+      const surgeryTpl = document.getElementById("surgery_row_tpl");
+
+      function wireSurgeryRemove(btn) {
+        if (!btn || btn.dataset.wired === "1") return;
+        btn.dataset.wired = "1";
+        btn.addEventListener("click", function () {
+          const row = btn.closest(".surgery-row");
+          if (row) row.remove();
+          if (surgeryList && !surgeryList.querySelector(".surgery-row")) {
+            if (surgeryEmpty) surgeryEmpty.style.display = "";
+          }
+        });
+      }
+
+      function wireAllSurgeryRemoves() {
+        document.querySelectorAll(".js-surgery-remove").forEach(function (btn) {
+          wireSurgeryRemove(btn);
+        });
+      }
+
+      if (surgeryAdd) {
+        surgeryAdd.addEventListener("click", function () {
+          if (!surgeryList || !surgeryTpl) return;
+          const node = surgeryTpl.content.cloneNode(true);
+          surgeryList.appendChild(node);
+          if (surgeryEmpty) surgeryEmpty.style.display = "none";
+          wireAllSurgeryRemoves();
+        });
+      }
+
+      wireAllSurgeryRemoves();
+
+      // Treating Providers UX:
+      // - Selected providers persist in a dedicated list
+      // - Search shows matching unselected providers
+      // - By default (no search), hide unselected providers
+
+      const providerSearch = document.getElementById("provider_search");
+      const selectedBox = document.getElementById("provider_selected");
+      const resultsBox = document.getElementById("provider_results");
+
+      function normalize(str) {
+        return (str || "").toString().toLowerCase().trim();
+      }
+
+      function rowLabelText(row) {
+        const label = row ? row.querySelector(".provider-label") : null;
+        return normalize(label ? label.textContent : "");
+      }
+
+      function isChecked(row) {
+        const cb = row ? row.querySelector(".provider-checkbox") : null;
+        return !!(cb && cb.checked);
+      }
+
+      function ensureSelectedPlaceholder() {
+        if (!selectedBox) return;
+        let ph = selectedBox.querySelector(".provider-selected-empty");
+        const anySelected = selectedBox.querySelectorAll(".provider-row").length > 0;
+        if (anySelected) {
+          if (ph) ph.remove();
+          return;
+        }
+        if (!ph) {
+          ph = document.createElement("div");
+          ph.className = "text-muted small provider-selected-empty";
+          ph.textContent = "No providers selected.";
+          selectedBox.appendChild(ph);
+        }
+      }
+
+      function moveRows() {
+        if (!selectedBox || !resultsBox) return;
+        const rows = resultsBox.querySelectorAll(".provider-row");
+
+        // Move checked rows into selectedBox.
+        rows.forEach(function (row) {
+          if (isChecked(row)) {
+            selectedBox.appendChild(row);
+          }
+        });
+
+        // Also check selectedBox in case something was there already.
+        const selectedRows = selectedBox.querySelectorAll(".provider-row");
+        selectedRows.forEach(function (row) {
+          // If unchecked, move back to results.
+          if (!isChecked(row)) {
+            resultsBox.appendChild(row);
+          }
+        });
+
+        ensureSelectedPlaceholder();
+      }
+
+      function applyFilter() {
+        if (!providerSearch || !resultsBox) return;
+        const q = normalize(providerSearch.value);
+
+        // Always keep selected list visible; only filter results list.
+        const rows = resultsBox.querySelectorAll(".provider-row");
+        rows.forEach(function (row) {
+          if (isChecked(row)) {
+            // Shouldn't happen (checked rows should be moved), but be safe.
+            row.style.display = "";
+            return;
+          }
+
+          if (!q) {
+            // Default view: hide unselected providers.
+            row.style.display = "none";
+            return;
+          }
+
+          // Searching: show matches.
+          const text = rowLabelText(row);
+          row.style.display = text.includes(q) ? "" : "none";
+        });
+      }
+
+      function wireCheckboxes() {
+        if (!resultsBox || !selectedBox) return;
+        const allRows = document.querySelectorAll(".provider-row");
+        allRows.forEach(function (row) {
+          const cb = row.querySelector(".provider-checkbox");
+          if (!cb || cb.dataset.wired === "1") return;
+          cb.dataset.wired = "1";
+          cb.addEventListener("change", function () {
+            moveRows();
+            applyFilter();
+          });
+        });
+      }
+
+      if (providerSearch) {
+        providerSearch.addEventListener("input", function () {
+          // On first search keystroke, ensure any checked items are moved.
+          moveRows();
+          applyFilter();
+        });
+
+        providerSearch.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") {
+            providerSearch.value = "";
+            moveRows();
+            applyFilter();
+            providerSearch.blur();
+          }
+        });
+      }
+
+      // Init on load
+      wireCheckboxes();
+      moveRows();
+      applyFilter();
     })();
   </script>
 {% endblock %}

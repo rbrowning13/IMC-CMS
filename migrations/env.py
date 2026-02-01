@@ -44,6 +44,41 @@ target_metadata = db.metadata
 # ... etc.
 
 
+# Helper to resolve DB URL for Alembic migrations
+def _get_migration_db_url(section: dict | None = None) -> str:
+    """Resolve the database URL Alembic should use.
+
+    Priority:
+      1) DATABASE_URL (standard)
+      2) PSQL_URL (local dev convenience)
+      3) SQLALCHEMY_DATABASE_URI (Flask app config convention)
+      4) alembic.ini / config values
+
+    Also normalizes SQLAlchemy-style driver URLs like
+    `postgresql+psycopg2://...` to `postgresql://...` for consistency.
+    """
+    section = section or {}
+
+    url = (
+        os.environ.get("DATABASE_URL")
+        or os.environ.get("PSQL_URL")
+        or os.environ.get("SQLALCHEMY_DATABASE_URI")
+        or section.get("sqlalchemy.url")
+        or section.get("url")
+        or config.get_main_option("sqlalchemy.url")
+    )
+
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL (or PSQL_URL / SQLALCHEMY_DATABASE_URI / sqlalchemy.url) is not set for Alembic migrations"
+        )
+
+    # Normalize common SQLAlchemy driver URLs for Postgres.
+    if url.startswith("postgresql+psycopg2://"):
+        url = "postgresql://" + url[len("postgresql+psycopg2://") :]
+
+    return url
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -56,7 +91,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = os.environ.get("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+    url = _get_migration_db_url()
     if not url:
         raise RuntimeError("DATABASE_URL (or sqlalchemy.url) is not set for Alembic migrations")
 
@@ -89,12 +124,7 @@ def run_migrations_online() -> None:
 
     # Alembic/Flask-Migrate expect a URL in the ini section. In this project we often rely on
     # DATABASE_URL in the environment, so patch it in if it's missing.
-    url = (
-        os.environ.get("DATABASE_URL")
-        or section.get("sqlalchemy.url")
-        or section.get("url")
-        or config.get_main_option("sqlalchemy.url")
-    )
+    url = _get_migration_db_url(section)
     if not url:
         raise RuntimeError("DATABASE_URL (or sqlalchemy.url) is not set for Alembic migrations")
 

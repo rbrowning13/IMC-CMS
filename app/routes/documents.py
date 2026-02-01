@@ -1,6 +1,6 @@
 """Document-related routes.
 
-This module currently hosts *claim-level* document actions (download/delete/open-location).
+This module currently hosts *claim-level* document actions (upload/download/delete/open-location).
 Report-level document routes live in routes/reports.py.
 
 Keeping this isolated prevents app/routes.py from turning into a 5k-line crime scene.
@@ -11,12 +11,10 @@ from __future__ import annotations
 import os
 import sys
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 from flask import current_app, flash, redirect, request, send_file, url_for
-
-from datetime import datetime
-
 from werkzeug.utils import secure_filename
 
 from app import db
@@ -27,9 +25,7 @@ from . import bp
 
 def _safe_segment(text: str) -> str:
     """Filesystem-safe name chunk."""
-    return "".join(
-        ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in (text or "")
-    )
+    return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in (text or ""))
 
 
 def _get_documents_root() -> Path:
@@ -59,9 +55,28 @@ def _get_documents_root() -> Path:
 
 
 def _get_claim_folder(claim: Claim) -> Path:
-    """Folder for a specific claim's documents."""
+    """Folder for a specific claim's documents.
+
+    IMPORTANT: The folder name must be stable even if Gina later edits the claimant name.
+
+    Strategy:
+    - Prefer an existing folder that starts with `<claim.id>_` if present.
+    - Otherwise, create a new folder using `<claim.id>_<safe claimant>`.
+    """
     root = _get_documents_root()
-    claimant_segment = _safe_segment(claim.claimant_name or f"claim_{claim.id}")
+
+    # Prefer an existing folder (claimant name may change over time).
+    try:
+        matches = sorted(
+            [p for p in root.glob(f"{claim.id}_*") if p.is_dir()],
+            key=lambda p: p.name,
+        )
+        if matches:
+            return matches[0]
+    except Exception:
+        pass
+
+    claimant_segment = _safe_segment(getattr(claim, "claimant_name", None) or f"claim_{claim.id}")
     folder = root / f"{claim.id}_{claimant_segment}"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
@@ -202,7 +217,12 @@ def claim_document_download(claim_id: int, doc_id: int):
     claim = Claim.query.get_or_404(claim_id)
     doc = ClaimDocument.query.filter_by(id=doc_id, claim_id=claim.id).first_or_404()
 
-    stored_name = getattr(doc, "filename_stored", None)
+    stored_name = (
+        getattr(doc, "filename_stored", None)
+        or getattr(doc, "stored_filename", None)
+        or getattr(doc, "filename", None)
+        or getattr(doc, "stored_name", None)
+    )
     if not stored_name:
         flash("Document record is missing a stored filename.", "danger")
         return redirect(url_for("main.claim_detail", claim_id=claim.id))
@@ -214,10 +234,14 @@ def claim_document_download(claim_id: int, doc_id: int):
         flash("File not found on disk.", "danger")
         return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
-    # Use send_file with an absolute path.
+    # Default behavior: open inline in the browser when possible.
+    # If the user explicitly requests a download, force attachment.
+    download_flag = (request.args.get("download") or "").strip().lower()
+    as_attachment = download_flag in ("1", "true", "yes")
+
     return send_file(
         file_path,
-        as_attachment=True,
+        as_attachment=as_attachment,
         download_name=(getattr(doc, "original_filename", None) or stored_name),
     )
 
@@ -231,7 +255,12 @@ def claim_document_delete(claim_id: int, doc_id: int):
     claim = Claim.query.get_or_404(claim_id)
     doc = ClaimDocument.query.filter_by(id=doc_id, claim_id=claim.id).first_or_404()
 
-    stored_name = getattr(doc, "filename_stored", None)
+    stored_name = (
+        getattr(doc, "filename_stored", None)
+        or getattr(doc, "stored_filename", None)
+        or getattr(doc, "filename", None)
+        or getattr(doc, "stored_name", None)
+    )
     try:
         if stored_name:
             claim_folder = _get_claim_folder(claim)
@@ -262,7 +291,12 @@ def claim_document_open_location(claim_id: int, doc_id: int):
     claim = Claim.query.get_or_404(claim_id)
     doc = ClaimDocument.query.filter_by(id=doc_id, claim_id=claim.id).first_or_404()
 
-    stored_name = getattr(doc, "filename_stored", None)
+    stored_name = (
+        getattr(doc, "filename_stored", None)
+        or getattr(doc, "stored_filename", None)
+        or getattr(doc, "filename", None)
+        or getattr(doc, "stored_name", None)
+    )
     if not stored_name:
         flash("Document record is missing a stored filename.", "danger")
         return redirect(url_for("main.claim_detail", claim_id=claim.id))

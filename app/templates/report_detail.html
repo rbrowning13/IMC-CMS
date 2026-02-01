@@ -1,3 +1,59 @@
+{% set _providers = [] %}
+{# Providers are claim-owned: use claim-level providers, with legacy fallback to report.treating_provider. #}
+{% if claim_providers is defined and claim_providers and claim_providers|length > 0 %}
+  {% set _providers = claim_providers %}
+{% elif report.treating_provider %}
+  {% set _providers = [report.treating_provider] %}
+{% endif %}
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header bg-light">
+    <strong>Treating Providers</strong>
+  </div>
+  <div class="card-body small">
+    {% if _providers %}
+      {% set _provider_labels = [] %}
+      {% for p in _providers %}
+        {% set _pname = (p.name if p.name is defined and p.name else '—') %}
+        {% if p.organization is defined and p.organization %}
+          {% set _provider_labels = _provider_labels + [p.organization ~ ' — ' ~ _pname] %}
+        {% else %}
+          {% set _provider_labels = _provider_labels + [_pname] %}
+        {% endif %}
+      {% endfor %}
+      {{ _provider_labels | join(', ') }}
+    {% else %}
+      <span class="text-muted">—</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header bg-light">
+    <strong>Surgery Date(s)</strong>
+  </div>
+  <div class="card-body small">
+    {% set _surgeries = claim_surgeries if claim_surgeries is defined else [] %}
+
+    {% if _surgeries and _surgeries|length > 0 %}
+      {% for s in _surgeries %}
+        <div>
+          {% if s.surgery_date is defined and s.surgery_date %}
+            {{ s.surgery_date|format_date }}
+          {% else %}
+            —
+          {% endif %}
+          {% if s.description is defined and s.description %}
+            <span class="text-muted">— {{ s.description }}</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <span class="text-muted">—</span>
+    {% endif %}
+  </div>
+</div>
+
 <div class="card shadow-sm mb-3">
   <div class="card-header bg-light">
     <strong>Possible Barriers to Recovery</strong>
@@ -16,8 +72,20 @@
           {{ barriers_text }}
         </div>
       {% else %}
-        <p class="text-muted mb-0">No barriers recorded.</p>
+        <p class="text-muted mb-0">No identifiable barriers at this time.</p>
       {% endif %}
     {% endif %}
   </div>
 </div>
+{# Claimant display name: prefer structured fields; fallback to legacy claimant_name #}
+{% set _fn = (claim.claimant_first_name if claim.claimant_first_name is defined and claim.claimant_first_name else '')|trim %}
+{% set _ln = (claim.claimant_last_name if claim.claimant_last_name is defined and claim.claimant_last_name else '')|trim %}
+{% if _ln and _fn %}
+  {% set claimant_display = _ln ~ ', ' ~ _fn %}
+{% elif _ln %}
+  {% set claimant_display = _ln %}
+{% elif _fn %}
+  {% set claimant_display = _fn %}
+{% else %}
+  {% set claimant_display = (claim.claimant_name or '—') %}
+{% endif %}

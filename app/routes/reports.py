@@ -37,7 +37,9 @@ from flask import (
     send_file,
     url_for,
 )
+
 from werkzeug.utils import secure_filename
+from sqlalchemy import inspect as sa_inspect, text
 
 
 # Optional Playwright import for server-side Chromium PDF generation.
@@ -65,7 +67,150 @@ from ..services import ai_service
 from . import bp
 
 
+
 # ---- helpers (temporary duplicates; will move to routes/helpers.py) ----
+
+# ---- claim-level treating providers (join table; best-effort) ----
+
+def _table_exists(table_name: str) -> bool:
+    """Return True if the given table exists in the current DB."""
+    try:
+        return sa_inspect(db.engine).has_table(table_name)
+    except Exception:
+        # Be conservative: if inspection fails, assume it exists.
+        return True
+
+
+def _claim_provider_table_name() -> str | None:
+    """Best-effort: return the join table name used for claim<->provider.
+
+    Supports multiple historical names to avoid breaking older DBs.
+    Expected columns (best case): claim_id, provider_id, sort_order
+    """
+    candidates = [
+        "claim_treating_provider",
+        "claim_provider",
+        "claim_approved_provider",
+    ]
+    for t in candidates:
+        if _table_exists(t):
+            return t
+    return None
+
+
+def _claim_load_provider_ids(claim_id: int) -> list[int]:
+    """Return provider IDs for the claim, preserving sort order when available."""
+    t = _claim_provider_table_name()
+    if not t:
+        return []
+
+    try:
+        rows = db.session.execute(
+            text(
+                f"""
+                SELECT provider_id
+                FROM {t}
+                WHERE claim_id = :claim_id
+                ORDER BY sort_order NULLS LAST, provider_id
+                """
+            ),
+            {"claim_id": claim_id},
+        ).fetchall()
+        return [int(r[0]) for r in rows if r and r[0] is not None]
+    except Exception:
+        # If the first query failed (missing column/table/privileges), the transaction
+        # may now be aborted; rollback before attempting any fallback query.
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
+        try:
+            rows = db.session.execute(
+                text(
+                    f"""
+                    SELECT provider_id
+                    FROM {t}
+                    WHERE claim_id = :claim_id
+                    ORDER BY provider_id
+                    """
+                ),
+                {"claim_id": claim_id},
+            ).fetchall()
+            return [int(r[0]) for r in rows if r and r[0] is not None]
+        except Exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            return []
+
+
+
+def _claim_load_providers(claim: Claim) -> list[Provider]:
+    """Return Provider rows for the claim in join-table order."""
+    ids = _claim_load_provider_ids(claim.id)
+    if not ids:
+        return []
+    rows = Provider.query.filter(Provider.id.in_(ids)).all()
+    by_id = {p.id: p for p in rows}
+    return [by_id.get(pid) for pid in ids if by_id.get(pid)]
+
+# ---- claim-level surgeries (multi-date support) ----
+
+def _claim_surgery_table_name() -> str | None:
+    """Best-effort: return the claim surgery table name.
+
+    Historical/dev DBs may have used different names.
+    Expected columns: id, claim_id, surgery_date, description, sort_order
+    """
+    candidates = [
+        "claim_surgery_date",  # current
+        "claim_surgery",       # older/accidental
+        "claim_surgeries",     # possible variant
+    ]
+    for t in candidates:
+        if _table_exists(t):
+            return t
+    return None
+
+
+def _claim_load_surgeries(claim: Claim) -> list[dict]:
+    """Return ordered surgery rows for a claim (best-effort)."""
+    t = _claim_surgery_table_name()
+    if not t:
+        return []
+
+    try:
+        rows = db.session.execute(
+            text(
+                f"""
+                SELECT id, surgery_date, description, sort_order
+                FROM public.{t}
+                WHERE claim_id = :claim_id
+                ORDER BY sort_order NULLS LAST, surgery_date NULLS LAST, id
+                """
+            ),
+            {"claim_id": claim.id},
+        ).fetchall()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        return []
+
+    out = []
+    for r in rows:
+        out.append(
+            {
+                "id": r[0],
+                "surgery_date": r[1],
+                "description": r[2],
+                "sort_order": r[3],
+            }
+        )
+    return out
 
 def _allowed_file(filename: str) -> bool:
     allowed = {
@@ -697,46 +842,13 @@ def report_new(claim_id):
     db.session.add(report)
     db.session.flush()  # ensure report.id exists
 
-    # Carry forward Treating Provider(s) selections to new reports.
-    # IMPORTANT: do NOT assume the immediate last report has selections.
-    # Prefer join-table rows from the most recent report that has them; fall back to the most recent
-    # legacy treating_provider_id if no join rows exist anywhere.
-    prev_provider_ids: list[int] = []
 
-    source_report_for_providers = None
-    for r in recent_reports:
-        ids = (
-            db.session.query(ReportApprovedProvider.provider_id)
-            .filter(ReportApprovedProvider.report_id == r.id)
-            .order_by(ReportApprovedProvider.sort_order.asc())
-            .all()
-        )
-        row_ids = [pid for (pid,) in ids]
-        if row_ids:
-            source_report_for_providers = r
-            prev_provider_ids = row_ids
-            break
-
-    if not prev_provider_ids:
-        # Back-compat: fall back to the most recent legacy single treating provider
-        for r in recent_reports:
-            legacy = getattr(r, "treating_provider_id", None)
-            if legacy:
-                prev_provider_ids = [legacy]
-                break
-
-    if prev_provider_ids:
-        for idx, pid in enumerate(prev_provider_ids):
-            db.session.add(
-                ReportApprovedProvider(
-                    report_id=report.id,
-                    provider_id=pid,
-                    sort_order=idx,
-                )
-            )
-
-        # Back-compat: keep legacy single provider pointing to first selection
-        report.treating_provider_id = prev_provider_ids[0]
+    # Treating Providers are claim-owned.
+    # Keep legacy single provider pointing to the first claim provider (best-effort)
+    # so older templates/ICS/location logic still work.
+    claim_provider_ids = _claim_load_provider_ids(claim.id)
+    if claim_provider_ids:
+        report.treating_provider_id = claim_provider_ids[0]
 
     # Auto-create report-writing billable (editable later)
     qty = 1.0 if report_type_raw == "initial" else 0.5
@@ -787,17 +899,22 @@ def report_detail(claim_id, report_id):
 
     page_title = _build_report_page_title(claim, report, display_report_number)
 
+    claim_providers = _claim_load_providers(claim)
+    claim_surgeries = _claim_load_surgeries(claim)
+
     return render_template(
         "report_detail.html",
         active_page="claims",
         claim=claim,
         report=report,
+        claim_providers=claim_providers,
         settings=settings,
         barriers_by_category=barriers_by_category,
         selected_barrier_ids=selected_barrier_ids,
         page_title=page_title,
         display_report_number=display_report_number,
         report_display_number=display_report_number,
+        claim_surgeries=claim_surgeries,
     )
 
 
@@ -1088,129 +1205,7 @@ def report_edit(claim_id, report_id):
         except Exception:
             pass
 
-    providers = Provider.query.order_by(Provider.name).all()
     error = None
-
-    # Treating Provider(s) multi-select: current selections from join table (ordered)
-    approved_provider_ids = (
-        db.session.query(ReportApprovedProvider.provider_id)
-        .filter(ReportApprovedProvider.report_id == report.id)
-        .order_by(ReportApprovedProvider.sort_order.asc())
-        .all()
-    )
-    approved_provider_ids = [pid for (pid,) in approved_provider_ids]
-
-    # Back-compat: if none yet, fall back to legacy single treating provider
-    if not approved_provider_ids and getattr(report, "treating_provider_id", None):
-        approved_provider_ids = [report.treating_provider_id]
-
-    # ---------------------------------------------------------------------
-    # Carry-forward safety net (GET only)
-    #
-    # Sometimes the "new report" flow can be routed through older/alternate
-    # endpoints. If the newly-created report ends up with empty selections,
-    # we still want the edit screen to auto-populate from the most recent
-    # prior report on the same claim.
-    #
-    # This is intentionally conservative:
-    # - Only runs on GET
-    # - Only fills providers if there are no join-table rows yet
-    # - Only fills barriers if current barriers_json is empty/invalid/[]
-    # - Persists the copied selections so subsequent loads remain stable
-    # ---------------------------------------------------------------------
-    if request.method == "GET":
-        did_change = False
-
-        # ---- Providers carry-forward (join table) ----
-        has_join_rows = (
-            db.session.query(ReportApprovedProvider.id)
-            .filter(ReportApprovedProvider.report_id == report.id)
-            .first()
-            is not None
-        )
-
-        if not has_join_rows:
-            # Find the most recent prior report that has approved provider rows
-            source_provider_ids: list[int] = []
-            prior_reports = (
-                Report.query.filter(Report.claim_id == claim.id, Report.id != report.id)
-                .order_by(Report.created_at.desc())
-                .all()
-            )
-
-            for r in prior_reports:
-                ids = (
-                    db.session.query(ReportApprovedProvider.provider_id)
-                    .filter(ReportApprovedProvider.report_id == r.id)
-                    .order_by(ReportApprovedProvider.sort_order.asc())
-                    .all()
-                )
-                row_ids = [pid for (pid,) in ids]
-                if row_ids:
-                    source_provider_ids = row_ids
-                    break
-
-            if not source_provider_ids:
-                # Back-compat: fall back to most recent legacy treating_provider_id
-                for r in prior_reports:
-                    legacy = getattr(r, "treating_provider_id", None)
-                    if legacy:
-                        source_provider_ids = [legacy]
-                        break
-
-            if source_provider_ids:
-                # Populate join rows on the current report
-                for idx, pid in enumerate(source_provider_ids):
-                    db.session.add(
-                        ReportApprovedProvider(
-                            report_id=report.id,
-                            provider_id=pid,
-                            sort_order=idx,
-                        )
-                    )
-
-                # Keep legacy field aligned
-                report.treating_provider_id = source_provider_ids[0]
-
-                approved_provider_ids = source_provider_ids
-                did_change = True
-
-        # ---- Barriers carry-forward ----
-        current_barrier_ids: list[int] = []
-        if report.barriers_json:
-            try:
-                parsed = json.loads(report.barriers_json)
-                if isinstance(parsed, list):
-                    current_barrier_ids = [int(x) for x in parsed if str(x).strip()]
-            except Exception:
-                current_barrier_ids = []
-
-        if not current_barrier_ids:
-            prior_reports = (
-                Report.query.filter(Report.claim_id == claim.id, Report.id != report.id)
-                .order_by(Report.created_at.desc())
-                .all()
-            )
-
-            source_barriers_json = None
-            for r in prior_reports:
-                raw = getattr(r, "barriers_json", None)
-                if not raw:
-                    continue
-                try:
-                    parsed = json.loads(raw)
-                except Exception:
-                    continue
-                if isinstance(parsed, list) and len(parsed) > 0:
-                    source_barriers_json = raw
-                    break
-
-            if source_barriers_json:
-                report.barriers_json = source_barriers_json
-                did_change = True
-
-        if did_change:
-            db.session.commit()
 
     if request.method == "POST":
         report_type_raw = (request.form.get("report_type") or "").strip().lower()
@@ -1221,8 +1216,6 @@ def report_edit(claim_id, report_id):
         work_status = (request.form.get("work_status") or "").strip() or None
         case_management_plan = (request.form.get("case_management_plan") or "").strip() or None
         next_report_due_raw = (request.form.get("next_report_due") or "").strip() or None
-
-        treating_provider_id_raw = (request.form.get("treating_provider_id") or "").strip() or None
 
         status_treatment_plan = (request.form.get("status_treatment_plan") or "").strip() or None
         employment_status = (request.form.get("employment_status") or "").strip() or None
@@ -1243,6 +1236,7 @@ def report_edit(claim_id, report_id):
         # Next appointment (initial report)
         initial_next_appt_datetime_raw = (request.form.get("initial_next_appt_datetime") or "").strip()
         initial_next_appt_provider_name = (request.form.get("initial_next_appt_provider_name") or "").strip() or None
+        initial_next_appt_notes = (request.form.get("initial_next_appt_notes") or "").strip() or None
 
         # Closure-specific fields
         closure_reason = (request.form.get("closure_reason") or "").strip() or None
@@ -1278,13 +1272,6 @@ def report_edit(claim_id, report_id):
             if err and not error:
                 error = err
 
-        treating_provider_id = None
-        if treating_provider_id_raw:
-            try:
-                treating_provider_id = int(treating_provider_id_raw)
-            except ValueError:
-                treating_provider_id = None
-
         valid_types = {"initial", "progress", "closure"}
         if not report_type or report_type not in valid_types:
             error = "Report type is required."
@@ -1314,33 +1301,11 @@ def report_edit(claim_id, report_id):
             report.case_management_plan = case_management_plan
             report.next_report_due = next_report_due
 
-            # --- Treating Provider(s): persist selections via join table ---
-            selected_ids = request.form.getlist("approved_provider_ids")
-            cleaned_ids: list[int] = []
-            for raw in selected_ids:
-                raw = (raw or "").strip()
-                if not raw:
-                    continue
-                try:
-                    pid = int(raw)
-                except ValueError:
-                    continue
-                if pid not in cleaned_ids:
-                    cleaned_ids.append(pid)
-
-            ReportApprovedProvider.query.filter_by(report_id=report.id).delete()
-            for idx, pid in enumerate(cleaned_ids):
-                db.session.add(
-                    ReportApprovedProvider(
-                        report_id=report.id,
-                        provider_id=pid,
-                        sort_order=idx,
-                    )
-                )
-
-            # Back-compat: keep legacy single provider pointing to first selection
-            report.treating_provider_id = cleaned_ids[0] if cleaned_ids else None
-            approved_provider_ids = cleaned_ids
+            # Back-compat: if legacy single provider is empty, align it to the first claim provider.
+            if getattr(report, "treating_provider_id", None) is None:
+                claim_provider_ids = _claim_load_provider_ids(claim.id)
+                if claim_provider_ids:
+                    report.treating_provider_id = claim_provider_ids[0]
 
             report.status_treatment_plan = status_treatment_plan
             report.employment_status = employment_status
@@ -1353,6 +1318,7 @@ def report_edit(claim_id, report_id):
             report.initial_medications = initial_medications
             report.initial_diagnostics = initial_diagnostics
 
+            # Persist next appointment fields independently (notes always persist)
             if initial_next_appt_datetime_raw:
                 try:
                     report.initial_next_appt_datetime = datetime.strptime(
@@ -1362,8 +1328,26 @@ def report_edit(claim_id, report_id):
                     report.initial_next_appt_datetime = None
             else:
                 report.initial_next_appt_datetime = None
-
             report.initial_next_appt_provider_name = initial_next_appt_provider_name
+            report.initial_next_appt_notes = initial_next_appt_notes
+
+            # Keep legacy single provider pointer aligned to the selected next-appointment provider
+            # when possible so downstream outputs (ICS/location) can still resolve address.
+            # Providers are claim-owned; only set if the selected provider is one of the claim providers.
+            if initial_next_appt_provider_name:
+                try:
+                    _cp_ids = _claim_load_provider_ids(claim.id)
+                    if _cp_ids:
+                        _cp_rows = Provider.query.filter(Provider.id.in_(_cp_ids)).all()
+                        _by_name = {((p.name or "").strip()): p for p in _cp_rows if getattr(p, "name", None)}
+                        _p = _by_name.get(initial_next_appt_provider_name.strip())
+                        if _p is not None:
+                            report.treating_provider_id = _p.id
+                except Exception:
+                    try:
+                        db.session.rollback()
+                    except Exception:
+                        pass
 
             report.closure_reason = closure_reason
             report.closure_details = closure_details
@@ -1405,16 +1389,16 @@ def report_edit(claim_id, report_id):
         except (TypeError, ValueError):
             selected_barrier_ids = set()
 
+    claim_providers = _claim_load_providers(claim)
     return render_template(
         "report_edit.html",
         active_page="claims",
         claim=claim,
         report=report,
+        claim_providers=claim_providers,
         error=error,
         barriers_by_category=barriers_by_category,
         selected_barrier_ids=selected_barrier_ids,
-        providers=providers,
-        approved_provider_ids=approved_provider_ids,
         display_report_number=display_report_number,
         page_title=page_title,
         report_display_number=display_report_number,
@@ -1441,11 +1425,22 @@ def report_document_download(report_document_id):
         flash("File not found on disk.", "danger")
         return redirect(url_for("main.report_edit", claim_id=report.claim.id, report_id=report.id))
 
-    return send_file(
+    # Default behavior: open in-browser when possible (PDF/images), not forced download.
+    # Use ?download=1 to force attachment.
+    download_raw = (request.args.get("download") or "").strip().lower()
+    force_download = download_raw in {"1", "true", "yes"}
+
+    resp = send_file(
         file_path,
-        as_attachment=True,
+        as_attachment=force_download,
         download_name=doc.original_filename,
     )
+
+    # Help browsers treat this as inline when not forcing download.
+    if not force_download and doc.original_filename:
+        resp.headers["Content-Disposition"] = f'inline; filename="{doc.original_filename}"'
+
+    return resp
 
 
 @bp.route("/reports/documents/<int:report_document_id>/delete", methods=["POST"])
@@ -1512,11 +1507,39 @@ def report_next_appointment_ics(claim_id, report_id):
 
     dt = report.initial_next_appt_datetime
 
+    # Resolve provider for location/address.
+    # Prefer the explicitly selected next-appointment provider (claim-owned) when present.
+    provider_for_location = None
+    try:
+        selected_name = (report.initial_next_appt_provider_name or "").strip()
+        if selected_name:
+            cp_ids = _claim_load_provider_ids(claim.id)
+            if cp_ids:
+                cp_rows = Provider.query.filter(Provider.id.in_(cp_ids)).all()
+                for p in cp_rows:
+                    if (getattr(p, "name", None) or "").strip() == selected_name:
+                        provider_for_location = p
+                        break
+    except Exception:
+        provider_for_location = None
+
+    # Fallback to legacy single provider relationship.
+    if provider_for_location is None and getattr(report, "treating_provider", None):
+        provider_for_location = report.treating_provider
+
     location_parts: list[str] = []
-    if report.treating_provider:
-        p = report.treating_provider
-        if getattr(p, "name", None):
-            location_parts.append(p.name)
+    if provider_for_location is not None:
+        p = provider_for_location
+
+        # Display "Organization — Name" when organization exists.
+        org = (getattr(p, "organization", None) or "").strip()
+        nm = (getattr(p, "name", None) or "").strip()
+        if org and nm:
+            location_parts.append(f"{org} — {nm}")
+        elif nm:
+            location_parts.append(nm)
+        elif org:
+            location_parts.append(org)
 
         addr1 = getattr(p, "address1", None) or getattr(p, "address", None)
         addr2 = getattr(p, "address2", None)
@@ -1577,6 +1600,11 @@ def report_next_appointment_ics(claim_id, report_id):
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/print")
 def report_print(claim_id, report_id):
     """Render a print-friendly version of a report (HTML)."""
+    # Defensive: clear any aborted transaction from earlier failures in this request
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
     claim = Claim.query.get_or_404(claim_id)
     report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
     settings = _ensure_settings()
@@ -1591,7 +1619,12 @@ def report_print(claim_id, report_id):
     except Exception:
         pass
 
+
     page_title = _build_report_page_title(claim, report, display_report_number)
+
+
+    claim_providers = _claim_load_providers(claim)
+    claim_surgeries = _claim_load_surgeries(claim)
 
     cm_activities: list[dict] = []
     if report.dos_start and report.dos_end:
@@ -1628,12 +1661,14 @@ def report_print(claim_id, report_id):
         settings=settings,
         claim=claim,
         report=report,
+        claim_providers=claim_providers,
         cm_activities=cm_activities,
         cm_items=cm_items,
         barriers=barriers,
         display_report_number=display_report_number,
         page_title=page_title,
         report_display_number=display_report_number,
+        claim_surgeries=claim_surgeries,
     )
 
 
@@ -1641,6 +1676,11 @@ def report_print(claim_id, report_id):
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/pdf")
 def report_pdf(claim_id, report_id):
     """Generate a PDF of the report by snapshotting the /print route via headless Chromium."""
+    # Defensive: clear any aborted transaction from earlier failures in this request
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
     claim = Claim.query.get_or_404(claim_id)
     report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
 
@@ -1664,22 +1704,11 @@ def report_pdf(claim_id, report_id):
     # Determine when the report last changed (prefer updated_at; fall back to created_at).
     report_updated = getattr(report, "updated_at", None) or getattr(report, "created_at", None)
 
-    # Also consider changes to any providers referenced by this report.
-    # If a provider changes (e.g., specialty/address), the previously-generated PDF may be stale.
+    # Also consider changes to any claim-level treating providers.
     provider_updated = None
     try:
-        provider_ids = (
-            db.session.query(ReportApprovedProvider.provider_id)
-            .filter(ReportApprovedProvider.report_id == report.id)
-            .all()
-        )
-        provider_ids = [pid for (pid,) in provider_ids]
-        if not provider_ids and getattr(report, "treating_provider_id", None):
-            provider_ids = [report.treating_provider_id]
-
+        provider_ids = _claim_load_provider_ids(claim.id)
         if provider_ids:
-            # Find the newest updated_at among referenced providers.
-            # Fall back to created_at if updated_at is missing.
             prov_rows = Provider.query.filter(Provider.id.in_(provider_ids)).all()
             prov_times = []
             for p in prov_rows:

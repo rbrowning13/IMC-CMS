@@ -13,17 +13,22 @@
 
 <form method="post" action="{{ url_for('main.provider_edit', provider_id=provider.id) }}" class="card card-body">
   <div class="row g-3">
-    <div class="col-md-6">
+    <div class="col-md-3">
       <label class="form-label">Name</label>
       <input class="form-control" name="name" value="{{ form.get('name','') }}" required>
     </div>
 
-    <div class="col-md-6">
+    <div class="col-md-3">
+      <label class="form-label">Organization</label>
+      <input class="form-control" name="organization" value="{{ form.get('organization','') }}">
+    </div>
+
+    <div class="col-md-3">
       <label class="form-label">Specialty</label>
       <input class="form-control" name="specialty" value="{{ form.get('specialty','') }}">
     </div>
 
-    <div class="col-md-6">
+    <div class="col-md-3">
       <label class="form-label">Address 1</label>
       <input class="form-control" name="address1" value="{{ form.get('address1','') }}">
     </div>

@@ -32,7 +32,7 @@
     <div class="card card-body py-2">
       <div class="row g-2 align-items-center small">
         <div class="col-sm-6 col-md-4">
-          <label for="claims-filter-status" class="form-label form-label-sm mb-0">Claim status</label>
+          <label for="claims-filter-status" class="form-label form-label-sm mb-0">Claim activity</label>
           <select id="claims-filter-status" class="form-select form-select-sm">
             <option value="">All</option>
             <option value="active">Active</option>
@@ -49,7 +49,13 @@
             <option value="closed">All closed</option>
           </select>
         </div>
-        <div class="col-sm-12 col-md-4 d-flex align-items-end justify-content-end mt-2 mt-md-0">
+        <div class="col-sm-6 col-md-2 d-flex align-items-center">
+          <div class="form-check form-switch ms-md-auto">
+            <input class="form-check-input" type="checkbox" id="claims-filter-show-closed" checked>
+            <label class="form-check-label small" for="claims-filter-show-closed">Show closed claims</label>
+          </div>
+        </div>
+        <div class="col-sm-6 col-md-2 d-flex align-items-end justify-content-end mt-2 mt-md-0">
           <button type="button" id="claims-filters-clear" class="btn btn-outline-secondary btn-sm">
             Clear filters
           </button>
@@ -72,8 +78,9 @@
                 <th class="sortable" data-sort-key="claimant"><span>Claimant</span> <span class="sort-indicator">↕</span></th>
                 <th class="sortable" data-sort-key="carrier"><span>Carrier</span> <span class="sort-indicator">↕</span></th>
                 <th class="sortable" data-sort-key="employer"><span>Employer</span> <span class="sort-indicator">↕</span></th>
-                <th class="text-center sortable" data-sort-key="status"><span>Status</span> <span class="sort-indicator">↕</span></th>
-                <th class="text-center sortable" data-sort-key="billing"><span>Billing</span> <span class="sort-indicator">↕</span></th>
+                <th class="text-center sortable text-nowrap small" data-sort-key="claim_status"><span>Status</span> <span class="sort-indicator">↕</span></th>
+                <th class="text-center sortable text-nowrap small" data-sort-key="activity"><span>Activity</span> <span class="sort-indicator">↕</span></th>
+                <th class="text-center sortable text-nowrap small" data-sort-key="billing"><span>Billing</span> <span class="sort-indicator">↕</span></th>
               </tr>
             </thead>
             <tbody>
@@ -86,6 +93,7 @@
                   {% if dormancy and dormancy["is_dormant"] %}class="table-warning"{% endif %}
                   data-status="{% if dormancy %}{% if dormancy['is_dormant'] %}dormant{% else %}active{% endif %}{% else %}unknown{% endif %}"
                   data-billing="{% if not summary or summary['total'] == 0 %}none{% elif summary['open'] > 0 %}open{% else %}closed{% endif %}"
+                  data-closed="{% if claim.is_closed %}1{% else %}0{% endif %}"
                 >
                   <td>
                     <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
@@ -95,7 +103,17 @@
 
                   <td>
                     <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
-                      {{ claim.claimant_name }}
+                      {% set _fn = (claim.claimant_first_name if claim.claimant_first_name is defined and claim.claimant_first_name else '')|trim %}
+                      {% set _ln = (claim.claimant_last_name if claim.claimant_last_name is defined and claim.claimant_last_name else '')|trim %}
+                      {% if _ln and _fn %}
+                        {{ _ln }}, {{ _fn }}
+                      {% elif _ln %}
+                        {{ _ln }}
+                      {% elif _fn %}
+                        {{ _fn }}
+                      {% else %}
+                        {{ claim.claimant_name or '—' }}
+                      {% endif %}
                     </a>
                   </td>
 
@@ -115,7 +133,15 @@
                     {% endif %}
                   </td>
 
-                  <td class="text-center">
+                  <td class="text-center text-nowrap">
+                    {% if claim.is_closed %}
+                      <span class="badge bg-secondary">Closed</span>
+                    {% else %}
+                      <span class="badge bg-primary">Open</span>
+                    {% endif %}
+                  </td>
+
+                  <td class="text-center text-nowrap">
                     {% if dormancy %}
                       {% if dormancy["is_dormant"] %}
                         <span class="badge bg-warning text-dark">Dormant</span>
@@ -137,21 +163,17 @@
                     {% endif %}
                   </td>
 
-                  <td class="text-center">
-
+                  <td class="text-center text-nowrap">
                     {# ---------- BILLING BADGE LOGIC ---------- #}
                     {% if not summary or summary["total"] == 0 %}
                       <span class="badge bg-secondary">No invoices</span>
-
                     {% elif summary["open"] > 0 %}
                       <span class="badge bg-warning text-dark">
-                        {{ summary["open"] }} open invoice{% if summary["open"] != 1 %}s{% endif %}
+                        {{ summary["open"] }} open{% if summary["open"] != 1 %}s{% endif %}
                       </span>
-
                     {% else %}
                       <span class="badge bg-success">All closed</span>
                     {% endif %}
-
                   </td>
 
                 </tr>
@@ -187,23 +209,43 @@
       row.dataset.originalIndex = String(index);
     });
 
-    // ----- Filters (status + billing), preserving search-hidden rows -----
+    // ----- Filters (status + billing + closed), preserving search-hidden rows -----
     const statusFilter = document.getElementById('claims-filter-status');
     const billingFilter = document.getElementById('claims-filter-billing');
+    const showClosedCheckbox = document.getElementById('claims-filter-show-closed');
     const clearBtn = document.getElementById('claims-filters-clear');
+
+    function getQueryParam(name) {
+      const params = new URLSearchParams(window.location.search);
+      return params.get(name);
+    }
+
+    // Initialize showClosedCheckbox checked state from URL param
+    (function initShowClosedCheckbox() {
+      if (!showClosedCheckbox) return;
+      const val = getQueryParam('show_closed');
+      if (val === '1' || val === 'true') {
+        showClosedCheckbox.checked = true;
+      } else {
+        showClosedCheckbox.checked = false;
+      }
+    })();
 
     function applyFilters() {
       const statusVal = statusFilter ? statusFilter.value.toLowerCase() : '';
       const billingVal = billingFilter ? billingFilter.value.toLowerCase() : '';
+      const showClosed = showClosedCheckbox ? showClosedCheckbox.checked : true;
 
       allRows.forEach(function (row) {
         const rowStatus = (row.getAttribute('data-status') || '').toLowerCase();
         const rowBilling = (row.getAttribute('data-billing') || '').toLowerCase();
+        const rowClosed = row.getAttribute('data-closed') || '0';
 
         const statusMatch = !statusVal || rowStatus === statusVal;
         const billingMatch = !billingVal || rowBilling === billingVal;
+        const closedMatch = showClosed || rowClosed === '0';
 
-        if (statusMatch && billingMatch) {
+        if (statusMatch && billingMatch && closedMatch) {
           // Only show the row if search has not hidden it
           if (!row.dataset.searchHidden || row.dataset.searchHidden === '0') {
             row.style.display = '';
@@ -220,10 +262,25 @@
     if (billingFilter) {
       billingFilter.addEventListener('change', applyFilters);
     }
+    if (showClosedCheckbox) {
+      showClosedCheckbox.addEventListener('change', function () {
+        // Update URL query param without reload
+        const params = new URLSearchParams(window.location.search);
+        if (showClosedCheckbox.checked) {
+          params.set('show_closed', '1');
+        } else {
+          params.delete('show_closed');
+        }
+        const newUrl = window.location.pathname + '?' + params.toString();
+        window.history.replaceState({}, '', newUrl);
+        applyFilters();
+      });
+    }
     if (clearBtn) {
       clearBtn.addEventListener('click', function () {
         if (statusFilter) statusFilter.value = '';
         if (billingFilter) billingFilter.value = '';
+        if (showClosedCheckbox) showClosedCheckbox.checked = false;
         applyFilters();
       });
     }
@@ -269,10 +326,12 @@
           return (row.children[2].innerText || '').trim().toLowerCase();
         case 'employer':
           return (row.children[3].innerText || '').trim().toLowerCase();
-        case 'status':
+        case 'claim_status':
           return (row.children[4].innerText || '').trim().toLowerCase();
-        case 'billing':
+        case 'activity':
           return (row.children[5].innerText || '').trim().toLowerCase();
+        case 'billing':
+          return (row.children[6].innerText || '').trim().toLowerCase();
         default:
           return '';
       }
@@ -356,6 +415,9 @@
       claimantHeader.dataset.sortState = 'none';
       claimantHeader.click();
     })();
+
+    // Apply filters initially, including showClosed checkbox state
+    applyFilters();
   });
 </script>
 {% endblock %}

@@ -180,12 +180,57 @@ def _generate_invoice_number() -> str:
 
 
 def _calculate_invoice_totals(invoice: Invoice) -> None:
+    """Recalculate invoice totals in-place.
+
+    IMPORTANT: We must keep a single source of truth for invoice totals.
+
+    - If the project provides a helper `_calculate_invoice_totals` in routes/helpers.py, we call it.
+    - Regardless, we then force `invoice.total_amount` (and common variants) to match the
+      canonical math used by the invoice detail/print views, i.e. `_compute_totals_from_items()`
+      with effective rates (carrier overrides > settings defaults).
+
+    This prevents the Claim Detail invoice table (which reads stored totals) from diverging
+    from the Invoice Detail page totals.
+    """
+
+    # 1) Try the centralized helper first (if present)
     if calculate_invoice_totals is not None:
         try:
             calculate_invoice_totals(invoice)
-            return
         except Exception:
+            # Don't hard-fail; we still enforce canonical totals below.
             pass
+
+    # 2) Enforce canonical totals (same math as invoice_detail / invoice_print)
+    try:
+        settings = None
+        try:
+            from .helpers import _ensure_settings  # type: ignore
+            settings = _ensure_settings()
+        except Exception:
+            settings = None
+
+        claim = getattr(invoice, "claim", None)
+        rates = _get_effective_invoice_rates(settings, claim)
+        totals = _compute_totals_from_items(invoice, rates)
+        canonical_total = float(totals.get("invoice_total", 0.0) or 0.0)
+
+        # Persist on common invoice total fields (model has varied during development)
+        for field in ("subtotal", "total", "total_amount", "amount_total"):
+            if hasattr(invoice, field):
+                try:
+                    setattr(invoice, field, canonical_total)
+                except Exception:
+                    pass
+
+        # NOTE: Do NOT overwrite balance_due here; payments may exist and balance is derived.
+
+        return
+    except Exception:
+        # If anything goes sideways, fall back to legacy behavior.
+        pass
+
+    # 3) Last resort fallback
     _fallback_calculate_invoice_totals(invoice)
 
 

@@ -42,7 +42,13 @@
         {% endif %}
       </h1>
       <div class="text-muted small">
-        Claim: {{ claim.claimant_name }} · Claim #{{ claim.claim_number }}
+        Claim:
+        {% if (claim.claimant_last_name or '')|trim or (claim.claimant_first_name or '')|trim %}
+          {{ (claim.claimant_last_name or '')|trim }}{% if (claim.claimant_first_name or '')|trim %}, {{ (claim.claimant_first_name or '')|trim }}{% endif %}
+        {% else %}
+          {{ claim.claimant_name }}
+        {% endif %}
+        · Claim #{{ claim.claim_number }}
         {% if report.report_type %}
           · Type: {{ (report.report_type or '')|capitalize }}
         {% endif %}
@@ -94,48 +100,20 @@
             {# Keep report_type value for POST handling, but don't show it in the metadata UI #}
             <input type="hidden" name="report_type" value="{{ report.report_type }}">
 
-            <!-- Treating Provider(s) selector (checkbox list) -->
+            
             <div class="col-12">
-              <label class="form-label form-label-sm mb-1">Treating Provider(s)</label>
-              <input
-                type="text"
-                id="provider_search"
-                class="form-control form-control-sm mb-2"
-                placeholder="Search providers…"
-                autocomplete="off"
-              >
-
-              {# Prefer ids passed in from the route; fallback to existing single treating_provider_id #}
-              {% set _sel_ids = approved_provider_ids if approved_provider_ids is defined else [] %}
-              {% if (not _sel_ids) and report.treating_provider_id %}
-                {% set _sel_ids = [report.treating_provider_id] %}
-              {% endif %}
-
-              <div class="border rounded p-2">
-                <div class="small text-muted mb-1">Selected</div>
-                <div id="provider_selected" class="mb-2">
-                  {# rows will be moved here by JS on load #}
-                </div>
-
-                <div class="small text-muted mb-1">Search results</div>
-                <div id="provider_results" style="max-height: 180px; overflow-y: auto;">
-                  {% for provider in providers %}
-                    <div class="form-check mb-1 provider-row" style="position: relative;">
-                      <input
-                        class="form-check-input js-accent-check provider-checkbox"
-                        type="checkbox"
-                        name="approved_provider_ids"
-                        id="provider_{{ provider.id }}"
-                        value="{{ provider.id }}"
-                        {% if provider.id in _sel_ids %}checked{% endif %}
-                        style="position: relative; z-index: 5; pointer-events: auto; accent-color: var(--accent-color);"
-                      >
-                      <label class="form-check-label provider-label" for="provider_{{ provider.id }}" style="position: relative; z-index: 5; pointer-events: auto; cursor: pointer;">
-                        {{ provider.name }}
-                      </label>
-                    </div>
+              <div class="small text-muted mb-1">Treating Providers</div>
+              <div class="fw-semibold">
+                {% if claim_providers is defined and claim_providers %}
+                  {% set ns = namespace(labels=[]) %}
+                  {% for p in claim_providers %}
+                    {% set _label = (p.organization if (p.organization is defined and p.organization) else p.name) %}
+                    {% set ns.labels = ns.labels + [_label] %}
                   {% endfor %}
-                </div>
+                  {{ ns.labels|join(', ') }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
               </div>
             </div>
 
@@ -674,6 +652,17 @@
           </div>
           <div class="card-body small">
             <div class="row g-2">
+
+            <div class="col-12">
+              <label class="form-label form-label-sm mb-0">Notes</label>
+              <input type="text"
+                     id="initial_next_appt_notes"
+                     name="initial_next_appt_notes"
+                     class="form-control form-control-sm"
+                     placeholder="e.g., Pending surgery scheduling / patient to call to confirm"
+                     value="{{ report.initial_next_appt_notes if report.initial_next_appt_notes is defined and report.initial_next_appt_notes else '' }}">
+            </div>
+
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Date / Time</label>
               <input type="datetime-local"
@@ -682,30 +671,47 @@
                      class="form-control form-control-sm"
                      value="{% if report.initial_next_appt_datetime %}{{ report.initial_next_appt_datetime.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
             </div>
+
             <div class="col-12">
               <label class="form-label form-label-sm mb-0">Provider</label>
               <select
+                id="initial_next_appt_provider_name"
                 name="initial_next_appt_provider_name"
                 class="form-select form-select-sm"
               >
                 <option value="">— Select provider… —</option>
-                {% for p in providers %}
-                  <option value="{{ p.name }}"
-                          {% if report.initial_next_appt_provider_name == p.name %}selected{% endif %}>
-                    {{ p.name }}
-                  </option>
-                {% endfor %}
+
+                {% if claim_providers is defined and claim_providers %}
+                  {% for p in claim_providers %}
+                    {% set _label = (p.organization if (p.organization is defined and p.organization) else p.name) %}
+                    <option value="{{ _label }}"
+                            {% if report.initial_next_appt_provider_name == _label %}selected{% endif %}>
+                      {{ _label }}
+                    </option>
+                  {% endfor %}
+                {% else %}
+                  {% for p in providers %}
+                    {% set _label = (p.organization if (p.organization is defined and p.organization) else p.name) %}
+                    <option value="{{ _label }}"
+                            {% if report.initial_next_appt_provider_name == _label %}selected{% endif %}>
+                      {{ _label }}
+                    </option>
+                  {% endfor %}
+                {% endif %}
               </select>
             </div>
+
             <div class="col-12 d-flex justify-content-between align-items-center mt-1">
               <small class="text-muted">Generate a calendar event for this appointment.</small>
-              <a href="{{ url_for('main.report_next_appointment_ics', claim_id=claim.id, report_id=report.id) }}"
+              <a href="#"
                  id="download_ics_btn"
-                 class="btn btn-outline-secondary btn-sm"
-                 {% if not report.initial_next_appt_datetime %}disabled{% endif %}>
+                 class="btn btn-outline-secondary btn-sm{% if (not report.initial_next_appt_datetime) or (not report.initial_next_appt_provider_name) %} disabled{% endif %}"
+                 aria-disabled="{% if (not report.initial_next_appt_datetime) or (not report.initial_next_appt_provider_name) %}true{% else %}false{% endif %}"
+                 {% if (not report.initial_next_appt_datetime) or (not report.initial_next_appt_provider_name) %}tabindex="-1"{% endif %}>
                 Download .ics
               </a>
             </div>
+
             </div>
           </div>
         </div>
@@ -1096,16 +1102,27 @@
         });
     };
 
-    // Enable/disable the ICS download button based on the next appointment datetime field
+    // Enable/disable the ICS download button based on datetime field
     const dtInput = document.getElementById("initial_next_appt_datetime");
     const icsButton = document.getElementById("download_ics_btn");
+    const providerSelect = document.getElementById("initial_next_appt_provider_name");
+    const notesInput = document.getElementById("initial_next_appt_notes");
 
     function updateIcsButtonState() {
-      if (!dtInput || !icsButton) return;
-      if (!dtInput.value) {
-        icsButton.setAttribute("disabled", "disabled");
+      if (!dtInput || !icsButton || !providerSelect) return;
+
+      const hasDt = !!dtInput.value;
+      const hasProvider = !!providerSelect.value;
+      const shouldDisableIcs = !(hasDt && hasProvider);
+
+      if (shouldDisableIcs) {
+        icsButton.classList.add("disabled");
+        icsButton.setAttribute("aria-disabled", "true");
+        icsButton.setAttribute("tabindex", "-1");
       } else {
-        icsButton.removeAttribute("disabled");
+        icsButton.classList.remove("disabled");
+        icsButton.setAttribute("aria-disabled", "false");
+        icsButton.removeAttribute("tabindex");
       }
     }
 
@@ -1113,135 +1130,141 @@
       dtInput.addEventListener("input", updateIcsButtonState);
       dtInput.addEventListener("change", updateIcsButtonState);
     }
+    if (providerSelect) {
+      providerSelect.addEventListener("change", updateIcsButtonState);
+    }
 
-    // Run once on load
     updateIcsButtonState();
-  })();
-</script>
-<script>
-  (function () {
-    // Treating Provider(s) UX:
-    // - Selected providers persist in a dedicated list
-    // - Search shows matching unselected providers
-    // - By default (no search), hide unselected providers
 
-    const providerSearch = document.getElementById("provider_search");
-    const selectedBox = document.getElementById("provider_selected");
-    const resultsBox = document.getElementById("provider_results");
-
-    function normalize(str) {
-      return (str || "").toString().toLowerCase().trim();
+    function pad2(n) {
+      return String(n).padStart(2, "0");
     }
 
-    function rowLabelText(row) {
-      const label = row ? row.querySelector(".provider-label") : null;
-      return normalize(label ? label.textContent : "");
+    function icsEscape(text) {
+      return String(text || "")
+        .replace(/\\/g, "\\\\")
+        .replace(/\r\n|\r|\n/g, "\\n")
+        .replace(/,/g, "\\,")
+        .replace(/;/g, "\\;");
     }
 
-    function isChecked(row) {
-      const cb = row ? row.querySelector(".provider-checkbox") : null;
-      return !!(cb && cb.checked);
+    function toIcsLocal(dt) {
+      // Floating local time (no TZ) — works well for quick downloads.
+      return (
+        dt.getFullYear() +
+        pad2(dt.getMonth() + 1) +
+        pad2(dt.getDate()) +
+        "T" +
+        pad2(dt.getHours()) +
+        pad2(dt.getMinutes()) +
+        "00"
+      );
     }
 
-    function ensureSelectedPlaceholder() {
-      if (!selectedBox) return;
-      let ph = selectedBox.querySelector(".provider-selected-empty");
-      const anySelected = selectedBox.querySelectorAll(".provider-row").length > 0;
-      if (anySelected) {
-        if (ph) ph.remove();
-        return;
-      }
-      if (!ph) {
-        ph = document.createElement("div");
-        ph.className = "text-muted small provider-selected-empty";
-        ph.textContent = "No providers selected.";
-        selectedBox.appendChild(ph);
-      }
+    function buildNextApptIcs() {
+      if (!dtInput || !providerSelect) return null;
+      if (!dtInput.value || !providerSelect.value) return null;
+
+      const providerName = providerSelect.value;
+      const notes = notesInput ? (notesInput.value || "").trim() : "";
+
+      // dtInput is datetime-local => parse as local
+      const dt = new Date(dtInput.value);
+      if (isNaN(dt.getTime())) return null;
+
+      // Default duration: 30 minutes
+      const end = new Date(dt.getTime() + 30 * 60 * 1000);
+
+      const dtstamp = new Date();
+      const dtstampUtc =
+        dtstamp.getUTCFullYear() +
+        pad2(dtstamp.getUTCMonth() + 1) +
+        pad2(dtstamp.getUTCDate()) +
+        "T" +
+        pad2(dtstamp.getUTCHours()) +
+        pad2(dtstamp.getUTCMinutes()) +
+        pad2(dtstamp.getUTCSeconds()) +
+        "Z";
+
+      const uid =
+        "next-appt-" +
+        Math.random().toString(36).slice(2) +
+        "-" +
+        Date.now().toString(36) +
+        "@impactcms";
+
+      const summary = "Next appointment: " + providerName;
+
+      const descParts = [];
+      descParts.push("Provider: " + providerName);
+      if (notes) descParts.push("Notes: " + notes);
+
+      const description = descParts.join("\n");
+
+      const ics =
+        "BEGIN:VCALENDAR\r\n" +
+        "VERSION:2.0\r\n" +
+        "PRODID:-//Impact CMS//Next Appointment//EN\r\n" +
+        "CALSCALE:GREGORIAN\r\n" +
+        "METHOD:PUBLISH\r\n" +
+        "BEGIN:VEVENT\r\n" +
+        "UID:" + icsEscape(uid) + "\r\n" +
+        "DTSTAMP:" + dtstampUtc + "\r\n" +
+        "DTSTART:" + toIcsLocal(dt) + "\r\n" +
+        "DTEND:" + toIcsLocal(end) + "\r\n" +
+        "SUMMARY:" + icsEscape(summary) + "\r\n" +
+        "DESCRIPTION:" + icsEscape(description) + "\r\n" +
+        "END:VEVENT\r\n" +
+        "END:VCALENDAR\r\n";
+
+      const ymd = dt.getFullYear() + pad2(dt.getMonth() + 1) + pad2(dt.getDate());
+      const fname = "next-appointment-" + ymd + ".ics";
+
+      return { ics, filename: fname };
     }
 
-    function moveRows() {
-      if (!selectedBox || !resultsBox) return;
-      const rows = resultsBox.querySelectorAll(".provider-row");
+    if (icsButton) {
+      icsButton.addEventListener("click", function (e) {
+        const isDisabled =
+          icsButton.classList.contains("disabled") ||
+          icsButton.getAttribute("aria-disabled") === "true";
 
-      // Move checked rows into selectedBox.
-      rows.forEach(function (row) {
-        if (isChecked(row)) {
-          selectedBox.appendChild(row);
-        }
-      });
-
-      // Also check selectedBox in case something was there already.
-      const selectedRows = selectedBox.querySelectorAll(".provider-row");
-      selectedRows.forEach(function (row) {
-        // If unchecked, move back to results.
-        if (!isChecked(row)) {
-          resultsBox.appendChild(row);
-        }
-      });
-
-      ensureSelectedPlaceholder();
-    }
-
-    function applyFilter() {
-      if (!providerSearch || !resultsBox) return;
-      const q = normalize(providerSearch.value);
-
-      // Always keep selected list visible; only filter results list.
-      const rows = resultsBox.querySelectorAll(".provider-row");
-      rows.forEach(function (row) {
-        if (isChecked(row)) {
-          // Shouldn't happen (checked rows should be moved), but be safe.
-          row.style.display = "";
+        if (isDisabled) {
+          e.preventDefault();
+          e.stopPropagation();
           return;
         }
 
-        if (!q) {
-          // Default view: hide unselected providers.
-          row.style.display = "none";
+        // Generate from current form values (no save required)
+        const built = buildNextApptIcs();
+        if (!built) {
+          e.preventDefault();
+          e.stopPropagation();
           return;
         }
 
-        // Searching: show matches.
-        const text = rowLabelText(row);
-        row.style.display = text.includes(q) ? "" : "none";
-      });
-    }
+        e.preventDefault();
+        e.stopPropagation();
 
-    function wireCheckboxes() {
-      if (!resultsBox || !selectedBox) return;
-      const allRows = document.querySelectorAll(".provider-row");
-      allRows.forEach(function (row) {
-        const cb = row.querySelector(".provider-checkbox");
-        if (!cb || cb.dataset.wired === "1") return;
-        cb.dataset.wired = "1";
-        cb.addEventListener("change", function () {
-          moveRows();
-          applyFilter();
-        });
-      });
-    }
+        try {
+          const blob = new Blob([built.ics], { type: "text/calendar;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
 
-    if (providerSearch) {
-      providerSearch.addEventListener("input", function () {
-        // On first search keystroke, ensure any checked items are moved.
-        moveRows();
-        applyFilter();
-      });
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = built.filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
 
-      providerSearch.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") {
-          providerSearch.value = "";
-          moveRows();
-          applyFilter();
-          providerSearch.blur();
+          setTimeout(function () {
+            try { URL.revokeObjectURL(url); } catch (err) {}
+          }, 1500);
+        } catch (err) {
+          console.error("ICS download failed:", err);
         }
       });
     }
-
-    // Init on load
-    wireCheckboxes();
-    moveRows();
-    applyFilter();
   })();
 </script>
 {% endblock %}

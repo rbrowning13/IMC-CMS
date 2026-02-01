@@ -1253,6 +1253,9 @@ def provider_new():
             email=(request.form.get("email") or "").strip() or None,
             specialty=(request.form.get("specialty") or "").strip() or None,
         )
+        # Optional: clinic/organization name (may not exist on older schemas)
+        if hasattr(provider, "organization"):
+            provider.organization = (request.form.get("organization") or "").strip() or None
         if hasattr(provider, "phone_ext"):
             provider.phone_ext = _clean_phone_ext(request.form.get("phone_ext"))
 
@@ -1287,7 +1290,7 @@ def provider_new():
         "provider_new.html",
         active_page="providers",
         provider=None,
-        form={"state": "ID"},
+        form={"state": "ID", "organization": ""},
     )
 
 
@@ -1345,6 +1348,9 @@ def provider_edit(provider_id: int):
         provider.email = (request.form.get("email") or "").strip() or None
         if hasattr(provider, "specialty"):
             provider.specialty = (request.form.get("specialty") or "").strip() or None
+        # Optional: clinic/organization name (may not exist on older schemas)
+        if hasattr(provider, "organization"):
+            provider.organization = (request.form.get("organization") or "").strip() or None
         # Notes is optional / may not exist in older schemas.
         # Some templates historically used `note` instead of `notes`.
         if hasattr(provider, "notes"):
@@ -1375,6 +1381,7 @@ def provider_edit(provider_id: int):
         provider,
         fields=[
             "name",
+            "organization",
             "address1",
             "address2",
             "city",

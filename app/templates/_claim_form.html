@@ -1,203 +1,272 @@
-<div class="row g-3 mb-3">
-  <div class="col-md-4">
-    <label class="form-label form-label-sm">Claim Number</label>
-    <input type="text" name="claim_number" class="form-control form-control-sm"
-           value="{{ claim.claim_number if claim and claim.claim_number and claim.claim_number != 'None' else '' }}">
-  </div>
-  <div class="col-md-8">
-    <label class="form-label form-label-sm">Claimant Name</label>
-    <input type="text" name="claimant_name" class="form-control form-control-sm"
-           value="{{ claim.claimant_name if claim and claim.claimant_name and claim.claimant_name != 'None' else '' }}">
-  </div>
+
+<div class="mb-3">
+  <label class="form-label form-label-sm">Claim Number</label>
+  <input type="text" name="claim_number" class="form-control form-control-sm"
+         value="{{ claim.claim_number if claim and claim.claim_number and claim.claim_number != 'None' else '' }}">
 </div>
 
-<div class="row g-3 mb-3">
-  <div class="col-md-3">
-    <label class="form-label form-label-sm">Date of Birth</label>
-    <input
-      type="text"
-      name="dob"
-      class="form-control form-control-sm js-date"
-      placeholder="MM/DD/YYYY"
-      inputmode="numeric"
-      data-flatpickr="1"
-      value="{{ claim.dob.strftime('%m/%d/%Y') if claim and claim.dob else '' }}"
-    >
-  </div>
-
-  <div class="col-md-3">
-    <label class="form-label form-label-sm">Date of Injury</label>
-    <input
-      type="text"
-      name="doi"
-      class="form-control form-control-sm js-date"
-      placeholder="MM/DD/YYYY"
-      inputmode="numeric"
-      data-flatpickr="1"
-      value="{{ claim.doi.strftime('%m/%d/%Y') if claim and claim.doi else '' }}"
-    >
-  </div>
-
-  <div class="col-md-3">
-    <label class="form-label form-label-sm">Surgery Date</label>
-    <input
-      type="text"
-      name="surgery_date"
-      class="form-control form-control-sm js-date"
-      placeholder="MM/DD/YYYY"
-      inputmode="numeric"
-      data-flatpickr="1"
-      value="{{ claim.surgery_date.strftime('%m/%d/%Y') if claim and claim.surgery_date else '' }}"
-    >
-  </div>
-
-  <div class="col-md-3">
-    <label class="form-label form-label-sm">Claim State</label>
-    <select name="claim_state" class="form-select form-select-sm">
-      {{ state_options(claim.claim_state if claim else "ID") }}
-    </select>
-  </div>
+<div class="mb-3">
+  <label class="form-label form-label-sm">Claimant First Name</label>
+  <input type="text" name="claimant_first_name" class="form-control form-control-sm" id="claimant_first_name"
+         value="{{ claim.claimant_first_name if claim and claim.claimant_first_name and claim.claimant_first_name != 'None' else '' }}">
 </div>
 
-<div class="row g-3 mb-3">
+<div class="mb-3">
+  <label class="form-label form-label-sm">Claimant Last Name</label>
+  <input type="text" name="claimant_last_name" class="form-control form-control-sm" id="claimant_last_name"
+         value="{{ claim.claimant_last_name if claim and claim.claimant_last_name and claim.claimant_last_name != 'None' else '' }}">
+</div>
 
-  <div class="col-md-8">
-    <label class="form-label form-label-sm">Claimant Address</label>
+{# Legacy single-field name kept for back-compat with older routes/templates #}
+<input type="hidden" name="claimant_name" id="claimant_name_legacy"
+       value="{{ claim.claimant_name if claim and claim.claimant_name and claim.claimant_name != 'None' else '' }}">
 
-    <input type="text" name="claimant_address1"
-           class="form-control form-control-sm mb-1"
-           placeholder="Address line 1"
-           value="{{ claim.claimant_address1 if claim and claim.claimant_address1 and claim.claimant_address1 != 'None' else '' }}">
 
-    <input type="text" name="claimant_address2"
+<div class="mb-3">
+  <label class="form-label form-label-sm">Date of Birth</label>
+  <input
+    type="text"
+    name="dob"
+    class="form-control form-control-sm js-date"
+    placeholder="MM/DD/YYYY"
+    inputmode="numeric"
+    data-flatpickr="1"
+    value="{{ claim.dob.strftime('%m/%d/%Y') if claim and claim.dob else '' }}"
+  >
+</div>
+
+<div class="mb-3">
+  <label class="form-label form-label-sm">Date of Injury</label>
+  <input
+    type="text"
+    name="doi"
+    class="form-control form-control-sm js-date"
+    placeholder="MM/DD/YYYY"
+    inputmode="numeric"
+    data-flatpickr="1"
+    value="{{ claim.doi.strftime('%m/%d/%Y') if claim and claim.doi else '' }}"
+  >
+</div>
+
+<div class="mb-3">
+  <label class="form-label form-label-sm">Claim State</label>
+  <select name="claim_state" class="form-select form-select-sm">
+    {{ state_options(claim.claim_state if claim else "ID") }}
+  </select>
+</div>
+
+
+<div class="mb-3">
+  <label class="form-label form-label-sm">Claimant Address</label>
+
+  <input type="text" name="claimant_address1"
+         class="form-control form-control-sm mb-1"
+         placeholder="Address line 1"
+         value="{{ claim.claimant_address1 if claim and claim.claimant_address1 and claim.claimant_address1 != 'None' else '' }}">
+
+  <input type="text" name="claimant_address2"
+         class="form-control form-control-sm"
+         placeholder="Address line 2 (optional)"
+         value="{{ claim.claimant_address2 if claim and claim.claimant_address2 and claim.claimant_address2 != 'None' else '' }}">
+</div>
+
+<div class="mb-3">
+  <label class="form-label form-label-sm">City / State / ZIP</label>
+  <div class="d-flex gap-2">
+
+    <input type="text" name="claimant_city"
            class="form-control form-control-sm"
-           placeholder="Address line 2 (optional)"
-           value="{{ claim.claimant_address2 if claim and claim.claimant_address2 and claim.claimant_address2 != 'None' else '' }}">
-  </div>
+           placeholder="City"
+           value="{{ claim.claimant_city if claim and claim.claimant_city and claim.claimant_city != 'None' else '' }}">
 
-  <div class="col-md-4">
-    <label class="form-label form-label-sm">City / State / ZIP</label>
-    <div class="d-flex gap-2">
+    <select name="claimant_state" class="form-select form-select-sm" style="max-width: 90px;">
+      {{ state_options(claim.claimant_state if claim else "ID") }}
+    </select>
 
-      <input type="text" name="claimant_city"
-             class="form-control form-control-sm"
-             placeholder="City"
-             value="{{ claim.claimant_city if claim and claim.claimant_city and claim.claimant_city != 'None' else '' }}">
-
-      <select name="claimant_state" class="form-select form-select-sm" style="max-width: 90px;">
-        {{ state_options(claim.claimant_state if claim else "ID") }}
-      </select>
-
-      <input type="text" name="claimant_postal_code"
-             class="form-control form-control-sm"
-             placeholder="ZIP"
-             value="{{ claim.claimant_postal_code if claim and claim.claimant_postal_code and claim.claimant_postal_code != 'None' else '' }}">
-    </div>
-  </div>
-
-  <div class="col-md-4">
-    <label class="form-label form-label-sm">Claimant Phone</label>
-    <div class="d-flex gap-2">
-      <input
-        type="text"
-        name="claimant_phone"
-        class="form-control form-control-sm"
-        placeholder="(555) 555-5555"
-        inputmode="tel"
-        data-auto-phone="1"
-        value="{{ claim.claimant_phone if claim and claim.claimant_phone and claim.claimant_phone != 'None' else '' }}"
-      >
-      <input
-        type="text"
-        name="claimant_phone_ext"
-        class="form-control form-control-sm"
-        placeholder="Ext"
-        inputmode="numeric"
-        style="max-width: 90px;"
-        value="{{ claim.claimant_phone_ext if claim and claim.claimant_phone_ext and claim.claimant_phone_ext != 'None' else '' }}"
-      >
-    </div>
-    <div class="form-text">Extension is optional.</div>
-  </div>
-
-  <div class="col-md-4">
-    <label class="form-label form-label-sm">Claimant Email</label>
-    <input type="email" name="claimant_email" class="form-control form-control-sm"
-           placeholder="name@example.com"
-           value="{{ claim.claimant_email if claim and claim.claimant_email and claim.claimant_email != 'None' else '' }}">
-  </div>
-
-  <div class="col-md-4">
-    <label class="form-label form-label-sm">Injured Body Part</label>
-    <input type="text" name="injured_body_part" class="form-control form-control-sm"
-           placeholder="e.g., right shoulder, low back, knee"
-           value="{{ claim.injured_body_part if claim and claim.injured_body_part and claim.injured_body_part != 'None' else '' }}">
+    <input type="text" name="claimant_postal_code"
+           class="form-control form-control-sm"
+           placeholder="ZIP"
+           value="{{ claim.claimant_postal_code if claim and claim.claimant_postal_code and claim.claimant_postal_code != 'None' else '' }}">
   </div>
 </div>
 
-<div class="row g-3 mb-3">
-  <div class="col-md-6">
-    <label class="form-label form-label-sm">Carrier</label>
-    <select name="carrier_id" class="form-select form-select-sm" id="carrier_select">
-      <option value="">Select carrier…</option>
-      {% for c in carriers %}
-        <option value="{{ c.id }}"
-          {% if claim and claim.carrier_id == c.id %}selected{% endif %}>
-          {{ c.name }}
-        </option>
-      {% endfor %}
-    </select>
-  </div>
-
-  <div class="col-md-6">
-    <label class="form-label form-label-sm">Employer</label>
-    <select
-      name="employer_id"
-      id="employer_select"
-      class="form-select form-select-sm"
-      {% if not claim or not claim.carrier_id %}disabled{% endif %}
+<div class="mb-3">
+  <label class="form-label form-label-sm">Claimant Phone</label>
+  <div class="d-flex gap-2">
+    <input
+      type="text"
+      name="claimant_phone"
+      class="form-control form-control-sm"
+      placeholder="(555) 555-5555"
+      inputmode="tel"
+      data-auto-phone="1"
+      value="{{ claim.claimant_phone if claim and claim.claimant_phone and claim.claimant_phone != 'None' else '' }}"
     >
-      <option value="">Select employer…</option>
-      {% for e in employers %}
-        <option
-          value="{{ e.id }}"
-          data-carrier-id="{{ e.carrier_id or '' }}"
-          {% if claim and claim.employer_id == e.id %}selected{% endif %}
-        >
-          {{ e.name }}
-        </option>
-      {% endfor %}
-    </select>
-    <div class="form-text">
-      Only employers linked to the selected carrier are shown.
-    </div>
+    <input
+      type="text"
+      name="claimant_phone_ext"
+      class="form-control form-control-sm"
+      placeholder="Ext"
+      inputmode="numeric"
+      style="max-width: 90px;"
+      value="{{ claim.claimant_phone_ext if claim and claim.claimant_phone_ext and claim.claimant_phone_ext != 'None' else '' }}"
+    >
+  </div>
+  <div class="form-text">Extension is optional.</div>
+</div>
+
+<div class="mb-3">
+  <label class="form-label form-label-sm">Claimant Email</label>
+  <input type="email" name="claimant_email" class="form-control form-control-sm"
+         placeholder="name@example.com"
+         value="{{ claim.claimant_email if claim and claim.claimant_email and claim.claimant_email != 'None' else '' }}">
+</div>
+
+
+<div class="mb-3">
+  <label class="form-label form-label-sm">Injured Body Part</label>
+  <input type="text" name="injured_body_part" class="form-control form-control-sm"
+         placeholder="e.g., right shoulder, low back, knee"
+         value="{{ claim.injured_body_part if claim and claim.injured_body_part and claim.injured_body_part != 'None' else '' }}">
+</div>
+
+
+
+<div class="mb-3">
+  <label class="form-label form-label-sm">Carrier</label>
+  <select name="carrier_id" class="form-select form-select-sm" id="carrier_select">
+    <option value="">Select carrier…</option>
+    {% for c in carriers %}
+      <option value="{{ c.id }}"
+        {% if claim and claim.carrier_id == c.id %}selected{% endif %}>
+        {{ c.name }}
+      </option>
+    {% endfor %}
+  </select>
+</div>
+
+<div class="mb-3">
+  <label class="form-label form-label-sm">Employer</label>
+  <select
+    name="employer_id"
+    id="employer_select"
+    class="form-select form-select-sm"
+    {% if not claim or not claim.carrier_id %}disabled{% endif %}
+  >
+    <option value="">Select employer…</option>
+    {% for e in employers %}
+      <option
+        value="{{ e.id }}"
+        data-carrier-id="{{ e.carrier_id or '' }}"
+        {% if claim and claim.employer_id == e.id %}selected{% endif %}
+      >
+        {{ e.name }}
+      </option>
+    {% endfor %}
+  </select>
+  <div class="form-text">
+    Only employers linked to the selected carrier are shown.
   </div>
 </div>
 
-<div class="row g-3 mb-3">
-  <div class="col-md-6">
-    <label class="form-label form-label-sm">Carrier Contact (Adjuster)</label>
+<div class="mb-3">
+  <label class="form-label form-label-sm">Carrier Contact (Adjuster)</label>
 
-    <select name="carrier_contact_id"
-            id="carrier_contact_select"
-            class="form-select form-select-sm"
-            {% if not claim or not claim.carrier_id %}disabled{% endif %}>
+  <select name="carrier_contact_id"
+          id="carrier_contact_select"
+          class="form-select form-select-sm"
+          {% if not claim or not claim.carrier_id %}disabled{% endif %}>
 
-      <option value="">Select contact…</option>
+    <option value="">Select contact…</option>
 
-      {% for c in carriers %}
-        {% for contact in c.contacts %}
-          <option value="{{ contact.id }}"
-                  data-carrier-id="{{ c.id }}"
-                  {% if claim and claim.carrier_contact_id == contact.id %}selected{% endif %}>
-            {{ contact.name }}{% if contact.role %} – {{ contact.role }}{% endif %}
-          </option>
-        {% endfor %}
+    {% for c in carriers %}
+      {% for contact in c.contacts %}
+        <option value="{{ contact.id }}"
+                data-carrier-id="{{ c.id }}"
+                {% if claim and claim.carrier_contact_id == contact.id %}selected{% endif %}>
+          {{ contact.name }}{% if contact.role %} – {{ contact.role }}{% endif %}
+        </option>
       {% endfor %}
-    </select>
+    {% endfor %}
+  </select>
 
-    <div class="form-text">
-      Only contacts for the selected carrier will be shown.
+  <div class="form-text">
+    Only contacts for the selected carrier will be shown.
+  </div>
+</div>
+
+<div class="mb-3">
+  <label class="form-label form-label-sm mb-1">Surgery Dates</label>
+
+  <div class="border rounded p-2">
+    <div class="row g-2 align-items-end text-muted" style="font-size: 0.85rem;">
+      <div class="col-12 col-md-2">Date</div>
+      <div class="col-12 col-md">Description (optional)</div>
+      <div class="col-auto"></div>
+    </div>
+
+    <div id="surgery_list" class="d-flex flex-column gap-2 mt-1">
+      {% set surgeries = claim_surgeries if claim_surgeries is defined and claim_surgeries else [] %}
+      {% for s in surgeries %}
+        <div class="row g-2 align-items-end surgery-row">
+          <div class="col-12 col-md-2">
+            <input
+              type="text"
+              name="surgery_date"
+              class="form-control form-control-sm js-date surgery-date"
+              placeholder="MM/DD/YYYY"
+              inputmode="numeric"
+              data-flatpickr="1"
+              value="{{ s.surgery_date.strftime('%m/%d/%Y') if s.surgery_date else '' }}"
+            >
+          </div>
+          <div class="col-12 col-md">
+            <input
+              type="text"
+              name="surgery_desc"
+              class="form-control form-control-sm surgery-desc"
+              placeholder="e.g., Right shoulder arthroscopy"
+              value="{{ s.description if s.description and s.description != 'None' else '' }}"
+            >
+          </div>
+          <div class="col-auto">
+            <button type="button" class="btn btn-sm btn-outline-danger surgery-remove" title="Remove" style="white-space: nowrap;">Remove</button>
+          </div>
+        </div>
+      {% endfor %}
+
+      {% if surgeries|length == 0 %}
+        <div class="row g-2 align-items-end surgery-row">
+          <div class="col-12 col-md-2">
+            <input
+              type="text"
+              name="surgery_date"
+              class="form-control form-control-sm js-date surgery-date"
+              placeholder="MM/DD/YYYY"
+              inputmode="numeric"
+              data-flatpickr="1"
+              value=""
+            >
+          </div>
+          <div class="col-12 col-md">
+            <input
+              type="text"
+              name="surgery_desc"
+              class="form-control form-control-sm surgery-desc"
+              placeholder="e.g., Right shoulder arthroscopy"
+              value=""
+            >
+          </div>
+          <div class="col-auto">
+            <button type="button" class="btn btn-sm btn-outline-danger surgery-remove" title="Remove" style="white-space: nowrap;">Remove</button>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="d-flex gap-2 align-items-center mt-2">
+      <button type="button" class="btn btn-sm btn-outline-primary" id="add_surgery_btn">+ Add surgery</button>
+      <div class="form-text mb-0">Optional. Add as many surgery dates as needed.</div>
     </div>
   </div>
 </div>
@@ -208,8 +277,107 @@ document.addEventListener("DOMContentLoaded", () => {
   const contactSelect = document.getElementById("carrier_contact_select");
   const employerSelect = document.getElementById("employer_select");
 
-  if (!carrierSelect) {
-    return;
+  const hasCarrierFiltering = !!carrierSelect;
+
+  // Keep legacy claimant_name in sync for back-compat
+  const firstNameEl = document.getElementById("claimant_first_name");
+  const lastNameEl = document.getElementById("claimant_last_name");
+  const legacyNameEl = document.getElementById("claimant_name_legacy");
+
+  function syncLegacyClaimantName() {
+    if (!legacyNameEl) return;
+    const first = (firstNameEl && firstNameEl.value ? firstNameEl.value : "").trim();
+    const last = (lastNameEl && lastNameEl.value ? lastNameEl.value : "").trim();
+
+    // Only overwrite legacy value when the user has entered something
+    if (first || last) {
+      legacyNameEl.value = [first, last].filter(Boolean).join(" ");
+    }
+  }
+
+  if (firstNameEl) firstNameEl.addEventListener("input", syncLegacyClaimantName);
+  if (lastNameEl) lastNameEl.addEventListener("input", syncLegacyClaimantName);
+  syncLegacyClaimantName();
+
+  // Surgery dates UI (add/remove rows)
+  const surgeryList = document.getElementById("surgery_list");
+  const addSurgeryBtn = document.getElementById("add_surgery_btn");
+
+  function wireSurgeryRow(rowEl) {
+    if (!rowEl) return;
+    const removeBtn = rowEl.querySelector(".surgery-remove");
+    if (removeBtn) {
+      removeBtn.addEventListener("click", () => {
+        if (!surgeryList) return;
+        const rows = Array.from(surgeryList.querySelectorAll(".surgery-row"));
+        if (rows.length <= 1) {
+          // Keep one empty row
+          const dateEl = rowEl.querySelector(".surgery-date");
+          const descEl = rowEl.querySelector(".surgery-desc");
+          if (dateEl) dateEl.value = "";
+          if (descEl) descEl.value = "";
+          return;
+        }
+        rowEl.remove();
+      });
+    }
+
+    // Initialize flatpickr for dynamically added date fields if global init exists
+    // (Our app already uses a centralized flatpickr initializer via data-flatpickr/js-date)
+    // If flatpickr is available globally, initialize directly.
+    try {
+      const dateInput = rowEl.querySelector(".surgery-date");
+      if (dateInput && window.flatpickr) {
+        window.flatpickr(dateInput, { allowInput: true, dateFormat: "m/d/Y" });
+      }
+    } catch (e) {
+      // no-op
+    }
+  }
+
+  function addSurgeryRow(dateVal = "", descVal = "") {
+    if (!surgeryList) return;
+
+    const row = document.createElement("div");
+    row.className = "row g-2 align-items-end surgery-row";
+
+    row.innerHTML = `
+      <div class="col-12 col-md-2">
+        <input
+          type="text"
+          name="surgery_date"
+          class="form-control form-control-sm js-date surgery-date"
+          placeholder="MM/DD/YYYY"
+          inputmode="numeric"
+          data-flatpickr="1"
+          value="${dateVal || ""}"
+        >
+      </div>
+      <div class="col-12 col-md">
+        <input
+          type="text"
+          name="surgery_desc"
+          class="form-control form-control-sm surgery-desc"
+          placeholder="e.g., Right shoulder arthroscopy"
+          value="${descVal || ""}"
+        >
+      </div>
+      <div class="col-auto">
+        <button type="button" class="btn btn-sm btn-outline-danger surgery-remove" title="Remove" style="white-space: nowrap;">Remove</button>
+      </div>
+    `;
+
+    surgeryList.appendChild(row);
+    wireSurgeryRow(row);
+  }
+
+  // Wire existing surgery rows
+  if (surgeryList) {
+    Array.from(surgeryList.querySelectorAll(".surgery-row")).forEach(wireSurgeryRow);
+  }
+
+  if (addSurgeryBtn) {
+    addSurgeryBtn.addEventListener("click", () => addSurgeryRow());
   }
 
   // Save all original options for contacts and employers
@@ -298,13 +466,15 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   }
 
-  carrierSelect.addEventListener("change", () => {
+  if (hasCarrierFiltering) {
+    carrierSelect.addEventListener("change", () => {
+      updateContacts();
+      updateEmployers();
+    });
+
+    // Run on page load (edit claim / initial page render)
     updateContacts();
     updateEmployers();
-  });
-
-  // Run on page load (edit claim / initial page render)
-  updateContacts();
-  updateEmployers();
+  }
 });
 </script>

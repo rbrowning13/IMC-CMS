@@ -1,13 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Edit Claim {{ claim.claim_number }}{% endblock %}
+{% block title %}Edit Claim{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="h3 mb-0">Edit Claim</h1>
-    <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-sm btn-outline-secondary">
-      Cancel
-    </a>
+    <div class="d-flex gap-2">
+      <button type="submit" form="claim-edit-form" class="btn btn-sm btn-primary">Save</button>
+      <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-sm btn-outline-secondary">Return to Claim</a>
+    </div>
   </div>
 
   {% if error %}
@@ -16,19 +17,175 @@
 
   <div class="card">
     <div class="card-body">
-      <form method="post">
+      <form method="post" id="claim-edit-form">
+
+        {# Shared claim fields grid #}
         {% include "_claim_form.html" %}
 
-        <div class="d-flex justify-content-end">
-          <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary me-2">
-            Cancel
-          </a>
-          <button type="submit" class="btn btn-primary">
-            Save Changes
-          </button>
+        <h2 class="h6 mb-3">Claim Status</h2>
+        <div class="border rounded p-3 mb-4">
+          <label for="claim_is_closed" class="form-label form-label-sm mb-1">Open / Closed</label>
+          <select id="claim_is_closed" name="is_closed" class="form-select form-select-sm" style="max-width: 240px;">
+            {# Prefer claim.is_closed when present; fallback to open #}
+            {% set _is_closed = (claim.is_closed if (claim is defined and claim.is_closed is defined) else false) %}
+            <option value="0" {% if not _is_closed %}selected{% endif %}>Open</option>
+            <option value="1" {% if _is_closed %}selected{% endif %}>Closed</option>
+          </select>
+          <div class="form-text">Closed claims can be hidden from the claims list, but can still be reopened here.</div>
         </div>
+
+        <h2 class="h6 mb-3">Treating Providers</h2>
+
+        <div class="border rounded p-3 mb-4">
+          <div class="mb-2">
+            <input type="text" class="form-control form-control-sm" id="provider_search" placeholder="Search providers..." autocomplete="off">
+            <div class="form-text">Start typing to search. Click a provider to add; click a chip to remove.</div>
+          </div>
+
+          <div id="provider_selected" class="mb-2"></div>
+
+          <div class="list-group" id="provider_results" style="max-height: 220px; overflow:auto;"></div>
+
+          <div id="provider_inputs"></div>
+        </div>
+
+        <hr class="my-4">
+
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary">Return to Claim</a>
+        </div>
+
       </form>
     </div>
   </div>
 </div>
+
+<script>
+(function () {
+  // Surgery Dates UX
+  const surgeryList = document.getElementById('surgery_list');
+  const surgeryAdd = document.getElementById('surgery_add');
+  const surgeryEmpty = document.getElementById('surgery_empty');
+  const surgeryTpl = document.getElementById('surgery_row_tpl');
+
+  function wireSurgeryRemove(btn) {
+    if (!btn || btn.dataset.wired === '1') return;
+    btn.dataset.wired = '1';
+    btn.addEventListener('click', function () {
+      const row = btn.closest('.surgery-row');
+      if (row) row.remove();
+      if (surgeryList && !surgeryList.querySelector('.surgery-row')) {
+        if (surgeryEmpty) surgeryEmpty.style.display = '';
+      }
+    });
+  }
+
+  function wireAllSurgeryRemoves() {
+    document.querySelectorAll('.js-surgery-remove').forEach(wireSurgeryRemove);
+  }
+
+  if (surgeryAdd) {
+    surgeryAdd.addEventListener('click', function () {
+      if (!surgeryList || !surgeryTpl) return;
+      const node = surgeryTpl.content.cloneNode(true);
+      surgeryList.appendChild(node);
+      if (surgeryEmpty) surgeryEmpty.style.display = 'none';
+      wireAllSurgeryRemoves();
+    });
+  }
+
+  wireAllSurgeryRemoves();
+
+  // Treating Providers UX (claim-owned)
+  const ALL_PROVIDERS = [
+    {% if providers is defined and providers %}
+      {% for p in providers %}
+        {
+          id: {{ p.id }},
+          name: {{ (p.name or '')|tojson }},
+        }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    {% endif %}
+  ];
+  const selectedIds = new Set({{ selected_provider_ids|tojson if selected_provider_ids is defined else '[]' }});
+
+  const searchEl = document.getElementById('provider_search');
+  const resultsEl = document.getElementById('provider_results');
+  const selectedEl = document.getElementById('provider_selected');
+  const inputsEl = document.getElementById('provider_inputs');
+
+  function renderSelected() {
+    selectedEl.innerHTML = '';
+    inputsEl.innerHTML = '';
+
+    const selectedProviders = ALL_PROVIDERS.filter(p => selectedIds.has(p.id));
+
+    if (!selectedProviders.length) {
+      selectedEl.innerHTML = '<div class="text-muted small">No providers selected.</div>';
+      return;
+    }
+
+    selectedProviders.forEach(p => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'btn btn-sm btn-outline-primary me-2 mb-2';
+      chip.textContent = p.name;
+      chip.addEventListener('click', function () {
+        selectedIds.delete(p.id);
+        renderSelected();
+        renderResults(searchEl ? searchEl.value : '');
+      });
+      selectedEl.appendChild(chip);
+
+      const inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = 'provider_ids';
+      inp.value = String(p.id);
+      inputsEl.appendChild(inp);
+    });
+  }
+
+  function renderResults(q) {
+    const query = (q || '').trim().toLowerCase();
+    resultsEl.innerHTML = '';
+
+    if (!query) return;
+
+    const matches = ALL_PROVIDERS
+      .filter(p => !selectedIds.has(p.id))
+      .filter(p => (p.name || '').toLowerCase().includes(query))
+      .slice(0, 50);
+
+    if (!matches.length) {
+      const empty = document.createElement('div');
+      empty.className = 'list-group-item small text-muted';
+      empty.textContent = 'No matches';
+      resultsEl.appendChild(empty);
+      return;
+    }
+
+    matches.forEach(p => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'list-group-item list-group-item-action';
+      item.textContent = p.name;
+      item.addEventListener('click', function () {
+        selectedIds.add(p.id);
+        renderSelected();
+        renderResults(searchEl ? searchEl.value : '');
+      });
+      resultsEl.appendChild(item);
+    });
+  }
+
+  if (searchEl) {
+    searchEl.addEventListener('input', function () {
+      renderResults(searchEl.value);
+    });
+  }
+
+  renderSelected();
+})();
+</script>
 {% endblock %}

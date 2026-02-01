@@ -112,6 +112,9 @@ class Provider(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
 
+    # Optional clinic / organization name (e.g., "St. Luke's Ortho")
+    organization = db.Column(db.String(255))
+
     address1 = db.Column(db.String(255))
     address2 = db.Column(db.String(255))
     city = db.Column(db.String(120))
@@ -131,6 +134,19 @@ class Provider(db.Model):
     @property
     def phone_display(self):
         return _format_phone_with_ext(self.phone, self.phone_ext)
+
+    @property
+    def display_name(self) -> str:
+        """Best-effort display label for UI/PDF.
+
+        If organization is present, show "<name> — <organization>".
+        Otherwise, just show the provider name.
+        """
+        name = (self.name or "").strip()
+        org = (self.organization or "").strip()
+        if org:
+            return f"{name} — {org}" if name else org
+        return name
 
     # Claims where this provider is the PCP (future use)
     pcp_for_claims = db.relationship(
@@ -209,8 +225,43 @@ class Claim(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
 
+    # Legacy single-field name (kept for backwards compatibility)
     claimant_name = db.Column(db.String(255), nullable=False)
+
+    # New structured name fields (preferred going forward)
+    claimant_first_name = db.Column(db.String(255))
+    claimant_last_name = db.Column(db.String(255))
+
     claim_number = db.Column(db.String(120))
+    @property
+    def claimant_display_name(self) -> str:
+        """Best-effort display name.
+
+        Prefer structured fields when present; otherwise fall back to legacy claimant_name.
+        """
+        first = (self.claimant_first_name or "").strip()
+        last = (self.claimant_last_name or "").strip()
+        if first or last:
+            return (" ".join([p for p in [first, last] if p]).strip())
+        return (self.claimant_name or "").strip()
+
+    @property
+    def claimant_sort_last_first(self) -> str:
+        """Best-effort sortable key: 'last, first'."""
+        first = (self.claimant_first_name or "").strip()
+        last = (self.claimant_last_name or "").strip()
+        if first or last:
+            if last and first:
+                return f"{last}, {first}"
+            return last or first
+        # Fallback: try to interpret legacy formats
+        raw = (self.claimant_name or "").strip()
+        if "," in raw:
+            return raw
+        parts = raw.split()
+        if len(parts) >= 2:
+            return f"{parts[-1]}, {' '.join(parts[:-1])}"
+        return raw
 
     # Dates as actual Date objects (parsed from HTML date inputs)
     dob = db.Column(db.Date)   # Date of birth
@@ -219,6 +270,11 @@ class Claim(db.Model):
     # Additional claim-level context shown in claim + report headers
     injured_body_part = db.Column(db.String(255))
     surgery_date = db.Column(db.Date)
+
+    # Treating Providers are claim-owned (multi-select) via a join table.
+    # We intentionally keep this out of the ORM for now because the production DB has
+    # had multiple historical join-table names. Routes use best-effort SQL helpers to
+    # read/write the join rows without breaking older installs.
 
     claim_state = db.Column(db.String(10))  # e.g. "ID"
 
@@ -292,7 +348,7 @@ class Claim(db.Model):
     )
 
     def __repr__(self):
-        return f"<Claim {self.claimant_name} — {self.claim_number}>"
+        return f"<Claim {self.claimant_display_name} — {self.claim_number}>"
 
 
 # ============================================================
@@ -418,7 +474,14 @@ class BarrierOption(db.Model):
 # ============================================================
 
 class ReportApprovedProvider(db.Model):
-    """Association row linking a Report to one approved treating Provider."""
+    """LEGACY association row linking a Report to one approved treating Provider.
+
+    Providers are now claim-owned (selected on Claim Edit/New) and reports display the
+    claim's providers for context and printing.
+
+    This table/model remains for backward compatibility with older data and historical
+    PDFs, but new UI flows no longer create or edit these rows.
+    """
     __tablename__ = "report_approved_provider"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -465,7 +528,8 @@ class Report(db.Model):
     treating_provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"))
     treating_provider = db.relationship("Provider", back_populates="reports")
 
-    # Approved Treating Provider(s) (supports multiple providers per report)
+    # LEGACY: Approved Treating Provider(s) (supports multiple providers per report)
+    # Providers are now claim-owned; keep this relationship for older records only.
     approved_provider_links = db.relationship(
         "ReportApprovedProvider",
         back_populates="report",
@@ -475,7 +539,10 @@ class Report(db.Model):
 
     @property
     def approved_treating_providers(self):
-        """Convenience list of Provider objects in display order."""
+        """LEGACY convenience list (older records only).
+
+        New UI flows use claim-level treating providers.
+        """
         return [link.provider for link in (self.approved_provider_links or [])]
 
     # Shared long-text fields (roll-forward candidates)
@@ -500,6 +567,7 @@ class Report(db.Model):
 
     initial_next_appt_datetime = db.Column(db.DateTime)
     initial_next_appt_provider_name = db.Column(db.String(255))
+    initial_next_appt_notes = db.Column(db.String(255))
 
     # CLOSURE-specific fields
     closure_reason = db.Column(db.String(120))

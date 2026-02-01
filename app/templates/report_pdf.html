@@ -10,15 +10,15 @@
       margin: 1in;
     }
     h1, h2, h3, h4, h5 {
-      margin: 0 0 0.25rem 0;
+      margin: 0 0 0.15rem 0;
     }
     p {
-      margin: 0 0 0.5rem 0;
+      margin: 0 0 0.3rem 0;
     }
     hr {
       border: none;
       border-top: 2px solid #ccc;
-      margin: 0.75rem 0;
+      margin: 0.55rem 0;
     }
     .accent-line {
       border-top-width: 3px;
@@ -27,6 +27,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      margin-bottom: 0.25rem;
     }
     .logo-cell {
       flex: 0 0 auto;
@@ -45,8 +46,8 @@
     }
     .two-col {
       display: flex;
-      gap: 1.5rem;
-      margin-bottom: 0.75rem;
+      gap: 1.0rem;
+      margin-bottom: 0.45rem;
     }
     .two-col .col {
       flex: 1 1 0;
@@ -79,7 +80,7 @@
 
 <hr class="accent-line" style="border-color: {{ accent }};">
 
-<h4>{{ claim.claimant_name }}</h4>
+<h4 style="margin: 0 0 0.25rem 0;">{{ claim.claimant_name }}</h4>
 
 <div class="two-col">
   <div class="col">
@@ -98,8 +99,19 @@
   </div>
   <div class="col">
     <p>
-      {% if report.treating_provider %}
-        <strong>Treating Provider:</strong> {{ report.treating_provider.name }}<br>
+      {# Providers are claim-owned. Prefer claim_providers if provided, with legacy fallback. #}
+      {% if claim_providers is defined and claim_providers and claim_providers|length > 0 %}
+        <strong>Treating Provider{% if claim_providers|length > 1 %}s{% endif %}:</strong>
+        <ul style="margin: 0.15rem 0 0.35rem 1.1rem;">
+          {% for p in claim_providers %}
+            <li>
+              {% if p.organization %}{{ p.organization }} — {% endif %}{{ p.name }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% elif report.treating_provider %}
+        <strong>Treating Provider:</strong>
+        {% if report.treating_provider.organization %}{{ report.treating_provider.organization }} — {% endif %}{{ report.treating_provider.name }}<br>
       {% endif %}
       {% if claim.primary_care_provider %}
         <strong>Primary Care Provider:</strong> {{ claim.primary_care_provider }}<br>

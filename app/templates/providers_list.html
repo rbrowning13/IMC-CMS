@@ -30,6 +30,7 @@
             <thead class="table-light">
               <tr>
                 <th class="sortable" data-sort-key="name"><span>Name</span> <span class="sort-indicator">↕</span></th>
+                <th class="sortable" data-sort-key="organization"><span>Organization</span> <span class="sort-indicator">↕</span></th>
                 <th class="sortable" data-sort-key="address1"><span>Address 1</span> <span class="sort-indicator">↕</span></th>
                 <th class="sortable" data-sort-key="address2"><span>Address 2</span> <span class="sort-indicator">↕</span></th>
                 <th class="sortable" data-sort-key="location"><span>City / State / ZIP</span> <span class="sort-indicator">↕</span></th>
@@ -45,6 +46,13 @@
                     <a href="{{ url_for('main.provider_detail', provider_id=provider.id) }}">
                       {{ provider.name }}
                     </a>
+                  </td>
+                  <td>
+                    {% if provider.organization %}
+                      {{ provider.organization }}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
                   </td>
                   <td>
                     {% if provider.address1 %}
@@ -175,16 +183,18 @@
             switch (key) {
               case 'name':
                 return row.children[0].innerText.trim().toLowerCase();
-              case 'address1':
+              case 'organization':
                 return row.children[1].innerText.trim().toLowerCase();
-              case 'address2':
+              case 'address1':
                 return row.children[2].innerText.trim().toLowerCase();
-              case 'location':
+              case 'address2':
                 return row.children[3].innerText.trim().toLowerCase();
-              case 'phone':
+              case 'location':
                 return row.children[4].innerText.trim().toLowerCase();
-              case 'email':
+              case 'phone':
                 return row.children[5].innerText.trim().toLowerCase();
+              case 'email':
+                return row.children[6].innerText.trim().toLowerCase();
               default:
                 return '';
             }

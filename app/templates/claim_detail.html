@@ -2,6 +2,18 @@
 {% block title %}Claim {{ claim.claim_number }} - Impact CMS{% endblock %}
 
 {% block content %}
+{# Claimant display name: prefer structured fields; fallback to legacy claimant_name #}
+{% set _fn = (claim.claimant_first_name if claim.claimant_first_name is defined and claim.claimant_first_name else '')|trim %}
+{% set _ln = (claim.claimant_last_name if claim.claimant_last_name is defined and claim.claimant_last_name else '')|trim %}
+{% if _ln and _fn %}
+  {% set claimant_display = _ln ~ ', ' ~ _fn %}
+{% elif _ln %}
+  {% set claimant_display = _ln %}
+{% elif _fn %}
+  {% set claimant_display = _fn %}
+{% else %}
+  {% set claimant_display = (claim.claimant_name or '—') %}
+{% endif %}
 <div class="container-fluid">
   <style>
 
@@ -12,6 +24,50 @@
     #billables-table tr.billable-locked .badge {
       opacity: 0.9;
     }
+
+    /* AI citation highlight color (prefer Settings accent_color; fallback to Bootstrap warning) */
+    :root {
+      --ai-highlight-color: {{
+        (settings.accent_color
+          if settings is defined and settings and settings.accent_color is defined and settings.accent_color
+          else '#ffc107')
+      }};
+    }
+
+    /* More-visible AI citation jump highlight (persistent until click/clear) */
+    .ai-jump-highlight {
+      outline: 4px solid var(--ai-highlight-color);
+      outline-offset: 3px;
+      box-shadow:
+        0 0 0 8px color-mix(in srgb, var(--ai-highlight-color) 22%, transparent),
+        0 0 28px color-mix(in srgb, var(--ai-highlight-color) 55%, transparent);
+      background: color-mix(in srgb, var(--ai-highlight-color) 12%, transparent);
+      border-radius: 6px;
+      transition: none;
+      animation: aiJumpPulse 850ms ease-in-out 1;
+    }
+
+    @keyframes aiJumpPulse {
+      0% {
+        outline-color: color-mix(in srgb, var(--ai-highlight-color) 0%, transparent);
+        box-shadow: 0 0 0 0 transparent;
+        background: transparent;
+      }
+      35% {
+        outline-color: var(--ai-highlight-color);
+        box-shadow:
+          0 0 0 14px color-mix(in srgb, var(--ai-highlight-color) 28%, transparent),
+          0 0 40px color-mix(in srgb, var(--ai-highlight-color) 70%, transparent);
+        background: color-mix(in srgb, var(--ai-highlight-color) 16%, transparent);
+      }
+      100% {
+        outline-color: var(--ai-highlight-color);
+        box-shadow:
+          0 0 0 8px color-mix(in srgb, var(--ai-highlight-color) 22%, transparent),
+          0 0 28px color-mix(in srgb, var(--ai-highlight-color) 55%, transparent);
+        background: color-mix(in srgb, var(--ai-highlight-color) 12%, transparent);
+      }
+    }
   </style>
   <!-- Header row -->
   <div class="d-flex justify-content-between align-items-center mb-3">
@@ -20,7 +76,7 @@
         Claim {{ claim.claim_number }}
       </h1>
       <div class="text-muted small">
-        {{ claim.claimant_name }}
+        {{ claimant_display }}
         {% if employer %}
           · Employer: {{ employer.name }}
         {% endif %}
@@ -60,89 +116,214 @@
     </div>
   </div>
 
+  <!-- Claim AI Q&A (claim-scoped, safest-first) -->
+  <div class="mb-3">
+    <div class="card shadow-sm">
+      <div class="card-body py-2">
+        <form id="claim-ai-form" class="row g-2 align-items-center mb-0" autocomplete="off">
+          <div class="col-12 col-lg-8">
+            <label for="claim-ai-q" class="form-label form-label-sm mb-1">Ask about this claim</label>
+            <input
+              type="text"
+              id="claim-ai-q"
+              class="form-control form-control-sm"
+              placeholder="e.g., When was the last appointment? What did I say in the initial report about the injury?"
+              maxlength="300"
+              required
+            >
+            <div class="form-text mb-0 text-muted">
+              Answers include citations. Claimant identifiers (name, phone, email, address, claim #) are not searched.
+              <span class="text-muted ms-2">Shortcuts: <strong>Enter</strong>=Ask, <strong>Esc</strong>=Clear.</span>
+            </div>
+          </div>
+          <div class="col-12 col-lg-4 d-flex gap-2 align-items-end">
+            <button type="submit" id="claim-ai-submit" class="btn btn-sm btn-outline-primary w-100">
+              Ask
+            </button>
+            <button type="button" id="claim-ai-clear" class="btn btn-sm btn-outline-secondary" title="Clear">
+              Clear
+            </button>
+          </div>
+        </form>
+
+        <div id="claim-ai-status" class="small text-muted mt-2" style="display:none;"></div>
+        <div id="claim-ai-error" class="alert alert-danger py-2 mt-2 mb-0" style="display:none;"></div>
+        <div id="claim-ai-result" class="mt-2" style="display:none;">
+          <div class="border rounded p-2 bg-light">
+            <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+              <div class="d-flex align-items-center flex-wrap gap-2" id="claim-ai-meta" style="display:none;">
+                <span class="badge bg-warning text-dark" id="claim-ai-guess-badge" style="display:none;">Best guess</span>
+                <span class="d-inline-flex align-items-center gap-1">
+                  <span class="badge bg-secondary"
+                        id="claim-ai-confidence"
+                        style="display:none;">
+                  </span>
+                  <button
+                    type="button"
+                    class="btn btn-link p-0 text-muted"
+                    id="claim-ai-confidence-info"
+                    aria-label="Confidence info"
+                    title="What does confidence mean?"
+                    style="line-height: 1; text-decoration: none;"
+                  >
+                    ⓘ
+                  </button>
+                  <span
+                    class="small text-muted"
+                    id="claim-ai-confidence-help"
+                    style="display:none; max-width: 44rem;"
+                  >
+                    Confidence is based on citations and whether the answer required inference.
+                  </span>
+                </span>
+                <span class="small text-muted" id="claim-ai-meta-text"></span>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" id="claim-ai-copy" class="btn btn-sm btn-outline-secondary" style="display:none;" title="Copy answer + citations">
+                  Copy
+                </button>
+              </div>
+            </div>
+
+            <div class="small" id="claim-ai-answer" style="white-space: pre-wrap;"></div>
+            <div class="small text-muted mt-2" id="claim-ai-citations"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Claim summary row -->
   <div class="row mb-3">
     <div class="col-md-6 mb-3">
-      <div class="card shadow-sm h-100">
+      <div class="card shadow-sm">
         <div class="card-header">
           <h2 class="h6 mb-0">Claim Summary</h2>
         </div>
         <div class="card-body small">
-          <dl class="row mb-0">
-            <dt class="col-sm-4">Claimant</dt>
-            <dd class="col-sm-8">{{ claim.claimant_name }}</dd>
+          {% set _is_closed = (claim.is_closed if claim.is_closed is defined else false) %}
+          <div class="row g-3">
+            <div class="col-12 col-lg-6">
+              <dl class="row mb-0">
+                <dt class="col-sm-5">Claimant</dt>
+                <dd class="col-sm-7">{{ claimant_display }}</dd>
 
-            <dt class="col-sm-4">Claim #</dt>
-            <dd class="col-sm-8">{{ claim.claim_number }}</dd>
+                <dt class="col-sm-5">Claim #</dt>
+                <dd class="col-sm-7">{{ claim.claim_number }}</dd>
 
-            <dt class="col-sm-4">DOB</dt>
-            <dd class="col-sm-8">{{ claim.dob|format_date or "—" }}</dd>
+                <dt class="col-sm-5">DOB</dt>
+                <dd class="col-sm-7">{{ claim.dob|format_date or "—" }}</dd>
 
+                <dt class="col-sm-5">DOI</dt>
+                <dd class="col-sm-7">{{ claim.doi|format_date or "—" }}</dd>
 
-            <dt class="col-sm-4">DOI</dt>
-            <dd class="col-sm-8">{{ claim.doi|format_date or "—" }}</dd>
+                <dt class="col-sm-5">Claim State</dt>
+                <dd class="col-sm-7">{{ claim.claim_state or "—" }}</dd>
 
-            <dt class="col-sm-4">Surgery Date</dt>
-            <dd class="col-sm-8">
-              {% if claim.surgery_date is defined %}
-                {{ claim.surgery_date|format_date or "—" }}
-              {% else %}
-                —
-              {% endif %}
-            </dd>
+                <dt class="col-sm-5">Adjuster</dt>
+                <dd class="col-sm-7">
+                  {% if claim.carrier_contact %}
+                    {{ claim.carrier_contact.name }}
+                    {% if claim.carrier_contact.phone %}
+                      {% set adj_ext = claim.carrier_contact.phone_ext or claim.carrier_contact.phone_extension or claim.carrier_contact.phone_extn %}
+                      · {{ claim.carrier_contact.phone }}{% if adj_ext %} ext {{ adj_ext }}{% endif %}
+                    {% endif %}
+                    {% if claim.carrier_contact.email %}
+                      · {{ claim.carrier_contact.email }}
+                    {% endif %}
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
+              </dl>
+            </div>
 
-            <dt class="col-sm-4">Address</dt>
-            <dd class="col-sm-8">
-              {% if claim.claimant_address1 %}
-                {{ claim.claimant_address1 }}{% if claim.claimant_address2 %}, {{ claim.claimant_address2 }}{% endif %}<br>
-                {{ claim.claimant_city or '' }}{% if claim.claimant_state %}, {{ claim.claimant_state }}{% endif %} {{ claim.claimant_postal_code or '' }}
-              {% else %}
-                —
-              {% endif %}
-            </dd>
+            <div class="col-12 col-lg-6">
+              <dl class="row mb-0">
+                <dt class="col-sm-5" id="anchor-claim-status">Status</dt>
+                <dd class="col-sm-7">
+                  {% if _is_closed %}
+                    <span class="badge bg-secondary">Closed</span>
+                  {% else %}
+                    <span class="badge bg-primary">Open</span>
+                  {% endif %}
+                </dd>
 
-            <dt class="col-sm-4">Phone</dt>
-            <dd class="col-sm-8">
-              {% set claimant_ext = claim.claimant_phone_ext or claim.claimant_phone_extension or claim.claimant_ext %}
-              {% if claim.claimant_phone %}
-                {{ claim.claimant_phone }}{% if claimant_ext %} ext {{ claimant_ext }}{% endif %}
-              {% else %}
-                —
-              {% endif %}
-            </dd>
+                <dt class="col-sm-5">Address</dt>
+                <dd class="col-sm-7">
+                  {% if claim.claimant_address1 %}
+                    {{ claim.claimant_address1 }}{% if claim.claimant_address2 %}, {{ claim.claimant_address2 }}{% endif %}<br>
+                    {{ claim.claimant_city or '' }}{% if claim.claimant_state %}, {{ claim.claimant_state }}{% endif %} {{ claim.claimant_postal_code or '' }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
 
-            <dt class="col-sm-4">Email</dt>
-            <dd class="col-sm-8">{{ claim.claimant_email or "—" }}</dd>
+                <dt class="col-sm-5">Phone</dt>
+                <dd class="col-sm-7">
+                  {% set claimant_ext = claim.claimant_phone_ext or claim.claimant_phone_extension or claim.claimant_ext %}
+                  {% if claim.claimant_phone %}
+                    {{ claim.claimant_phone }}{% if claimant_ext %} ext {{ claimant_ext }}{% endif %}
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
 
+                <dt class="col-sm-5">Email</dt>
+                <dd class="col-sm-7">{{ claim.claimant_email or "—" }}</dd>
 
+                <dt class="col-sm-5" id="anchor-claim-surgeries">Surgery Date(s)</dt>
+                <dd class="col-sm-7">
+                  {% set _surgeries = claim_surgeries if claim_surgeries is defined else [] %}
 
-            <dt class="col-sm-4">Claim State</dt>
-            <dd class="col-sm-8">{{ claim.claim_state or "—" }}</dd>
+                  {% if _surgeries and _surgeries|length > 0 %}
+                    {% for s in _surgeries %}
+                      <div>
+                        {% if s.surgery_date is defined and s.surgery_date %}
+                          {{ s.surgery_date|format_date }}
+                        {% else %}
+                          —
+                        {% endif %}
 
-            <dt class="col-sm-4">Adjuster</dt>
-            <dd class="col-sm-8">
-              {% if claim.carrier_contact %}
-                {{ claim.carrier_contact.name }}
-                {% if claim.carrier_contact.phone %}
-                  {% set adj_ext = claim.carrier_contact.phone_ext or claim.carrier_contact.phone_extension or claim.carrier_contact.phone_extn %}
-                  · {{ claim.carrier_contact.phone }}{% if adj_ext %} ext {{ adj_ext }}{% endif %}
-                {% endif %}
-                {% if claim.carrier_contact.email %}
-                  · {{ claim.carrier_contact.email }}
-                {% endif %}
-              {% else %}
-                —
-              {% endif %}
-            </dd>
+                        {% if s.description is defined and s.description %}
+                          <span class="text-muted">— {{ s.description }}</span>
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  {% elif claim.surgery_date is defined and claim.surgery_date %}
+                    {{ claim.surgery_date|format_date }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
 
-          </dl>
+                <dt class="col-sm-5" id="anchor-claim-providers">Treating Providers</dt>
+                <dd class="col-sm-7">
+                  {% if claim_providers %}
+                    {% set _labels = [] %}
+                    {% for p in claim_providers %}
+                      {% set _pname = (p.name if p.name is defined and p.name else '—') %}
+                      {% if p.organization is defined and p.organization %}
+                        {% set _labels = _labels + [p.organization ~ ' — ' ~ _pname] %}
+                      {% else %}
+                        {% set _labels = _labels + [_pname] %}
+                      {% endif %}
+                    {% endfor %}
+                    {{ _labels | join(', ') }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
+              </dl>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- Invoices for this claim -->
     <div class="col-md-6 mb-3">
-      <div class="card shadow-sm h-100">
+      <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h2 class="h6 mb-0">Invoices for this Claim</h2>
           <a href="{{ url_for('main.invoice_new_for_claim', claim_id=claim.id) }}"
@@ -165,7 +346,7 @@
                 <tbody>
                   {% for inv in invoices %}
                     {% set status = inv.status or "Draft" %}
-                    <tr>
+                    <tr id="invoice-row-{{ inv.id }}">
                       <td>
                         <a href="{{ url_for('main.invoice_detail', invoice_id=inv.id) }}">
                           {{ inv.invoice_number }}
@@ -190,7 +371,25 @@
                         {% endif %}
                       </td>
                       <td class="text-end">
-                        ${{ "%.2f"|format(inv.total_amount or 0.0) }}
+                        {# LOCKDOWN: always prefer canonical computed totals from inv.computed_financials.invoice_total #}
+                        {% set _fin = (inv.computed_financials if inv.computed_financials is defined else none) %}
+                        {% set _inv_total = none %}
+
+                        {% if _fin %}
+                          {% if _fin is mapping %}
+                            {% set _inv_total = _fin.get('invoice_total') %}
+                          {% else %}
+                            {% if _fin.invoice_total is defined %}{% set _inv_total = _fin.invoice_total %}{% endif %}
+                          {% endif %}
+                        {% endif %}
+
+                        {% if _inv_total is not none %}
+                          ${{ "%.2f"|format(_inv_total or 0.0) }}
+                        {% else %}
+                          <span class="text-muted" title="Computed totals unavailable; showing stored invoice.total_amount.">
+                            ${{ "%.2f"|format(inv.total_amount or 0.0) }}
+                          </span>
+                        {% endif %}
                       </td>
                     </tr>
                   {% endfor %}
@@ -250,7 +449,8 @@
                     </thead>
                     <tbody>
                       {% for item in billable_items %}
-                        {% set code = (item.activity_code or '') %}
+                        {# Normalize code for consistent comparisons + display (db may store "Exp" etc.) #}
+                        {% set code = ((item.activity_code or '')|upper) %}
                         {% if code == 'MIL' %}
                           {% set units = 'mi' %}
                         {% elif code == 'EXP' %}
@@ -303,7 +503,7 @@
                         {% else %}
                           {% set dos_key = (dos_dt|string)|replace('-', '')|replace('/', '')|replace(':', '')|replace(' ', '') %}
                         {% endif %}
-                        <tr class="{% if is_locked %}billable-locked{% endif %}" data-entry-key="{{ entry_key }}" data-dos-key="{{ dos_key }}">
+                        <tr id="billable-row-{{ item.id }}" class="{% if is_locked %}billable-locked{% endif %}" data-entry-key="{{ entry_key }}" data-dos-key="{{ dos_key }}">
                           <td>
                             {% if dos_dt %}
                               {% if dos_dt.strftime is defined %}
@@ -315,10 +515,14 @@
                               —
                             {% endif %}
                           </td>
-                          <td>{{ item.activity_code }}</td>
+                          <td>{{ code }}</td>
                           <td class="text-end">
                             {% if item.quantity is not none %}
-                              {{ "%.1f"|format(item.quantity) }}
+                              {% if code == 'EXP' %}
+                                {{ "%.2f"|format(item.quantity) }}
+                              {% else %}
+                                {{ "%.1f"|format(item.quantity) }}
+                              {% endif %}
                             {% else %}
                               —
                             {% endif %}
@@ -481,6 +685,8 @@
 
               <p class="text-muted mt-2 mb-0 small">
                 Mileage (MIL) is in miles; EXP is in dollars; all other codes are treated as hours.
+                <br>
+                <strong>NO&nbsp;BILL</strong> items are not invoiced, but they <em>do</em> appear in the CM Activities section of Reports for documentation and continuity.
               </p>
             </div>
           </div>
@@ -533,7 +739,6 @@
                     <th style="width: 10%" class="sortable" data-sort-key="type"><span>Type</span> <span class="sort-indicator">↕</span></th>
                     <th style="width: 8%">Report #</th>
                     <th style="width: 22%" class="sortable" data-sort-key="dos"><span>DOS Range</span> <span class="sort-indicator">↕</span></th>
-                    <th style="width: 30%" class="sortable" data-sort-key="provider"><span>Treating Provider</span> <span class="sort-indicator">↕</span></th>
                     <th style="width: 18%" class="sortable" data-sort-key="next_appt"><span>Next Appointment</span> <span class="sort-indicator">↕</span></th>
                     <th style="width: 12%" class="sortable" data-sort-key="next_due"><span>Next Report</span> <span class="sort-indicator">↕</span></th>
                     <th style="width: 15%" class="text-end">Actions</th>
@@ -542,7 +747,7 @@
                 <tbody>
                 {% if reports %}
                   {% for r in reports %}
-                    <tr>
+                    <tr id="report-row-{{ r.id }}">
                       <td class="small" style="white-space: normal; word-break: break-word;">
                         {{ (r.report_type or "—")|capitalize }}
                       </td>
@@ -552,66 +757,6 @@
                       <td class="small">
                         {% if r.dos_start or r.dos_end %}
                           {{ r.dos_start|format_date if r.dos_start else "?" }} – {{ r.dos_end|format_date if r.dos_end else "?" }}
-                        {% else %}
-                          —
-                        {% endif %}
-                      </td>
-                      <td class="small" style="white-space: normal; word-break: break-word;">
-                        {#
-                          Some installs use a true many-to-many relationship (e.g. approved_providers),
-                          others expose join rows (e.g. report_approved_providers) that point to Provider.
-                          Try multiple common attribute names and normalize into a list.
-                        #}
-                        {% set _names = [] %}
-
-                        {% set provs = None %}
-                        {% if r.approved_providers is defined %}
-                          {% set provs = r.approved_providers %}
-                        {% elif r.approved_treating_providers is defined %}
-                          {% set provs = r.approved_treating_providers %}
-                        {% elif r.treating_providers is defined %}
-                          {% set provs = r.treating_providers %}
-                        {% elif r.providers is defined %}
-                          {% set provs = r.providers %}
-                        {% elif r.report_approved_providers is defined %}
-                          {% set provs = r.report_approved_providers %}
-                        {% elif r.approved_provider_rows is defined %}
-                          {% set provs = r.approved_provider_rows %}
-                        {% elif r.report_approved_provider_rows is defined %}
-                          {% set provs = r.report_approved_provider_rows %}
-                        {% endif %}
-
-                        {# If it's a dynamic relationship/query, pull the list #}
-                        {% if provs is not none and provs.all is defined %}
-                          {% set provs = provs.all() %}
-                        {% endif %}
-
-                        {% if provs %}
-                          {% for p in provs %}
-                            {# Direct Provider object #}
-                            {% if p is not none and p.name is defined and p.name %}
-                              {% set _ = _names.append(p.name) %}
-                            {# Join row with provider relationship #}
-                            {% elif p is not none and p.provider is defined and p.provider and p.provider.name is defined and p.provider.name %}
-                              {% set _ = _names.append(p.provider.name) %}
-                            {# Join row with treating_provider relationship #}
-                            {% elif p is not none and p.treating_provider is defined and p.treating_provider and p.treating_provider.name is defined and p.treating_provider.name %}
-                              {% set _ = _names.append(p.treating_provider.name) %}
-                            {% endif %}
-                          {% endfor %}
-                        {% endif %}
-
-                        {# Fallback to single-field / legacy #}
-                        {% if _names|length == 0 and r.treating_provider %}
-                          {% if r.treating_provider.name is defined and r.treating_provider.name %}
-                            {% set _ = _names.append(r.treating_provider.name) %}
-                          {% else %}
-                            {% set _ = _names.append(r.treating_provider) %}
-                          {% endif %}
-                        {% endif %}
-
-                        {% if _names|length %}
-                          {{ _names|unique|join(', ') }}
                         {% else %}
                           —
                         {% endif %}
@@ -645,7 +790,7 @@
                   {% endfor %}
                 {% else %}
                   <tr>
-                    <td colspan="7" class="text-center text-muted small py-3">
+                    <td colspan="6" class="text-center text-muted small py-3">
                       No reports yet for this claim.
                     </td>
                   </tr>
@@ -709,16 +854,21 @@
                             {%- if raw_name %}
                               {%- set parts = raw_name.split("_", 1) -%}
                               {%- if parts|length == 2 and parts[0]|length == 8 -%}
-                                {{ parts[1] }}
+                                {%- set display_name = parts[1] -%}
                               {%- else -%}
-                                {{ raw_name }}
+                                {%- set display_name = raw_name -%}
                               {%- endif -%}
+                              <a href="{{ url_for('main.claim_document_download', claim_id=claim.id, doc_id=d.id) }}"
+                                 target="_blank" rel="noopener"
+                                 class="text-decoration-none">
+                                {{ display_name }}
+                              </a>
                             {%- else -%}
                               —
                             {%- endif -%}
                           </td>
 <td class="text-end">
-  <a href="{{ url_for('main.claim_document_download', claim_id=claim.id, doc_id=d.id) }}"
+  <a href="{{ url_for('main.claim_document_download', claim_id=claim.id, doc_id=d.id, download=1) }}"
      class="btn btn-outline-secondary btn-sm">
     Download
   </a>
@@ -805,6 +955,364 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+  // Claim AI Q&A (claim-scoped)
+  (function wireClaimAI() {
+    const form = document.getElementById('claim-ai-form');
+    const qEl = document.getElementById('claim-ai-q');
+    const btn = document.getElementById('claim-ai-submit');
+    const clearBtn = document.getElementById('claim-ai-clear');
+
+    const statusEl = document.getElementById('claim-ai-status');
+    const errEl = document.getElementById('claim-ai-error');
+    const resultEl = document.getElementById('claim-ai-result');
+    const ansEl = document.getElementById('claim-ai-answer');
+    const citEl = document.getElementById('claim-ai-citations');
+    const metaEl = document.getElementById('claim-ai-meta');
+    const guessBadgeEl = document.getElementById('claim-ai-guess-badge');
+    const confidenceEl = document.getElementById('claim-ai-confidence');
+    const metaTextEl = document.getElementById('claim-ai-meta-text');
+    const copyBtn = document.getElementById('claim-ai-copy');
+    const confidenceInfoBtn = document.getElementById('claim-ai-confidence-info');
+    const confidenceHelpEl = document.getElementById('claim-ai-confidence-help');
+
+    if (!form || !qEl || !btn) return;
+
+    function setBusy(isBusy, msg) {
+      if (btn) btn.disabled = !!isBusy;
+      if (qEl) qEl.disabled = !!isBusy;
+      if (statusEl) {
+        statusEl.style.display = isBusy ? '' : 'none';
+        statusEl.textContent = isBusy ? (msg || 'Working…') : '';
+      }
+    }
+
+    function clearUI() {
+      if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+      if (resultEl) resultEl.style.display = 'none';
+      if (ansEl) ansEl.textContent = '';
+      if (citEl) citEl.textContent = '';
+      if (qEl) qEl.value = '';
+      if (metaEl) metaEl.style.display = 'none';
+      if (guessBadgeEl) guessBadgeEl.style.display = 'none';
+      if (confidenceEl) { confidenceEl.style.display = 'none'; confidenceEl.textContent = ''; }
+      if (copyBtn) copyBtn.style.display = 'none';
+      if (metaTextEl) metaTextEl.textContent = '';
+      if (confidenceHelpEl) confidenceHelpEl.style.display = 'none';
+      if (typeof _clearAiJumpHighlight === 'function') { _clearAiJumpHighlight(); }
+    }
+
+    function setConfidence(level) {
+      // level: 'low' | 'medium' | 'high'
+      if (!confidenceEl) return;
+
+      confidenceEl.style.display = '';
+      confidenceEl.className = 'badge';
+
+      if (level === 'high') {
+        confidenceEl.textContent = 'High confidence';
+        confidenceEl.classList.add('bg-success');
+      } else if (level === 'medium') {
+        confidenceEl.textContent = 'Medium confidence';
+        confidenceEl.classList.add('bg-warning', 'text-dark');
+      } else {
+        confidenceEl.textContent = 'Low confidence';
+        confidenceEl.classList.add('bg-danger');
+      }
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function () { clearUI(); });
+    }
+    if (confidenceInfoBtn && confidenceHelpEl) {
+      confidenceInfoBtn.addEventListener('click', function () {
+        const isOpen = confidenceHelpEl.style.display !== 'none';
+        confidenceHelpEl.style.display = isOpen ? 'none' : '';
+      });
+    }
+    // Keyboard UX: Esc clears; Cmd/Ctrl+Enter submits (when focused in the question box)
+document.addEventListener('keydown', function (ev) {
+  if (ev.key === 'Escape') {
+    clearUI();
+    return;
+  }
+
+  const isCmdEnter = (ev.key === 'Enter') && (ev.metaKey || ev.ctrlKey);
+  if (isCmdEnter) {
+    if (document.activeElement === qEl) {
+      ev.preventDefault();
+      if (form.requestSubmit) {
+        form.requestSubmit();
+      } else {
+        form.dispatchEvent(new Event('submit'));
+      }
+    }
+  }
+});
+
+    form.addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      if (!qEl.value.trim()) return;
+
+      // Client-side PHI guardrail (server should also enforce)
+      const qLower = String(qEl.value || '').toLowerCase();
+      const phiPatterns = [
+        /\b(phone|telephone|cell|mobile)\b/i,
+        /\b(address|street|mailing|zip|postal)\b/i,
+        /\b(email|e-mail)\b/i,
+        /\b(dob|date of birth|birthday)\b/i,
+        /\bssn|social security\b/i
+      ];
+      const phiHit = phiPatterns.some(re => re.test(qLower));
+      if (phiHit) {
+        if (errEl) {
+          errEl.style.display = '';
+          errEl.textContent = 'Not available via AI. Use the Claim Summary for claimant contact info and identifiers.';
+        }
+        return;
+      }
+
+      // Reset UI
+      if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+      if (resultEl) resultEl.style.display = 'none';
+      if (metaEl) metaEl.style.display = 'none';
+      if (guessBadgeEl) guessBadgeEl.style.display = 'none';
+      if (confidenceEl) { confidenceEl.style.display = 'none'; confidenceEl.textContent = ''; }
+      if (copyBtn) copyBtn.style.display = 'none';
+      if (metaTextEl) metaTextEl.textContent = '';
+      if (confidenceHelpEl) confidenceHelpEl.style.display = 'none';
+      if (typeof _clearAiJumpHighlight === 'function') { _clearAiJumpHighlight(); }
+
+      setBusy(true, 'Searching claim records…');
+
+      try {
+        const resp = await fetch("{{ url_for('main.claim_ai_query', claim_id=claim.id) }}", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: qEl.value.trim() })
+        });
+
+        if (!resp.ok) {
+          const txt = await resp.text();
+          throw new Error('Request failed (' + resp.status + '): ' + (txt || ''));
+        }
+
+        const data = await resp.json();
+        const answer = (data && data.answer) ? String(data.answer) : '';
+        const citations = (data && Array.isArray(data.citations)) ? data.citations : [];
+        const isGuess = !!(data && data.is_guess);
+
+        if (ansEl) {
+          // Render as plain text but preserve newlines.
+          ansEl.textContent = answer || 'No answer returned.';
+        }
+
+        if (metaEl) {
+          metaEl.style.display = '';
+        }
+        if (guessBadgeEl) {
+          guessBadgeEl.style.display = isGuess ? '' : 'none';
+        }
+        // Confidence indicator (simple + deterministic):
+        // - High: has citations and not a guess
+        // - Medium: has citations but marked guess
+        // - Low: no citations
+        const hasCitations = !!(citations && citations.length);
+        if (!hasCitations) {
+          setConfidence('low');
+        } else if (isGuess) {
+          setConfidence('medium');
+        } else {
+          setConfidence('high');
+        }
+        if (metaTextEl) {
+          if (!hasCitations) {
+            metaTextEl.textContent = 'No matching sources were found for this question.';
+          } else if (isGuess) {
+            metaTextEl.textContent = 'Verify using the citations below.';
+          } else {
+            metaTextEl.textContent = '';
+          }
+        }
+        if (copyBtn) {
+          copyBtn.style.display = '';
+        }
+
+function _maybeExpandAccordionFor(targetId) {
+  // Expand Billables / Reports accordions if we’re about to jump into them.
+  const billableCollapse = document.getElementById('billableCollapse');
+  const reportsCollapse = document.getElementById('reportsCollapse');
+
+  if (!targetId) return;
+
+  // Billables rows look like "billable-row-123"
+  if (targetId.startsWith('billable-row-') && billableCollapse && !billableCollapse.classList.contains('show')) {
+    try {
+      new bootstrap.Collapse(billableCollapse, { toggle: true });
+    } catch (e) {
+      billableCollapse.classList.add('show');
+    }
+  }
+
+  // Report rows look like "report-row-51"
+  if (targetId.startsWith('report-row-') && reportsCollapse && !reportsCollapse.classList.contains('show')) {
+    try {
+      new bootstrap.Collapse(reportsCollapse, { toggle: true });
+    } catch (e) {
+      reportsCollapse.classList.add('show');
+    }
+  }
+}
+
+let _aiHighlightedEl = null;
+
+function _clearAiJumpHighlight() {
+  if (_aiHighlightedEl) {
+    try { _aiHighlightedEl.classList.remove('ai-jump-highlight'); } catch (e) {}
+    _aiHighlightedEl = null;
+  }
+}
+
+// Clear the persistent highlight on any click/tap anywhere.
+document.addEventListener('click', function () {
+  _clearAiJumpHighlight();
+}, { capture: true });
+
+function _scrollToId(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return false;
+
+  _maybeExpandAccordionFor(targetId);
+
+  // Wait a tick in case collapse animation needs layout time
+  setTimeout(() => {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Persist highlight until click/clear/new ask
+    _clearAiJumpHighlight();
+    _aiHighlightedEl = el;
+
+    // re-trigger animation if clicked twice
+    el.classList.remove('ai-jump-highlight');
+    void el.offsetWidth; // force reflow so animation restarts
+    el.classList.add('ai-jump-highlight');
+  }, 180);
+
+  return true;
+}
+
+        function _targetForCitationId(cid) {
+          const id = (cid || '').trim();
+          if (!id) return null;
+
+          // Claim-level anchors
+          if (id === 'CLAIM.surgeries' || id === 'C.surgeries') return 'anchor-claim-surgeries';
+          if (id === 'C.open_closed' || id === 'C.status' || id === 'CLAIM.status') return 'anchor-claim-status';
+          if (id === 'C.providers' || id === 'CLAIM.providers') return 'anchor-claim-providers';
+
+          // Report field sources like R51.status_plan
+          const mR = id.match(/^R(\d+)(\.|$)/i);
+          if (mR) return 'report-row-' + mR[1];
+
+          // Billable sources like B123
+          const mB = id.match(/^B(\d+)$/i);
+          if (mB) return 'billable-row-' + mB[1];
+
+          // Invoice sources like I45
+          const mI = id.match(/^I(\d+)$/i);
+          if (mI) return 'invoice-row-' + mI[1];
+
+          return null;
+        }
+
+        function _renderCitations(citationsArr) {
+          if (!citEl) return;
+          citEl.innerHTML = '';
+
+          if (!citationsArr || !citationsArr.length) {
+            const none = document.createElement('span');
+            none.textContent = 'No matching sources were found for this question.';
+            citEl.appendChild(none);
+            return;
+          }
+
+          const label = document.createElement('span');
+          label.textContent = 'Citations: ';
+          citEl.appendChild(label);
+
+          citationsArr.forEach(function (c, idx) {
+            const isStr = (typeof c === 'string');
+            const cid = isStr ? '' : (c.id || c.ref || c.url || '');
+            const lbl = isStr ? c : (c.label || c.title || ('Source ' + (idx + 1)));
+
+            const pill = document.createElement('a');
+            pill.href = '#';
+            pill.className = 'badge rounded-pill bg-secondary text-light border text-decoration-none me-1';
+            pill.textContent = '[' + (idx + 1) + '] ' + String(lbl);
+
+            const targetId = _targetForCitationId(cid);
+            if (targetId) {
+              pill.title = 'Jump to source';
+              pill.addEventListener('click', function (ev2) {
+                ev2.preventDefault();
+                _scrollToId(targetId);
+              });
+            } else {
+              pill.title = (cid ? ('Source id: ' + cid) : 'Source');
+              pill.addEventListener('click', function (ev2) { ev2.preventDefault(); });
+            }
+
+            citEl.appendChild(pill);
+          });
+        }
+
+        if (copyBtn) {
+          copyBtn.onclick = async function () {
+            try {
+              const lines = [];
+              lines.push('Answer:');
+              lines.push(answer || '');
+              lines.push('');
+              lines.push('Citations:');
+              if (citations && citations.length) {
+                citations.forEach((c, idx) => {
+                  const cid = (typeof c === 'string') ? '' : (c.id || c.ref || '');
+                  const lbl = (typeof c === 'string') ? c : (c.label || c.title || ('Source ' + (idx + 1)));
+                  lines.push('[' + (idx + 1) + '] ' + String(lbl) + (cid ? (' (id: ' + cid + ')') : ''));
+                });
+              } else {
+                lines.push('(none)');
+              }
+              await navigator.clipboard.writeText(lines.join('\n'));
+              if (statusEl) {
+                statusEl.style.display = '';
+                statusEl.textContent = 'Copied.';
+                setTimeout(() => {
+                  statusEl.style.display = 'none';
+                  statusEl.textContent = '';
+                }, 900);
+              }
+            } catch (e2) {
+              if (errEl) {
+                errEl.style.display = '';
+                errEl.textContent = 'Copy failed.';
+              }
+            }
+          };
+        }
+
+        _renderCitations(citations);
+
+        if (resultEl) resultEl.style.display = '';
+      } catch (e) {
+        if (errEl) {
+          errEl.style.display = '';
+          errEl.textContent = (e && e.message) ? e.message : String(e);
+        }
+      } finally {
+        setBusy(false);
+      }
+    });
+  })();
   // Persist Claim Detail accordion open/closed state per-claim
   (function persistAccordionState() {
     var accordion = document.getElementById('claimAccordion');
@@ -1064,14 +1572,12 @@ document.addEventListener('DOMContentLoaded', function () {
         var parts = txt.split('–');
         return dateTextToKey((parts[0] || '').trim());
       }
-      case 'provider':
-        return (cells[3].innerText || '').trim();
       case 'next_appt': {
-        var txtA = cells[4].innerText || '';
+        var txtA = cells[3].innerText || '';
         return dateTimeTextToKey(txtA);
       }
       case 'next_due': {
-        var txtD = cells[5].innerText || '';
+        var txtD = cells[4].innerText || '';
         return dateTextToKey(txtD);
       }
       default:
