@@ -1162,7 +1162,7 @@ def claim_detail(claim_id: int):
             flash("Could not save billable item. Check required fields and try again.", "error")
             return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
-        flash("Billable item added.", "success")
+        flash(f"Billable item added — {claim.claimant_name} ({claim.claim_number})", "success")
         return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
     billable_items = (

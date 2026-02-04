@@ -68,21 +68,50 @@
         background: color-mix(in srgb, var(--ai-highlight-color) 12%, transparent);
       }
     }
+
+    /* --- Claim Summary visual hierarchy (neutral, uniform) --- */
+    .claim-summary-identity {
+      font-size: 1.05rem;
+      font-weight: 500;
+    }
+
+    .claim-summary-label {
+      color: var(--bs-secondary-color, #6c757d);
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+    }
+
+    .claim-summary-value {
+      font-size: 0.95rem;
+      font-weight: 400;
+      color: var(--bs-body-color);
+    }
+
+    .claim-summary-value a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .claim-summary-value a:hover {
+      text-decoration: underline;
+    }
+
+    .claim-summary-missing {
+      color: var(--bs-secondary-color, #6c757d);
+      font-style: italic;
+    }
   </style>
   <!-- Header row -->
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
       <h1 class="h4 mb-0">
-        Claim {{ claim.claim_number }}
+        {{ claimant_display }}
       </h1>
       <div class="text-muted small">
-        {{ claimant_display }}
-        {% if employer %}
-          · Employer: {{ employer.name }}
-        {% endif %}
-        {% if carrier %}
-          · Carrier: {{ carrier.name }}
-        {% endif %}
+        Claim {{ claim.claim_number }}
+        {% if employer %} · Employer: {{ employer.name }}{% endif %}
+        {% if carrier %} · Carrier: {{ carrier.name }}{% endif %}
       </div>
     </div>
 
@@ -116,82 +145,6 @@
     </div>
   </div>
 
-  <!-- Claim AI Q&A (claim-scoped, safest-first) -->
-  <div class="mb-3">
-    <div class="card shadow-sm">
-      <div class="card-body py-2">
-        <form id="claim-ai-form" class="row g-2 align-items-center mb-0" autocomplete="off">
-          <div class="col-12 col-lg-8">
-            <label for="claim-ai-q" class="form-label form-label-sm mb-1">Ask about this claim</label>
-            <input
-              type="text"
-              id="claim-ai-q"
-              class="form-control form-control-sm"
-              placeholder="e.g., When was the last appointment? What did I say in the initial report about the injury?"
-              maxlength="300"
-              required
-            >
-            <div class="form-text mb-0 text-muted">
-              Answers include citations. Claimant identifiers (name, phone, email, address, claim #) are not searched.
-              <span class="text-muted ms-2">Shortcuts: <strong>Enter</strong>=Ask, <strong>Esc</strong>=Clear.</span>
-            </div>
-          </div>
-          <div class="col-12 col-lg-4 d-flex gap-2 align-items-end">
-            <button type="submit" id="claim-ai-submit" class="btn btn-sm btn-outline-primary w-100">
-              Ask
-            </button>
-            <button type="button" id="claim-ai-clear" class="btn btn-sm btn-outline-secondary" title="Clear">
-              Clear
-            </button>
-          </div>
-        </form>
-
-        <div id="claim-ai-status" class="small text-muted mt-2" style="display:none;"></div>
-        <div id="claim-ai-error" class="alert alert-danger py-2 mt-2 mb-0" style="display:none;"></div>
-        <div id="claim-ai-result" class="mt-2" style="display:none;">
-          <div class="border rounded p-2 bg-light">
-            <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
-              <div class="d-flex align-items-center flex-wrap gap-2" id="claim-ai-meta" style="display:none;">
-                <span class="badge bg-warning text-dark" id="claim-ai-guess-badge" style="display:none;">Best guess</span>
-                <span class="d-inline-flex align-items-center gap-1">
-                  <span class="badge bg-secondary"
-                        id="claim-ai-confidence"
-                        style="display:none;">
-                  </span>
-                  <button
-                    type="button"
-                    class="btn btn-link p-0 text-muted"
-                    id="claim-ai-confidence-info"
-                    aria-label="Confidence info"
-                    title="What does confidence mean?"
-                    style="line-height: 1; text-decoration: none;"
-                  >
-                    ⓘ
-                  </button>
-                  <span
-                    class="small text-muted"
-                    id="claim-ai-confidence-help"
-                    style="display:none; max-width: 44rem;"
-                  >
-                    Confidence is based on citations and whether the answer required inference.
-                  </span>
-                </span>
-                <span class="small text-muted" id="claim-ai-meta-text"></span>
-              </div>
-              <div class="d-flex gap-2">
-                <button type="button" id="claim-ai-copy" class="btn btn-sm btn-outline-secondary" style="display:none;" title="Copy answer + citations">
-                  Copy
-                </button>
-              </div>
-            </div>
-
-            <div class="small" id="claim-ai-answer" style="white-space: pre-wrap;"></div>
-            <div class="small text-muted mt-2" id="claim-ai-citations"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- Claim summary row -->
   <div class="row mb-3">
@@ -205,25 +158,42 @@
           <div class="row g-3">
             <div class="col-12 col-lg-6">
               <dl class="row mb-0">
-                <dt class="col-sm-5">Claimant</dt>
-                <dd class="col-sm-7">{{ claimant_display }}</dd>
+                <dt class="col-sm-5 claim-summary-label">DOB</dt>
+                <dd class="col-sm-7 claim-summary-value">
+                  {% set dob_val = claim.dob|format_date %}
+                  {% if dob_val %}
+                    {{ dob_val }}
+                  {% else %}
+                    <span class="claim-summary-missing">—</span>
+                  {% endif %}
+                </dd>
 
-                <dt class="col-sm-5">Claim #</dt>
-                <dd class="col-sm-7">{{ claim.claim_number }}</dd>
+                <dt class="col-sm-5 claim-summary-label">DOI</dt>
+                <dd class="col-sm-7 claim-summary-value">
+                  {% set doi_val = claim.doi|format_date %}
+                  {% if doi_val %}
+                    {{ doi_val }}
+                  {% else %}
+                    <span class="claim-summary-missing">—</span>
+                  {% endif %}
+                </dd>
 
-                <dt class="col-sm-5">DOB</dt>
-                <dd class="col-sm-7">{{ claim.dob|format_date or "—" }}</dd>
+                <dt class="col-sm-5 claim-summary-label">Claim State</dt>
+                <dd class="col-sm-7 claim-summary-value">
+                  {% if claim.claim_state %}
+                    {{ claim.claim_state }}
+                  {% else %}
+                    <span class="claim-summary-missing">—</span>
+                  {% endif %}
+                </dd>
 
-                <dt class="col-sm-5">DOI</dt>
-                <dd class="col-sm-7">{{ claim.doi|format_date or "—" }}</dd>
-
-                <dt class="col-sm-5">Claim State</dt>
-                <dd class="col-sm-7">{{ claim.claim_state or "—" }}</dd>
-
-                <dt class="col-sm-5">Adjuster</dt>
-                <dd class="col-sm-7">
+                <dt class="col-sm-5 claim-summary-label">Adjuster</dt>
+                <dd class="col-sm-7 claim-summary-value">
                   {% if claim.carrier_contact %}
-                    {{ claim.carrier_contact.name }}
+                    <a href="{{ url_for('main.carrier_detail', carrier_id=claim.carrier_contact.carrier_id) }}"
+                       class="text-decoration-none">
+                      {{ claim.carrier_contact.name }}
+                    </a>
                     {% if claim.carrier_contact.phone %}
                       {% set adj_ext = claim.carrier_contact.phone_ext or claim.carrier_contact.phone_extension or claim.carrier_contact.phone_extn %}
                       · {{ claim.carrier_contact.phone }}{% if adj_ext %} ext {{ adj_ext }}{% endif %}
@@ -232,7 +202,41 @@
                       · {{ claim.carrier_contact.email }}
                     {% endif %}
                   {% else %}
-                    —
+                    <span class="claim-summary-missing">—</span>
+                  {% endif %}
+                </dd>
+
+                <dt class="col-sm-5 claim-summary-label" id="anchor-claim-providers">Treating Providers</dt>
+                <dd class="col-sm-7 claim-summary-value">
+                  {% if claim_providers %}
+                    {% for p in claim_providers %}
+                      <div>
+                        {% if p.organization is defined and p.organization %}
+                          {{ p.organization }}
+                          {% if p.id is defined %}
+                            <span class="text-muted"> —
+                              <a href="{{ url_for('main.provider_detail', provider_id=p.id) }}"
+                                 class="text-decoration-none">
+                                {{ p.name }}
+                              </a>
+                            </span>
+                          {% elif p.name is defined %}
+                            <span class="text-muted"> —
+                              {{ p.name }}
+                            </span>
+                          {% endif %}
+                        {% elif p.name is defined and p.name %}
+                          <a href="{{ url_for('main.provider_detail', provider_id=p.id) }}"
+                             class="text-decoration-none">
+                            {{ p.name }}
+                          </a>
+                        {% else %}
+                          <span class="claim-summary-missing">—</span>
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  {% else %}
+                    <span class="claim-summary-missing">—</span>
                   {% endif %}
                 </dd>
               </dl>
@@ -240,40 +244,46 @@
 
             <div class="col-12 col-lg-6">
               <dl class="row mb-0">
-                <dt class="col-sm-5" id="anchor-claim-status">Status</dt>
-                <dd class="col-sm-7">
+                <dt class="col-sm-5 claim-summary-label" id="anchor-claim-status">Status</dt>
+                <dd class="col-sm-7 claim-summary-value">
                   {% if _is_closed %}
-                    <span class="badge bg-secondary">Closed</span>
+                    <span class="badge bg-secondary px-3">Closed</span>
                   {% else %}
-                    <span class="badge bg-primary">Open</span>
+                    <span class="badge bg-primary px-3">Open</span>
                   {% endif %}
                 </dd>
 
-                <dt class="col-sm-5">Address</dt>
-                <dd class="col-sm-7">
+                <dt class="col-sm-5 claim-summary-label">Address</dt>
+                <dd class="col-sm-7 claim-summary-value">
                   {% if claim.claimant_address1 %}
                     {{ claim.claimant_address1 }}{% if claim.claimant_address2 %}, {{ claim.claimant_address2 }}{% endif %}<br>
                     {{ claim.claimant_city or '' }}{% if claim.claimant_state %}, {{ claim.claimant_state }}{% endif %} {{ claim.claimant_postal_code or '' }}
                   {% else %}
-                    —
+                    <span class="claim-summary-missing">—</span>
                   {% endif %}
                 </dd>
 
-                <dt class="col-sm-5">Phone</dt>
-                <dd class="col-sm-7">
+                <dt class="col-sm-5 claim-summary-label">Phone</dt>
+                <dd class="col-sm-7 claim-summary-value">
                   {% set claimant_ext = claim.claimant_phone_ext or claim.claimant_phone_extension or claim.claimant_ext %}
                   {% if claim.claimant_phone %}
                     {{ claim.claimant_phone }}{% if claimant_ext %} ext {{ claimant_ext }}{% endif %}
                   {% else %}
-                    —
+                    <span class="claim-summary-missing">—</span>
                   {% endif %}
                 </dd>
 
-                <dt class="col-sm-5">Email</dt>
-                <dd class="col-sm-7">{{ claim.claimant_email or "—" }}</dd>
+                <dt class="col-sm-5 claim-summary-label">Email</dt>
+                <dd class="col-sm-7 claim-summary-value">
+                  {% if claim.claimant_email %}
+                    {{ claim.claimant_email }}
+                  {% else %}
+                    <span class="claim-summary-missing">—</span>
+                  {% endif %}
+                </dd>
 
-                <dt class="col-sm-5" id="anchor-claim-surgeries">Surgery Date(s)</dt>
-                <dd class="col-sm-7">
+                <dt class="col-sm-5 claim-summary-label" id="anchor-claim-surgeries">Surgery Date(s)</dt>
+                <dd class="col-sm-7 claim-summary-value">
                   {% set _surgeries = claim_surgeries if claim_surgeries is defined else [] %}
 
                   {% if _surgeries and _surgeries|length > 0 %}
@@ -282,7 +292,7 @@
                         {% if s.surgery_date is defined and s.surgery_date %}
                           {{ s.surgery_date|format_date }}
                         {% else %}
-                          —
+                          <span class="claim-summary-missing">—</span>
                         {% endif %}
 
                         {% if s.description is defined and s.description %}
@@ -293,27 +303,10 @@
                   {% elif claim.surgery_date is defined and claim.surgery_date %}
                     {{ claim.surgery_date|format_date }}
                   {% else %}
-                    —
+                    <span class="claim-summary-missing">—</span>
                   {% endif %}
                 </dd>
 
-                <dt class="col-sm-5" id="anchor-claim-providers">Treating Providers</dt>
-                <dd class="col-sm-7">
-                  {% if claim_providers %}
-                    {% set _labels = [] %}
-                    {% for p in claim_providers %}
-                      {% set _pname = (p.name if p.name is defined and p.name else '—') %}
-                      {% if p.organization is defined and p.organization %}
-                        {% set _labels = _labels + [p.organization ~ ' — ' ~ _pname] %}
-                      {% else %}
-                        {% set _labels = _labels + [_pname] %}
-                      {% endif %}
-                    {% endfor %}
-                    {{ _labels | join(', ') }}
-                  {% else %}
-                    —
-                  {% endif %}
-                </dd>
               </dl>
             </div>
           </div>
@@ -625,7 +618,7 @@
                   <input type="text"
                          id="service_date"
                          name="service_date"
-                         class="form-control form-control-sm js-date"
+                         class="form-control form-control-sm js-date js-date-autofmt"
                          data-flatpickr="1"
                          inputmode="numeric"
                          maxlength="10"
@@ -1530,6 +1523,58 @@ function _scrollToId(targetId) {
         return '';
     }
   });
+
+  // Billable add success popup/alert: update message to include claimant and claim number
+  // (Find the logic that shows the "Billable item added" success popup and update the message)
+  (function () {
+    // This assumes there is a function or handler showing a popup/alert after adding a billable.
+    // If you use a custom event or DOM update, hook in here.
+    // Find the element or code that shows the message and adjust as below.
+
+    // Example: if you use a function showBillableSuccessMessage(msg)
+    // Replace the call:
+    //   showBillableSuccessMessage('Billable item added');
+    // With:
+    //   showBillableSuccessMessage('Billable added to {{ claimant_display }} · Claim {{ claim.claim_number }}');
+
+    // If you use a floating alert with a selector, e.g.:
+    //   document.getElementById('billable-success-alert').textContent = 'Billable item added';
+    // Change to:
+    //   document.getElementById('billable-success-alert').textContent = 'Billable added to {{ claimant_display }} · Claim {{ claim.claim_number }}';
+
+    // If you use a custom event, e.g.:
+    //   document.dispatchEvent(new CustomEvent('billableAdded', { detail: { message: 'Billable item added' } }));
+    // Then update the message in the event detail accordingly.
+
+    // If you use jQuery, e.g.:
+    //   $('#billable-success-alert').text('Billable item added').fadeIn();
+    // Change to:
+    //   $('#billable-success-alert').text('Billable added to {{ claimant_display }} · Claim {{ claim.claim_number }}').fadeIn();
+
+    // For illustration, here is a mutation observer that replaces the generic success message
+    // with the new format, if it appears in the DOM.
+    var msg = 'Billable added to {{ claimant_display }} · Claim {{ claim.claim_number }}';
+    var targetText = 'Billable item added';
+    var observer = new MutationObserver(function(mutations) {
+      mutations.forEach(function(m) {
+        if (m.type === 'childList') {
+          m.addedNodes.forEach(function(node) {
+            if (node.nodeType === 3 && node.textContent.trim() === targetText) {
+              node.textContent = msg;
+            }
+            if (node.nodeType === 1) {
+              // Element node
+              if (node.textContent.trim() === targetText) {
+                node.textContent = msg;
+              }
+            }
+          });
+        }
+      });
+    });
+    // Observe the body for any addition of the generic message
+    observer.observe(document.body, { childList: true, subtree: true });
+  })();
 
   // Default billables order: newest-entered first (without setting any "sorted" header state)
   (function defaultBillablesNewestFirst() {

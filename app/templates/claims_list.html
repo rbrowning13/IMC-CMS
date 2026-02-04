@@ -96,30 +96,50 @@
                   data-closed="{% if claim.is_closed %}1{% else %}0{% endif %}"
                 >
                   <td>
-                    <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
-                      {{ claim.claim_number }}
-                    </a>
+                    <div class="d-flex align-items-center gap-1">
+                      <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="claim-link">
+                        {{ claim.claim_number }}
+                      </a>
+                      <button type="button"
+                              class="btn btn-link btn-sm p-0 text-muted copy-btn"
+                              data-copy-text="{{ claim.claim_number }}"
+                              title="Copy claim number"
+                              aria-label="Copy claim number">
+                        <span class="copy-icon" aria-hidden="true"></span>
+                      </button>
+                    </div>
                   </td>
 
                   <td>
-                    <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}">
-                      {% set _fn = (claim.claimant_first_name if claim.claimant_first_name is defined and claim.claimant_first_name else '')|trim %}
-                      {% set _ln = (claim.claimant_last_name if claim.claimant_last_name is defined and claim.claimant_last_name else '')|trim %}
-                      {% if _ln and _fn %}
-                        {{ _ln }}, {{ _fn }}
-                      {% elif _ln %}
-                        {{ _ln }}
-                      {% elif _fn %}
-                        {{ _fn }}
-                      {% else %}
-                        {{ claim.claimant_name or '—' }}
-                      {% endif %}
-                    </a>
+                    {% set _fn = (claim.claimant_first_name if claim.claimant_first_name is defined and claim.claimant_first_name else '')|trim %}
+                    {% set _ln = (claim.claimant_last_name if claim.claimant_last_name is defined and claim.claimant_last_name else '')|trim %}
+                    <div class="d-flex align-items-center gap-1">
+                      <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="claim-link">
+                        {% if _ln and _fn %}
+                          {{ _ln }}, {{ _fn }}
+                        {% elif _ln %}
+                          {{ _ln }}
+                        {% elif _fn %}
+                          {{ _fn }}
+                        {% else %}
+                          {{ claim.claimant_name or '—' }}
+                        {% endif %}
+                      </a>
+                      <button type="button"
+                              class="btn btn-link btn-sm p-0 text-muted copy-btn"
+                              data-copy-text="{% if _ln and _fn %}{{ _ln }}, {{ _fn }}{% elif _ln %}{{ _ln }}{% elif _fn %}{{ _fn }}{% else %}{{ claim.claimant_name or '' }}{% endif %}"
+                              title="Copy claimant name"
+                              aria-label="Copy claimant name">
+                        <span class="copy-icon" aria-hidden="true"></span>
+                      </button>
+                    </div>
                   </td>
 
                   <td>
                     {% if claim.carrier %}
-                      {{ claim.carrier.name }}
+                      <a href="{{ url_for('main.carrier_detail', carrier_id=claim.carrier.id) }}" class="claim-link">
+                        {{ claim.carrier.name }}
+                      </a>
                     {% else %}
                       <span class="text-muted">—</span>
                     {% endif %}
@@ -127,7 +147,9 @@
 
                   <td>
                     {% if claim.employer %}
-                      {{ claim.employer.name }}
+                      <a href="{{ url_for('main.employer_detail', employer_id=claim.employer.id) }}" class="claim-link">
+                        {{ claim.employer.name }}
+                      </a>
                     {% else %}
                       <span class="text-muted">—</span>
                     {% endif %}
@@ -420,4 +442,52 @@
     applyFilters();
   });
 </script>
+<script>
+document.addEventListener('click', function (e) {
+  const btn = e.target.closest('.copy-btn');
+  if (!btn) return;
+  const text = btn.getAttribute('data-copy-text') || '';
+  if (!text) return;
+
+  navigator.clipboard.writeText(text).then(() => {
+    btn.classList.remove('text-muted');
+    btn.classList.add('text-success');
+    setTimeout(() => {
+      btn.classList.remove('text-success');
+      btn.classList.add('text-muted');
+    }, 800);
+  });
+});
+</script>
+<style>
+  /* Modern claim links */
+  .claim-link {
+    color: inherit;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .claim-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* Copy icon button */
+  .copy-btn {
+    opacity: 0.45;
+    transition: opacity 0.15s ease, color 0.15s ease;
+  }
+
+  .copy-btn:hover {
+    opacity: 0.85;
+  }
+
+  .copy-icon {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    background-color: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 18H8V7h11v16z'/%3E%3C/svg%3E") no-repeat center / contain;
+  }
+</style>
 {% endblock %}

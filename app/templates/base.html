@@ -114,13 +114,10 @@
 
         {# If still unknown, try to compute from claim.reports when available #}
         {% if not _rnum and report.claim is defined and report.claim and report.claim.reports is defined and report.claim.reports %}
-          {# Sort reports by DOS start/end (fallback created_at, then id) #}
-          {% set _sorted = report.claim.reports
-            | sort(attribute='id')
-            | sort(attribute='created_at')
-            | sort(attribute='dos_end')
-            | sort(attribute='dos_start')
-          %}
+          {# Sort reports safely. NOTE: sorting by dos_start/dos_end can throw TypeError when any DOS is NULL.
+             We keep it deterministic by sorting by id only (and optionally created_at if present in your data).
+          #}
+          {% set _sorted = report.claim.reports | sort(attribute='id') %}
           {% for r in _sorted %}
             {% if r and (r.id is defined) and (report.id is defined) and (r.id == report.id) %}
               {% set _rnum = loop.index %}
@@ -176,6 +173,17 @@
     :root {
       /* Brand accent color (overrides the fallback defined in style.css) */
       --accent-color: {{ _accent_color }};
+    }
+
+    /* Page background/text should follow theme (avoid hard-coded Bootstrap bg-light on <body>) */
+    body.impact-body {
+      background: var(--bs-body-bg, #ffffff);
+      color: var(--bs-body-color, #111111);
+    }
+
+    .dark-mode body.impact-body {
+      background: #0f0f0f;
+      color: #ffffff;
     }
     /* Centered flash messages (fixed overlay) */
     .flash-container {
@@ -254,12 +262,242 @@
     .floating-alert-host .alert-danger {
       border-color: var(--accent-color, #dc3545);
     }
+
+    /* Sticky header: navbar + global AI bar */
+    .impact-sticky-header {
+      position: sticky;
+      top: 0;
+      z-index: 1100;
+      background-color: var(--bs-body-bg);
+    }
+
+    .dark-mode .impact-sticky-header {
+      background-color: #0f0f0f;
+    }
+
+    /* Ensure body content clears the sticky header height */
+    body {
+      scroll-padding-top: 110px; /* navbar + AI bar approx height */
+    }
+
+    .impact-main {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Florence dock layout (no backdrop; app remains interactive) */
+    :root {
+      --florence-dock-width: 420px;
+      --florence-dock-border: rgba(0,0,0,0.15);
+      --florence-dock-bg: #ffffff;
+      --florence-dock-fg: #111111;
+    }
+
+    .dark-mode {
+      --florence-dock-border: rgba(255,255,255,0.14);
+      --florence-dock-bg: #0f0f0f;
+      --florence-dock-fg: #ffffff;
+    }
+
+    .florence-dock {
+      position: fixed;
+      top: 0;
+      right: 0;
+      height: 100vh;
+      width: var(--florence-dock-width);
+      z-index: 1200;
+      background: var(--florence-dock-bg);
+      color: var(--florence-dock-fg);
+      border-left: 1px solid var(--florence-dock-border);
+      box-shadow: -12px 0 28px rgba(0,0,0,0.12);
+      transform: translateX(100%);
+      transition: transform 180ms ease;
+      display: block;
+    }
+
+    body.florence-open .florence-dock {
+      transform: translateX(0);
+    }
+
+    .florence-dock-inner {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .florence-dock-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.75rem 0.75rem;
+      border-bottom: 1px solid var(--florence-dock-border);
+    }
+
+    .florence-dock-body {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .florence-chat-messages {
+      padding: 0.75rem;
+      flex: 1 1 auto;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .florence-chat-input {
+      border-top: 1px solid var(--florence-dock-border);
+      padding: 0.5rem;
+      background: var(--florence-dock-bg);
+    }
+
+    /* Desktop: shift app content so both app + chat are usable */
+    @media (min-width: 992px) {
+      body.florence-open .impact-sticky-header,
+      body.florence-open .impact-main {
+        margin-right: var(--florence-dock-width);
+      }
+    }
+
+    /* Small screens: overlay (no shift) */
+    @media (max-width: 991.98px) {
+      :root { --florence-dock-width: min(92vw, 420px); }
+      body.florence-open .impact-sticky-header,
+      body.florence-open .impact-main {
+        margin-right: 0;
+      }
+    }
+
+    .dark-mode .florence-dock .form-control {
+      background-color: #111111;
+      color: #ffffff;
+      border-color: rgba(255,255,255,0.18);
+    }
+
+    .dark-mode .florence-dock .form-control::placeholder {
+      color: rgba(255,255,255,0.55);
+    }
+
+    /* Florence dock buttons should remain readable in dark mode */
+    .dark-mode .florence-dock .btn-outline-secondary {
+      color: rgba(255, 255, 255, 0.85);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .dark-mode .florence-dock .btn-outline-secondary:hover {
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.45);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    /* Florence dock separators in dark mode */
+    .dark-mode .florence-dock-header,
+    .dark-mode .florence-chat-input {
+      border-color: rgba(255,255,255,0.14);
+    }
+
+    .florence-citations {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+    }
+
+    .florence-citation-pill {
+      background: rgba(13,110,253,0.15);
+      border: 1px solid rgba(13,110,253,0.35);
+      color: inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .florence-citation-pill:hover {
+      background: rgba(13,110,253,0.25);
+    }
+
+    .dark-mode .florence-citation-pill {
+      background: rgba(13,110,253,0.25);
+    }
+
+    /* Navbar brand width stabilization (fixed column, no reflow) */
+    .impact-brand {
+      width: 320px;
+      min-width: 320px;
+      max-width: 320px;
+      flex: 0 0 320px;        /* hard lock width so nav items never shift */
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .impact-brand-text {
+      display: block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 1.35rem;
+      line-height: 1.15;
+    }
+
+    .impact-brand-company {
+      color: #ffffff;
+    }
+
+    .impact-brand-claimant {
+      color: var(--accent-color);
+      font-weight: 600;
+    }
+
+    .navbar .container-fluid {
+      flex-wrap: nowrap;
+    }
+
+    /* Flatpickr month navigation arrows visibility + theming */
+    .flatpickr-calendar .flatpickr-months .flatpickr-prev-month,
+    .flatpickr-calendar .flatpickr-months .flatpickr-next-month {
+      padding: 6px;
+    }
+
+    /* Light mode arrows */
+    .flatpickr-calendar .flatpickr-months svg {
+      fill: #000000;
+      stroke: #000000;
+      stroke-width: 3px;
+    }
+
+    /* Dark mode arrows */
+    .dark-mode .flatpickr-calendar .flatpickr-months svg {
+      fill: #ffffff;
+      stroke: #ffffff;
+      stroke-width: 3px;
+    }
+
+    /* Hover accent color */
+    .flatpickr-calendar .flatpickr-months .flatpickr-prev-month:hover svg,
+    .flatpickr-calendar .flatpickr-months .flatpickr-next-month:hover svg {
+      fill: var(--accent-color);
+      stroke: var(--accent-color);
+    }
+
   </style>
 </head>
-<body class="bg-light">
+<body
+  class="impact-body"
+  {% if claim is defined and claim %}
+    data-claim-id="{{ claim.id }}"
+  {% elif invoice is defined and invoice and invoice.claim %}
+    data-claim-id="{{ invoice.claim.id }}"
+    data-invoice-id="{{ invoice.id }}"
+  {% elif report is defined and report and report.claim %}
+    data-claim-id="{{ report.claim.id }}"
+    data-report-id="{{ report.id }}"
+  {% endif %}
+>
 
   <!-- Top navbar -->
-  <header>
+  <header class="impact-sticky-header">
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
       <div class="container-fluid">
         <!-- Brand / Logo -->
@@ -275,8 +513,24 @@
         {% if brand_name_clean|length > 80 %}
           {% set brand_name_clean = brand_name_clean[:77] ~ '…' %}
         {% endif %}
-        <a class="navbar-brand d-flex flex-column align-items-center" href="{{ url_for('main.claims_list') }}">
-          <span style="line-height: 1.1;">{{ brand_name_clean }}</span>
+        <a class="navbar-brand d-flex flex-column align-items-center impact-brand" href="{{ url_for('main.claims_list') }}">
+          {% if claim is defined and claim %}
+            <span class="impact-brand-text impact-brand-claimant">
+              {{ claim.claimant_last_name }}, {{ claim.claimant_first_name }}
+            </span>
+          {% elif invoice is defined and invoice and invoice.claim %}
+            <span class="impact-brand-text impact-brand-claimant">
+              {{ invoice.claim.claimant_last_name }}, {{ invoice.claim.claimant_first_name }}
+            </span>
+          {% elif report is defined and report and report.claim %}
+            <span class="impact-brand-text impact-brand-claimant">
+              {{ report.claim.claimant_last_name }}, {{ report.claim.claimant_first_name }}
+            </span>
+          {% else %}
+            <span class="impact-brand-text impact-brand-company">
+              {{ brand_name_clean }}
+            </span>
+          {% endif %}
         </a>
 
         <!-- Mobile nav toggle -->
@@ -322,14 +576,20 @@
               <a class="nav-link {% if active_page == 'analysis' %}active{% endif %}"
                  href="{{ url_for('main.analysis_view') }}">Analysis</a>
             </li>
-            <li class="nav-item">
-              <a class="nav-link {% if active_page == 'settings' %}active{% endif %}"
-                 href="{{ url_for('main.settings_view') }}">Settings</a>
-            </li>
           </ul>
 
           <!-- Right side: theme toggle + version -->
           <div class="d-flex align-items-center gap-2">
+          <button
+            id="florenceChatToggle"
+            type="button"
+            class="btn btn-sm btn-outline-light"
+            aria-controls="florenceChat"
+            aria-expanded="false"
+            title="Open Florence chat"
+          >
+            Florence
+          </button>
             <button id="themeToggle"
                     type="button"
                     class="btn btn-sm btn-outline-light"
@@ -342,11 +602,43 @@
           </div>
         </div>
       </div>
-    </nav>
+  </nav>
+
+<!-- Florence Chat (docked, persistent sidebar) -->
+<aside id="florenceChat" class="florence-dock" aria-labelledby="florenceChatLabel" aria-hidden="true">
+  <div class="florence-dock-inner">
+    <div class="florence-dock-header">
+      <h5 class="m-0" id="florenceChatLabel">Florence</h5>
+      <div class="d-flex gap-2">
+        <button id="florenceChatCopyBtn" type="button" class="btn btn-sm btn-outline-secondary" title="Copy latest Florence reply">Copy</button>
+        <button id="florenceChatClearBtn" type="button" class="btn btn-sm btn-outline-secondary" title="Clear chat">Clear</button>
+        <button id="florenceChatCloseBtn" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close">✕</button>
+      </div>
+    </div>
+
+    <div class="florence-dock-body">
+      <div id="florenceChatMessages" class="florence-chat-messages"></div>
+
+      <div class="florence-chat-input">
+        <form id="florenceChatForm" class="d-flex gap-2" autocomplete="off">
+          <input
+            type="text"
+            id="florenceChatInput"
+            class="form-control"
+            placeholder="Ask Florence…"
+            aria-label="Ask Florence"
+          >
+          <button type="submit" class="btn btn-outline-secondary">Send</button>
+        </form>
+        <div id="florenceChatHint" class="text-muted small mt-1"></div>
+      </div>
+    </div>
+  </div>
+</aside>
   </header>
 
   <!-- Page content -->
-  <main class="container-fluid py-3">
+  <main class="container-fluid py-3 impact-main">
 
     <!-- Global floating alert host (JS-managed) -->
     <div id="floatingAlertHost" class="floating-alert-host" aria-live="polite" aria-atomic="true"></div>
@@ -507,6 +799,566 @@
       };
     })();
   </script>
+  <script>
+    // Florence chat sidebar (persistent, app-wide)
+    document.addEventListener('DOMContentLoaded', function () {
+      var chatEl = document.getElementById('florenceChat');
+      var messagesEl = document.getElementById('florenceChatMessages');
+      var formEl = document.getElementById('florenceChatForm');
+      var inputEl = document.getElementById('florenceChatInput');
+      var hintEl = document.getElementById('florenceChatHint');
+      var clearBtn = document.getElementById('florenceChatClearBtn');
+      var copyBtn = document.getElementById('florenceChatCopyBtn');
+      var toggleBtn = document.getElementById('florenceChatToggle');
+      var closeBtn = document.getElementById('florenceChatCloseBtn');
+
+      if (!chatEl || !messagesEl || !formEl || !inputEl) return;
+
+      // Docked chat: no Bootstrap offcanvas; we manage open/close by toggling body.florence-open
+      // Infer lightweight context (matches /api/florence/query expectations)
+      var context = {};
+      if (document.body.dataset.claimId) {
+        context.page = 'claim_detail';
+        context.claim_id = document.body.dataset.claimId;
+      } else if (document.body.dataset.invoiceId) {
+        context.page = 'invoice_detail';
+        context.invoice_id = document.body.dataset.invoiceId;
+      } else if (document.body.dataset.reportId) {
+        context.page = 'report_detail';
+        context.report_id = document.body.dataset.reportId;
+      } else {
+        // Default to system scope, but try to infer which index page we're on.
+        var path = (window.location && window.location.pathname) ? String(window.location.pathname) : '';
+        if (path === '/claims' || path.indexOf('/claims') === 0) {
+          context.page = 'claims_index';
+        } else if (path === '/billing' || path.indexOf('/billing') === 0) {
+          context.page = 'billing_index';
+        } else if (path === '/carriers' || path.indexOf('/carriers') === 0) {
+          context.page = 'carriers_index';
+        } else if (path === '/employers' || path.indexOf('/employers') === 0) {
+          context.page = 'employers_index';
+        } else if (path === '/providers' || path.indexOf('/providers') === 0) {
+          context.page = 'providers_index';
+        } else {
+          context.page = 'system';
+        }
+      }
+
+      // Build a lightweight, privacy-safe snapshot of the current page when we're on an index view.
+      // This lets Florence answer simple counting/listing questions without needing per-claim retrieval.
+      function buildPageSnapshot(ctx) {
+        try {
+          var snap = {
+            url: window.location.pathname,
+            title: document.title,
+            page: (ctx && ctx.page) ? ctx.page : 'system'
+          };
+
+          // Claims index: scrape the visible table (counts + basic rows)
+          if (snap.page === 'claims_index') {
+            var table = document.querySelector('table');
+            var rows = table ? table.querySelectorAll('tbody tr') : null;
+            var claims = [];
+            var openCount = 0;
+            var closedCount = 0;
+
+            if (rows && rows.length) {
+              rows.forEach(function (tr) {
+                try {
+                  var tds = tr.querySelectorAll('td');
+                  if (!tds || !tds.length) return;
+
+                  // Column order in your claims list is: Claim #, Claimant, Carrier, Employer, Status, ...
+                  var claimNo = (tds[0] && tds[0].innerText) ? String(tds[0].innerText).trim() : '';
+                  var claimant = (tds[1] && tds[1].innerText) ? String(tds[1].innerText).trim() : '';
+                  var carrier = (tds[2] && tds[2].innerText) ? String(tds[2].innerText).trim() : '';
+                  var employer = (tds[3] && tds[3].innerText) ? String(tds[3].innerText).trim() : '';
+
+                  // Status is usually a badge inside the 5th cell
+                  var statusText = '';
+                  if (tds[4]) {
+                    statusText = String(tds[4].innerText || '').trim();
+                  }
+
+                  // Try to capture claim id from the first link (href like /claims/<id>)
+                  var claimId = null;
+                  var a = tds[0] ? tds[0].querySelector('a[href]') : null;
+                  if (a && a.getAttribute) {
+                    var href = String(a.getAttribute('href') || '');
+                    var m = href.match(/\/claims\/(\d+)/);
+                    if (m) claimId = m[1];
+                  }
+
+                  var statusLower = String(statusText || '').toLowerCase();
+                  if (statusLower.indexOf('open') !== -1) openCount += 1;
+                  if (statusLower.indexOf('closed') !== -1) closedCount += 1;
+
+                  claims.push({
+                    claim_id: claimId,
+                    claim_number: claimNo,
+                    claimant: claimant,
+                    carrier: carrier,
+                    employer: employer,
+                    status: statusText
+                  });
+                } catch (eRow) {
+                  // ignore a row
+                }
+              });
+            }
+
+            snap.claims = claims;
+            snap.counts = {
+              total_visible: claims.length,
+              open_visible: openCount,
+              closed_visible: closedCount
+            };
+          }
+
+          // Billing index: scrape visible invoices table (optional, but cheap)
+          if (snap.page === 'billing_index') {
+            var tableB = document.querySelector('table');
+            var rowsB = tableB ? tableB.querySelectorAll('tbody tr') : null;
+            var invoices = [];
+            if (rowsB && rowsB.length) {
+              rowsB.forEach(function (tr) {
+                try {
+                  var tds = tr.querySelectorAll('td');
+                  if (!tds || !tds.length) return;
+                  var invoiceNo = (tds[0] && tds[0].innerText) ? String(tds[0].innerText).trim() : '';
+                  var claim = (tds[1] && tds[1].innerText) ? String(tds[1].innerText).trim() : '';
+                  var carrier = (tds[2] && tds[2].innerText) ? String(tds[2].innerText).trim() : '';
+                  var status = (tds[3] && tds[3].innerText) ? String(tds[3].innerText).trim() : '';
+                  invoices.push({ invoice: invoiceNo, claim: claim, carrier: carrier, status: status });
+                } catch (eRowB) {
+                  // ignore
+                }
+              });
+            }
+            snap.invoices = invoices;
+            snap.counts = snap.counts || {};
+            snap.counts.total_visible = invoices.length;
+          }
+
+          return snap;
+        } catch (e) {
+          return { url: window.location.pathname, title: document.title, page: (ctx && ctx.page) ? ctx.page : 'system' };
+        }
+      }
+
+      // Defensive: avoid sending null/empty IDs (prevents server-side "NULL primary key" warnings)
+      ['claim_id','invoice_id','report_id'].forEach(function (k) {
+        try {
+          if (context[k] === null || context[k] === undefined || String(context[k]).trim() === '' || String(context[k]).toLowerCase() === 'none') {
+            delete context[k];
+          }
+        } catch (e) {
+          // ignore
+        }
+      });
+
+      var scopeKey = (context.claim_id || context.invoice_id || context.report_id || 'system');
+      var storageKey = 'florence_chat:' + scopeKey;
+      var openKey = 'florence_chat_open';
+
+      // Thread state persistence (required for clarifying-question followups)
+      // Store separately from message history; per-scope so claim threads don't bleed.
+      var threadKey = 'florence_thread_state:' + scopeKey;
+
+      function loadThreadState() {
+        try {
+          var raw = window.localStorage.getItem(threadKey);
+          if (!raw) return null;
+          var obj = safeJsonParse(raw, null);
+          return obj && typeof obj === 'object' ? obj : null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function saveThreadState(state) {
+        try {
+          if (!state || typeof state !== 'object') {
+            window.localStorage.removeItem(threadKey);
+            return;
+          }
+          window.localStorage.setItem(threadKey, JSON.stringify(state));
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      function safeJsonParse(s, fallback) {
+        try { return JSON.parse(s); } catch (e) { return fallback; }
+      }
+
+      function loadHistory() {
+        try {
+          var raw = window.localStorage.getItem(storageKey);
+          var arr = safeJsonParse(raw, []);
+          return Array.isArray(arr) ? arr : [];
+        } catch (e) {
+          return [];
+        }
+      }
+
+      function saveHistory(arr) {
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(arr.slice(-100)));
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function renderMessage(m) {
+        var who = (m && m.role) ? String(m.role) : 'assistant';
+        var text = (m && m.text) ? String(m.text) : '';
+
+        var wrap = document.createElement('div');
+        wrap.className = 'mb-2';
+
+        var bubble = document.createElement('div');
+        bubble.className = 'p-2 rounded';
+        bubble.style.whiteSpace = 'pre-wrap';
+
+        if (who === 'user') {
+          bubble.style.background = 'rgba(13,110,253,0.12)';
+          bubble.style.border = '1px solid rgba(13,110,253,0.25)';
+          bubble.innerHTML = '<strong>You:</strong> ' + escapeHtml(text);
+        } else {
+          bubble.style.background = 'rgba(214,135,31,0.10)';
+          bubble.style.border = '1px solid rgba(214,135,31,0.30)';
+
+          // Main answer text
+          bubble.innerHTML = '<strong>Florence:</strong> ' + escapeHtml(text);
+
+          // --- INSERT ---
+          // Confidence badge (compact)
+          if (typeof m.confidence === 'number') {
+            var confWrap = document.createElement('div');
+            confWrap.className = 'mt-1';
+
+            var confBadge = document.createElement('span');
+            confBadge.className = 'badge bg-secondary';
+            confBadge.textContent = 'Confidence: ' + m.confidence.toFixed(2);
+
+            confWrap.appendChild(confBadge);
+            bubble.appendChild(confWrap);
+          }
+
+          // Citations block
+          if (Array.isArray(m.citations) && m.citations.length > 0) {
+            var citesWrap = document.createElement('div');
+            citesWrap.className = 'mt-2';
+
+            var label = document.createElement('div');
+            label.className = 'text-muted small mb-1';
+            label.textContent = 'Sources:';
+            citesWrap.appendChild(label);
+
+            var cites = document.createElement('div');
+            cites.className = 'florence-citations';
+
+            m.citations.forEach(function (c, idx) {
+              if (!c) return;
+
+              var pill = document.createElement('a');
+              pill.className = 'badge rounded-pill florence-citation-pill';
+
+              if (typeof c === 'string') {
+                pill.textContent = c;
+                pill.href = '#';
+              } else {
+                pill.textContent = c.label || ('Source ' + (idx + 1));
+                pill.href = c.url || '#';
+                if (c.scope || c.type) {
+                  pill.title = (c.scope || c.type);
+                }
+              }
+
+              pill.target = '_blank';
+              cites.appendChild(pill);
+            });
+
+            citesWrap.appendChild(cites);
+            bubble.appendChild(citesWrap);
+          }
+          // --- END INSERT ---
+        }
+
+        wrap.appendChild(bubble);
+        messagesEl.appendChild(wrap);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function renderAll() {
+        messagesEl.innerHTML = '';
+        var hist = loadHistory();
+        hist.forEach(renderMessage);
+
+        if (hintEl) {
+          hintEl.textContent = 'Context: ' + (context.page || 'system') + ' · scope: ' + scopeKey;
+        }
+      }
+
+      function push(role, text, meta) {
+        var hist = loadHistory();
+        var item = { role: role, text: text, ts: Date.now() };
+
+        if (role === 'assistant' && meta && typeof meta === 'object') {
+          if (typeof meta.confidence === 'number') item.confidence = meta.confidence;
+          if (Array.isArray(meta.citations)) item.citations = meta.citations;
+          if (meta.is_guess === true) item.is_guess = true;
+        }
+
+        hist.push(item);
+        saveHistory(hist);
+        renderMessage(item);
+      }
+
+      function getLatestAssistantText() {
+        var hist = loadHistory();
+        for (var i = hist.length - 1; i >= 0; i--) {
+          if (hist[i] && hist[i].role === 'assistant' && hist[i].text) {
+            return String(hist[i].text);
+          }
+        }
+        return '';
+      }
+
+      async function copyTextToClipboard(text) {
+        if (!text) return false;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+          }
+        } catch (e) {}
+
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed';
+          ta.style.top = '-9999px';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          return true;
+        } catch (e) {
+          return false;
+        }
+      }
+
+
+      // Initial render
+      renderAll();
+
+      function setOpen(isOpen) {
+        try {
+          document.body.classList.toggle('florence-open', !!isOpen);
+          chatEl.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+          if (toggleBtn) {
+            toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+          }
+          try { window.localStorage.setItem(openKey, isOpen ? '1' : '0'); } catch (e) {}
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      function toggleOpen() {
+        var isOpen = document.body.classList.contains('florence-open');
+        setOpen(!isOpen);
+        if (!isOpen) {
+          window.setTimeout(function () {
+            try { inputEl && inputEl.focus(); } catch (e) {}
+          }, 50);
+        }
+      }
+
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', function (e) {
+          e.preventDefault();
+          toggleOpen();
+        });
+      }
+
+      if (closeBtn) {
+        closeBtn.addEventListener('click', function (e) {
+          e.preventDefault();
+          setOpen(false);
+        });
+      }
+
+      // Restore open state from storage
+      try {
+        var wasOpen = window.localStorage.getItem(openKey);
+        if (wasOpen === '1') setOpen(true);
+      } catch (e) {}
+
+      // Clear
+      if (clearBtn) {
+        clearBtn.addEventListener('click', function () {
+          try { window.localStorage.removeItem(storageKey); } catch (e) {}
+          try { window.localStorage.removeItem(threadKey); } catch (e) {}
+          renderAll();
+          if (window.showFloatingAlert) {
+            window.showFloatingAlert('Florence chat cleared', 'info', { autoDismissMs: 1200 });
+          }
+        });
+      }
+
+      // Copy latest assistant reply
+      if (copyBtn) {
+        copyBtn.addEventListener('click', async function () {
+          var txt = getLatestAssistantText().trim();
+          if (!txt) return;
+          var ok = await copyTextToClipboard(txt);
+          if (ok && window.showFloatingAlert) {
+            window.showFloatingAlert('Copied latest Florence reply', 'info', { autoDismissMs: 1200 });
+          }
+        });
+      }
+
+      // Submit
+      formEl.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var q = (inputEl.value || '').trim();
+        if (!q) return;
+
+        push('user', q);
+        inputEl.value = '';
+        inputEl.disabled = true;
+
+        try {
+          // Load thread state + any pending clarification intent (follow-up answers like "both").
+          var _threadState = loadThreadState() || {};
+          var _pendingIntent = null;
+          try {
+            if (_threadState && typeof _threadState === 'object') {
+              if (typeof _threadState.pending_intent === 'string' && _threadState.pending_intent.trim() !== '') {
+                _pendingIntent = _threadState.pending_intent.trim();
+              } else if (typeof _threadState.pendingIntent === 'string' && _threadState.pendingIntent.trim() !== '') {
+                // tolerate legacy camelCase
+                _pendingIntent = _threadState.pendingIntent.trim();
+              }
+            }
+          } catch (e) {
+            _pendingIntent = null;
+          }
+
+          var pageSnap = (function () {
+            var snap = buildPageSnapshot(context);
+            // Always include the key IDs we already expose via body dataset
+            snap.claim_id = document.body.dataset.claimId || null;
+            snap.invoice_id = document.body.dataset.invoiceId || null;
+            snap.report_id = document.body.dataset.reportId || null;
+            return snap;
+          })();
+
+          var resp = await fetch('/api/florence/query', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: q,
+              // Keep both names for compatibility with older/newer backends
+              context: context,
+              page_context: context,
+              thread_state: _threadState,
+              pending_intent: _pendingIntent,
+              page_data: pageSnap
+            })
+          });
+
+          if (!resp.ok) {
+            throw new Error('Florence request failed');
+          }
+
+          var data = await resp.json();
+          if (data && data.ok === false) {
+            throw new Error(data.error || data.message || 'Florence returned ok=false');
+          }
+
+          // Persist thread state so follow-up answers (e.g., "both") resolve pending clarifiers.
+          // Also persist a lightweight pending_intent string when the server asks a clarifying question.
+          try {
+            var _state = loadThreadState() || {};
+            if (!_state || typeof _state !== 'object') _state = {};
+
+            // Server may send a full state object
+            if (data && data.thread_state_update && typeof data.thread_state_update === 'object') {
+              _state = data.thread_state_update;
+            } else if (data && data.thread_state && typeof data.thread_state === 'object') {
+              _state = data.thread_state;
+            }
+
+            // Server may send a standalone pending intent
+            var pi = null;
+            if (data && typeof data.pending_intent === 'string') {
+              pi = data.pending_intent.trim();
+            } else if (data && typeof data.pendingIntent === 'string') {
+              pi = data.pendingIntent.trim();
+            } else if (data && data.thread_state_update && typeof data.thread_state_update.pending_intent === 'string') {
+              pi = data.thread_state_update.pending_intent.trim();
+            } else if (data && data.thread_state && typeof data.thread_state.pending_intent === 'string') {
+              pi = data.thread_state.pending_intent.trim();
+            }
+
+            // Normalize: store if non-empty; clear if explicitly empty string
+            if (pi !== null) {
+              if (pi) {
+                _state.pending_intent = pi;
+                _state.pendingIntent = pi; // keep a mirror for older code
+              } else {
+                try { delete _state.pending_intent; } catch (e) {}
+                try { delete _state.pendingIntent; } catch (e) {}
+              }
+            }
+
+            saveThreadState(_state);
+          } catch (e) {
+            // ignore
+          }
+
+          var msg = '';
+          if (data && typeof data.answer === 'string' && data.answer.trim() !== '') {
+            msg = data.answer;
+          } else if (data && typeof data.text === 'string' && data.text.trim() !== '') {
+            msg = data.text;
+          } else if (data && typeof data.message === 'string' && data.message.trim() !== '') {
+            msg = data.message;
+          } else {
+            msg = 'Florence responded, but returned an empty/unknown payload.';
+          }
+
+          push('assistant', msg, {
+            confidence: (typeof data.confidence === 'number') ? data.confidence : null,
+            citations: Array.isArray(data.citations) ? data.citations : [],
+            is_guess: data.is_guess === true
+          });
+
+        } catch (err) {
+          push('assistant', 'Florence error: ' + (err && err.message ? err.message : String(err)));
+        } finally {
+          inputEl.disabled = false;
+          inputEl.focus();
+        }
+      });
+    });
+  </script>
 
   <!-- Flatpickr date picker JS (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -526,6 +1378,19 @@
 
         window.flatpickr(el, {
           allowInput: true,
+          onInput: function(selectedDates, dateStr, instance) {
+            var raw = (instance.input && instance.input.value) ? instance.input.value.trim() : '';
+            if (!raw) return;
+
+            // Normalize MMDDYYYY → MM/DD/YYYY while typing
+            var digits = raw.replace(/\D/g, '');
+            if (digits.length === 8) {
+              var mm = digits.slice(0, 2);
+              var dd = digits.slice(2, 4);
+              var yy = digits.slice(4, 8);
+              instance.input.value = mm + '/' + dd + '/' + yy;
+            }
+          },
           dateFormat: 'm/d/Y',
           // Keep behavior consistent with our UI expectations
           // (no time selection here; we can enable time per-field later).
@@ -538,32 +1403,36 @@
             if (!dateStr) return null;
             var s = String(dateStr).trim();
 
-            // Accept ISO: YYYY-MM-DD
+            // MM/DD/YYYY or M/D/YYYY
+            var mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (mdy) {
+              return new Date(
+                parseInt(mdy[3], 10),
+                parseInt(mdy[1], 10) - 1,
+                parseInt(mdy[2], 10)
+              );
+            }
+
+            // ISO YYYY-MM-DD
             var iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
             if (iso) {
-              return new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10));
+              return new Date(
+                parseInt(iso[1], 10),
+                parseInt(iso[2], 10) - 1,
+                parseInt(iso[3], 10)
+              );
             }
 
-            // Accept M/D/YYYY or MM/DD/YYYY or MM/DD/YY
-            var mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
-            if (mdy) {
-              var mm = parseInt(mdy[1], 10);
-              var dd = parseInt(mdy[2], 10);
-              var yy = parseInt(mdy[3], 10);
-              if (yy < 100) yy = 2000 + yy; // 25 -> 2025
-              return new Date(yy, mm - 1, dd);
-            }
-
-            // Accept 8 digits: MMDDYYYY (or pasted digits)
+            // Raw MMDDYYYY (no slashes)
             var digits = s.replace(/\D/g, '');
             if (digits.length === 8) {
-              var mm2 = parseInt(digits.slice(0, 2), 10);
-              var dd2 = parseInt(digits.slice(2, 4), 10);
-              var yy2 = parseInt(digits.slice(4, 8), 10);
-              return new Date(yy2, mm2 - 1, dd2);
+              return new Date(
+                parseInt(digits.slice(4, 8), 10),
+                parseInt(digits.slice(0, 2), 10) - 1,
+                parseInt(digits.slice(2, 4), 10)
+              );
             }
 
-            // Fall back to Flatpickr's default parser
             try {
               return window.flatpickr.parseDate(s, format);
             } catch (e) {
@@ -1080,4 +1949,3 @@
   </script>
   {% endblock %}
 </body>
-</html>
