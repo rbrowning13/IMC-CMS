@@ -249,6 +249,27 @@
 
   @media print {
     @page { margin: 0.6in; }
+    @page {
+      @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        font-size: 10px;
+        color: #6b7280;
+      }
+      @bottom-left {
+        content: 
+        {%- if report.report_type == 'initial' -%}
+          "IR1.0"
+        {%- elif report.report_type == 'progress' -%}
+          "PR1.0"
+        {%- elif report.report_type == 'closure' -%}
+          "CR1.0"
+        {%- else -%}
+          ""
+        {%- endif -%};
+        font-size: 10px;
+        color: #6b7280;
+      }
+    }
     html, body { background: #fff !important; }
     header, nav, .navbar, .navbar-brand, footer {
       display: none !important;
