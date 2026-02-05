@@ -1,5 +1,4 @@
-# Ensure Any is imported for type annotations
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple, Iterable, Sequence
 # -----------------------------------------------------------------------------
 # Deterministic Clarity routing (fast-paths that do NOT use the LLM)
 # -----------------------------------------------------------------------------
@@ -197,7 +196,6 @@ def _billable_is_invoiced(b: Dict[str, Any]) -> bool:
 # -----------------------------------------------------------------------------
 # Deterministic billable aggregation - authoritative numeric rollups
 # -----------------------------------------------------------------------------
-from typing import List, Dict, Any
 
 def aggregate_billables(billables: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -415,9 +413,7 @@ Do NOT put vector DB logic or model-specific code directly in this file.
 from dataclasses import dataclass
 from datetime import date, datetime
 import json
-import logging
 import os
-import re
 
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -590,7 +586,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
     """
     Universal Clarity entry point.
     Guarantees:
-    - Local-only inference (no OpenAI)
+    - Local-only inference (no remote LLM)
     - Explicit model provenance in every response
     - No persistence / no side effects
     - Uses Clarity-compatible retrieval
@@ -1650,11 +1646,11 @@ def _env_truthy(name: str, default: str = "") -> bool:
 def _ai_globally_disabled() -> bool:
     """Global kill-switch for AI features (in addition to Settings.ai_enabled).
 
-    Legacy env var name: OPENAI_DISABLED.
+    Legacy env var retained for backward compatibility: OPENAI_DISABLED.
 
     Behavior:
     - If OPENAI_DISABLED is not truthy -> AI allowed.
-    - If OPENAI_DISABLED is truthy -> block ONLY non-local backends (remote/OpenAI).
+    - If OPENAI_DISABLED is truthy -> block ONLY non-local backends (remote/remote LLM).
       Local LLM usage should still work.
     """
     if not _env_truthy("OPENAI_DISABLED", "0"):
