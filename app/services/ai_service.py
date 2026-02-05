@@ -1,5 +1,5 @@
 # Ensure Any is imported for type annotations
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 # -----------------------------------------------------------------------------
 # Deterministic Clarity routing (fast-paths that do NOT use the LLM)
 # -----------------------------------------------------------------------------
@@ -778,8 +778,8 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
         unpaid = total - paid
 
         qn = _qnorm(question)
-        wants_paid = any(k in qn for k in ["paid", "settled"]) 
-        wants_unpaid = any(k in qn for k in ["unpaid", "outstanding", "open", "due"]) 
+        wants_paid = any(k in qn for k in ["paid", "settled"])
+        wants_unpaid = any(k in qn for k in ["unpaid", "outstanding", "open", "due"])
         wants_draft = "draft" in qn
 
         if wants_paid and not (wants_unpaid or wants_draft):
