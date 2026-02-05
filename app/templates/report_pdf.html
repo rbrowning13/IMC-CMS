@@ -132,14 +132,14 @@
 
 {# Status / Treatment Plan #}
 {% if report.status_treatment_plan %}
-  <h5>Status / Treatment Plan</h5>
+  <h5>Current Status and Care Coordination</h5>
   <p>{{ report.status_treatment_plan|nl2br }}</p>
   <hr>
 {% endif %}
 
 {# Work Status #}
 {% if report.work_status %}
-  <h5>Work Status</h5>
+  <h5>Work and Employment Overview</h5>
   <p>{{ report.work_status|nl2br }}</p>
   <hr>
 {% endif %}
@@ -177,7 +177,7 @@
   {% endif %}
 
   {% if report.initial_coexisting_conditions %}
-    <h5>Co-existing Conditions</h5>
+    <h5>Health and Lifestyle Overview</h5>
     <p>{{ report.initial_coexisting_conditions|nl2br }}</p>
     <hr>
   {% endif %}

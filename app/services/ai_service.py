@@ -1,5 +1,7 @@
+# Ensure Any is imported for type annotations
+from typing import Any
 # -----------------------------------------------------------------------------
-# Deterministic Florence routing (fast-paths that do NOT use the LLM)
+# Deterministic Clarity routing (fast-paths that do NOT use the LLM)
 # -----------------------------------------------------------------------------
 
 def _qnorm(question: str) -> str:
@@ -357,7 +359,7 @@ def _claim_billables_rollup_from_context(context: Dict[str, Any]) -> Dict[str, A
 
 
 def _deterministic_capabilities() -> Dict[str, Any]:
-    """What Florence can do today (grounded in current backend wiring)."""
+    """What Clarity can do today (grounded in current backend wiring)."""
     return {
         "read": [
             "Summarize a claim (safe, non-identifying)",
@@ -373,23 +375,10 @@ def _deterministic_capabilities() -> Dict[str, Any]:
             "Rewrite/shorten/expand an existing field value (no auto-save)",
         ],
         "notes": [
-            "Answers are grounded in retrieved claim context; if context is missing a field, Florence will say so.",
+            "Answers are grounded in retrieved claim context; if context is missing a field, Clarity will say so.",
             "PHI is intentionally minimized in prompts (no claimant name/DOB/claim #/contact identifiers).",
         ],
     }
-##############################################################################
-# Florence Public API Contract (Compatibility Layer)
-# ----------------------------------------------------------------------------
-# This section guarantees the Florence-facing contract for AI services.
-# The following public functions must exist and comply with the Florence API:
-#
-#   - generate(prompt: str) -> Dict
-#   - retrieve(context: dict, question: str) -> Dict
-#   - ask_florence(question: str, context: dict) -> Dict
-#
-# See individual docstrings for contract details.
-##############################################################################
-
 """AI service layer for Impact Medical CMS.
 
 This module is intentionally split from routes/templates so we can:
@@ -449,7 +438,7 @@ def _try_chat_engine(*, question: str, context: Dict[str, Any]) -> Optional[Dict
     We intentionally keep this loose/defensive so ai_service.py can integrate
     with evolving chat_engine APIs without hard coupling.
 
-    Expected return (preferred): Florence-shaped dict with at least `answer`.
+    Expected return (preferred): Clarity-shaped dict with at least `answer`.
 
     If chat_engine is not present or cannot handle the request, returns None.
     """
@@ -502,14 +491,14 @@ def _try_chat_engine(*, question: str, context: Dict[str, Any]) -> Optional[Dict
             "answer_mode": "chat",
         }
 
-    # If it already returns a Florence-shaped dict, pass it through.
+    # If it already returns a Clarity-shaped dict, pass it through.
     if isinstance(res, dict) and ("answer" in res or "citations" in res or "answer_mode" in res):
         return res
 
     return None
 
 # -----------------------------------------------------------------------------
-# Public universal Florence entry point
+# Public universal Clarity entry point
 # -----------------------------------------------------------------------------
 
 def _context_to_prompt_text(ctx: Dict[str, Any]) -> str:
@@ -521,12 +510,12 @@ def _context_to_prompt_text(ctx: Dict[str, Any]) -> str:
 
 def ask(*, question: str, context: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Backward-compatible generic AI entry point.
+    Generic AI entry point.
 
-    This is used by Florence and any legacy callers expecting ai_service.ask().
-    It delegates to ask_florence() and returns its result unchanged.
+    This is used by Clarity and any callers expecting ai_service.ask().
+    It delegates to ask_clarity() and returns its result unchanged.
     """
-    return ask_florence(
+    return ask_clarity(
         question=question,
         context=context,
     )
@@ -534,7 +523,7 @@ def ask(*, question: str, context: Dict[str, Any]) -> Dict[str, Any]:
 
 def generate(prompt: str) -> Dict[str, Any]:
     """
-    Florence compatibility wrapper.
+    Clarity generation entry point.
     Expects: ai_service.generate(prompt=...)
     Returns a dict with keys:
         { "text", "citations", "is_guess", "confidence", "model_source", "model" }
@@ -553,7 +542,7 @@ def generate(prompt: str) -> Dict[str, Any]:
         "answer_mode": normalized.get("answer_mode"),
     }
 
-def ask_florence(question: str, context: dict) -> Dict[str, Any]:
+def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
     # ------------------------------------------------------------------
     # System-level invoice helpers (best-effort across schema variants)
     # ------------------------------------------------------------------
@@ -599,12 +588,12 @@ def ask_florence(question: str, context: dict) -> Dict[str, Any]:
         ]
         return any(n in a for n in needles)
     """
-    Universal Florence entry point.
+    Universal Clarity entry point.
     Guarantees:
     - Local-only inference (no OpenAI)
     - Explicit model provenance in every response
     - No persistence / no side effects
-    - Uses Florence-compatible retrieval
+    - Uses Clarity-compatible retrieval
     """
     # ------------------------------------------------------------------
     # Pending-intent follow-up resolution (clarifying questions)
@@ -892,7 +881,7 @@ def ask_florence(question: str, context: dict) -> Dict[str, Any]:
     # det_intent already set above to avoid recomputing
     ql = _qnorm(question)
 
-    # Always use this module's retrieve() for Florence context
+    # Always use this module's retrieve() for Clarity context
     claim_id = context.get("claim_id")
     retrieval_data = None
     if claim_id:
@@ -1255,10 +1244,10 @@ def ask_florence(question: str, context: dict) -> Dict[str, Any]:
     # End deterministic router — fall through to LLM
     # ---------------------------------------------------------------------
 
-    # Florence debug mode: only when explicitly requested
+    # Clarity debug mode: only when explicitly requested
     if ql.startswith("debug"):
         return {
-            "answer": "Florence diagnostic snapshot (no LLM)",
+            "answer": "Clarity diagnostic snapshot (no LLM)",
             "diagnostics": debug_retrieval_snapshot(context),
             "context_keys": sorted(context.keys()),
             "model_source": "none",
@@ -1301,7 +1290,7 @@ def ask_florence(question: str, context: dict) -> Dict[str, Any]:
             ctx2["_escalated"] = True
             # Force system scope; retrieval layer / chat engine can use this hint.
             ctx2["scope"] = "system"
-            retry = ask_florence(question=question, context=ctx2)
+            retry = ask_clarity(question=question, context=ctx2)
             if isinstance(retry, dict) and retry.get("answer"):
                 return retry
         except Exception:
@@ -1335,20 +1324,14 @@ def ask_florence(question: str, context: dict) -> Dict[str, Any]:
         **({"diagnostics": diagnostics, "context_keys": sorted(context.keys())} if diagnostics else {}),
     }
 
-# Import retrieval context for billables, etc.
-
-
-from app.ai.retrieval import retrieve_context, retrieve as florence_retrieve
+from app.ai.retrieval import retrieve_context, retrieve as clarity_retrieve
 
 # -----------------------------------------------------------------------------
-# Public helper: Florence-compatible retrieval façade
-# -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
-# Public helper: Florence-compatible retrieval façade
+# Public helper: Clarity-compatible retrieval façade
 # -----------------------------------------------------------------------------
 def retrieve(context: dict = None, question: str = None, **kwargs) -> Dict[str, Any]:
     """
-    Florence retrieval façade.
+    Clarity retrieval façade.
     Always returns { "facts": list, "chunks": list, "sources": list }
     Delegates ONLY to app.ai.retrieval.retrieve().
     """
@@ -1360,13 +1343,13 @@ def retrieve(context: dict = None, question: str = None, **kwargs) -> Dict[str, 
             "chunks": [],
             "sources": [],
         }
-    result = florence_retrieve(
+    result = clarity_retrieve(
         claim_id=claim_id,
         query=question or "",
         scope=context.get("scope"),
         mode=context.get("mode"),
     )
-    # Only keep the Florence contract keys
+    # Only keep the Clarity contract keys
     return {
         "facts": result.get("facts", []),
         "chunks": result.get("chunks", []),
@@ -1375,13 +1358,13 @@ def retrieve(context: dict = None, question: str = None, **kwargs) -> Dict[str, 
 
 
 # -----------------------------------------------------------------------------
-# Deterministic retrieval diagnostics for Florence
+# Deterministic retrieval diagnostics for Clarity
 # -----------------------------------------------------------------------------
 from typing import Any, Dict
 
 def debug_retrieval_snapshot(context: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Deterministic diagnostics for Florence retrieval.
+    Deterministic diagnostics for Clarity retrieval.
 
     Returns facts about what data is present BEFORE any LLM call.
     This is used to debug grounding issues without invoking the model.
@@ -2696,7 +2679,7 @@ def _normalize_llm_result(result: Any) -> Dict[str, Any]:
     We support three shapes:
       1) dicts returned by our backend (often {"text": "..."})
       2) raw strings
-      3) Florence STRICT JSON payloads embedded in text (optionally fenced)
+      3) Legacy STRICT JSON payloads embedded in text (optionally fenced)
 
     Output is always a dict containing at least:
       - text (string)
@@ -2706,7 +2689,7 @@ def _normalize_llm_result(result: Any) -> Dict[str, Any]:
       - answer_mode (str|None)
 
     Notes:
-    - Florence prompts demand STRICT JSON, but some models will still wrap it
+    - Legacy prompts demand STRICT JSON, but some models will still wrap it
       in code fences or add explanations. We defensively extract and parse the
       first JSON object we can decode.
     - If JSON parsing fails, we fall back to returning the raw text.
@@ -2758,7 +2741,7 @@ def _normalize_llm_result(result: Any) -> Dict[str, Any]:
         return None
 
     def _normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Normalize Florence payload keys/types."""
+        """Normalize Legacy payload keys/types."""
         answer = payload.get("answer")
         # Some models may still use "text" despite our schema; allow it.
         if answer is None and payload.get("text") is not None:
@@ -2810,7 +2793,7 @@ def _normalize_llm_result(result: Any) -> Dict[str, Any]:
 
         return out
 
-    # 1) If backend already gave us a Florence-shaped dict, normalize it.
+    # 1) If backend already gave us a Legacy-shaped dict, normalize it.
     if isinstance(result, dict) and ("answer" in result or "citations" in result or "answer_mode" in result):
         return _normalize_payload(result)
 

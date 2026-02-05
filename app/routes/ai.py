@@ -2,15 +2,15 @@
 
 from flask import Blueprint, request, jsonify
 
-from app.ai.florence import ask_florence
+from app.ai.clarity import ask_clarity
 
 bp = Blueprint("ai", __name__, url_prefix="/ai")
 
 
-@bp.post("/florence/query")
-def florence_query():
+@bp.post("/clarity/query")
+def clarity_query():
     """
-    Universal Florence AI endpoint.
+    Universal Clarity AI endpoint.
     All UI surfaces (navbar, claim, invoice, mobile) should call this.
     """
 
@@ -22,7 +22,7 @@ def florence_query():
             "error": "Missing 'question' in request payload"
         }), 400
 
-    result = ask_florence(
+    result = ask_clarity(
         question=question,
         scope=payload.get("scope", "global"),
         claim_id=payload.get("claim_id"),

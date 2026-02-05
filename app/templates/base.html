@@ -287,125 +287,125 @@
 
     /* Florence dock layout (no backdrop; app remains interactive) */
     :root {
-      --florence-dock-width: 420px;
-      --florence-dock-border: rgba(0,0,0,0.15);
-      --florence-dock-bg: #ffffff;
-      --florence-dock-fg: #111111;
+      --clarity-dock-width: 420px;
+      --clarity-dock-border: rgba(0,0,0,0.15);
+      --clarity-dock-bg: #ffffff;
+      --clarity-dock-fg: #111111;
     }
 
     .dark-mode {
-      --florence-dock-border: rgba(255,255,255,0.14);
-      --florence-dock-bg: #0f0f0f;
-      --florence-dock-fg: #ffffff;
+      --clarity-dock-border: rgba(255,255,255,0.14);
+      --clarity-dock-bg: #0f0f0f;
+      --clarity-dock-fg: #ffffff;
     }
 
-    .florence-dock {
+    .clarity-dock {
       position: fixed;
       top: 0;
       right: 0;
       height: 100vh;
-      width: var(--florence-dock-width);
+      width: var(--clarity-dock-width);
       z-index: 1200;
-      background: var(--florence-dock-bg);
-      color: var(--florence-dock-fg);
-      border-left: 1px solid var(--florence-dock-border);
+      background: var(--clarity-dock-bg);
+      color: var(--clarity-dock-fg);
+      border-left: 1px solid var(--clarity-dock-border);
       box-shadow: -12px 0 28px rgba(0,0,0,0.12);
       transform: translateX(100%);
       transition: transform 180ms ease;
       display: block;
     }
 
-    body.florence-open .florence-dock {
+    body.clarity-open .clarity-dock {
       transform: translateX(0);
     }
 
-    .florence-dock-inner {
+    .clarity-dock-inner {
       height: 100%;
       display: flex;
       flex-direction: column;
     }
 
-    .florence-dock-header {
+    .clarity-dock-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 0.5rem;
       padding: 0.75rem 0.75rem;
-      border-bottom: 1px solid var(--florence-dock-border);
+      border-bottom: 1px solid var(--clarity-dock-border);
     }
 
-    .florence-dock-body {
+    .clarity-dock-body {
       display: flex;
       flex-direction: column;
       height: 100%;
       min-height: 0;
     }
 
-    .florence-chat-messages {
+    .clarity-chat-messages {
       padding: 0.75rem;
       flex: 1 1 auto;
       overflow-y: auto;
       min-height: 0;
     }
 
-    .florence-chat-input {
-      border-top: 1px solid var(--florence-dock-border);
+    .clarity-chat-input {
+      border-top: 1px solid var(--clarity-dock-border);
       padding: 0.5rem;
-      background: var(--florence-dock-bg);
+      background: var(--clarity-dock-bg);
     }
 
     /* Desktop: shift app content so both app + chat are usable */
     @media (min-width: 992px) {
-      body.florence-open .impact-sticky-header,
-      body.florence-open .impact-main {
-        margin-right: var(--florence-dock-width);
+      body.clarity-open .impact-sticky-header,
+      body.clarity-open .impact-main {
+        margin-right: var(--clarity-dock-width);
       }
     }
 
     /* Small screens: overlay (no shift) */
     @media (max-width: 991.98px) {
-      :root { --florence-dock-width: min(92vw, 420px); }
-      body.florence-open .impact-sticky-header,
-      body.florence-open .impact-main {
+      :root { --clarity-dock-width: min(92vw, 420px); }
+      body.clarity-open .impact-sticky-header,
+      body.clarity-open .impact-main {
         margin-right: 0;
       }
     }
 
-    .dark-mode .florence-dock .form-control {
+    .dark-mode .clarity-dock .form-control {
       background-color: #111111;
       color: #ffffff;
       border-color: rgba(255,255,255,0.18);
     }
 
-    .dark-mode .florence-dock .form-control::placeholder {
+    .dark-mode .clarity-dock .form-control::placeholder {
       color: rgba(255,255,255,0.55);
     }
 
-    /* Florence dock buttons should remain readable in dark mode */
-    .dark-mode .florence-dock .btn-outline-secondary {
+    /* Clarity dock buttons should remain readable in dark mode */
+    .dark-mode .clarity-dock .btn-outline-secondary {
       color: rgba(255, 255, 255, 0.85);
       border-color: rgba(255, 255, 255, 0.25);
     }
 
-    .dark-mode .florence-dock .btn-outline-secondary:hover {
+    .dark-mode .clarity-dock .btn-outline-secondary:hover {
       color: #ffffff;
       border-color: rgba(255, 255, 255, 0.45);
       background: rgba(255, 255, 255, 0.06);
     }
 
-    /* Florence dock separators in dark mode */
-    .dark-mode .florence-dock-header,
-    .dark-mode .florence-chat-input {
+    /* Clarity dock separators in dark mode */
+    .dark-mode .clarity-dock-header,
+    .dark-mode .clarity-chat-input {
       border-color: rgba(255,255,255,0.14);
     }
 
-    .florence-citations {
+    .clarity-citations {
       display: flex;
       flex-wrap: wrap;
       gap: 0.25rem;
     }
 
-    .florence-citation-pill {
+    .clarity-citation-pill {
       background: rgba(13,110,253,0.15);
       border: 1px solid rgba(13,110,253,0.35);
       color: inherit;
@@ -413,11 +413,11 @@
       cursor: pointer;
     }
 
-    .florence-citation-pill:hover {
+    .clarity-citation-pill:hover {
       background: rgba(13,110,253,0.25);
     }
 
-    .dark-mode .florence-citation-pill {
+    .dark-mode .clarity-citation-pill {
       background: rgba(13,110,253,0.25);
     }
 
@@ -576,19 +576,23 @@
               <a class="nav-link {% if active_page == 'analysis' %}active{% endif %}"
                  href="{{ url_for('main.analysis_view') }}">Analysis</a>
             </li>
+          <li class="nav-item">
+            <a class="nav-link {% if active_page == 'settings' %}active{% endif %}"
+               href="{{ url_for('main.settings_view') }}">Settings</a>
+          </li>
           </ul>
 
           <!-- Right side: theme toggle + version -->
           <div class="d-flex align-items-center gap-2">
           <button
-            id="florenceChatToggle"
+            id="clarityChatToggle"
             type="button"
             class="btn btn-sm btn-outline-light"
-            aria-controls="florenceChat"
+            aria-controls="clarityChat"
             aria-expanded="false"
-            title="Open Florence chat"
+            title="Open Clarity chat"
           >
-            Florence
+            Clarity
           </button>
             <button id="themeToggle"
                     type="button"
@@ -604,33 +608,33 @@
       </div>
   </nav>
 
-<!-- Florence Chat (docked, persistent sidebar) -->
-<aside id="florenceChat" class="florence-dock" aria-labelledby="florenceChatLabel" aria-hidden="true">
-  <div class="florence-dock-inner">
-    <div class="florence-dock-header">
-      <h5 class="m-0" id="florenceChatLabel">Florence</h5>
+<!-- Clarity Chat (docked, persistent sidebar) -->
+<aside id="clarityChat" class="clarity-dock" aria-labelledby="clarityChatLabel" aria-hidden="true">
+  <div class="clarity-dock-inner">
+    <div class="clarity-dock-header">
+      <h5 class="m-0" id="clarityChatLabel">Clarity</h5>
       <div class="d-flex gap-2">
-        <button id="florenceChatCopyBtn" type="button" class="btn btn-sm btn-outline-secondary" title="Copy latest Florence reply">Copy</button>
-        <button id="florenceChatClearBtn" type="button" class="btn btn-sm btn-outline-secondary" title="Clear chat">Clear</button>
-        <button id="florenceChatCloseBtn" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close">✕</button>
+        <button id="clarityChatCopyBtn" type="button" class="btn btn-sm btn-outline-secondary" title="Copy latest Clarity reply">Copy</button>
+        <button id="clarityChatClearBtn" type="button" class="btn btn-sm btn-outline-secondary" title="Clear chat">Clear</button>
+        <button id="clarityChatCloseBtn" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Close">✕</button>
       </div>
     </div>
 
-    <div class="florence-dock-body">
-      <div id="florenceChatMessages" class="florence-chat-messages"></div>
+    <div class="clarity-dock-body">
+      <div id="clarityChatMessages" class="clarity-chat-messages"></div>
 
-      <div class="florence-chat-input">
-        <form id="florenceChatForm" class="d-flex gap-2" autocomplete="off">
+      <div class="clarity-chat-input">
+        <form id="clarityChatForm" class="d-flex gap-2" autocomplete="off">
           <input
             type="text"
-            id="florenceChatInput"
+            id="clarityChatInput"
             class="form-control"
-            placeholder="Ask Florence…"
-            aria-label="Ask Florence"
+            placeholder="Ask Clarity…"
+            aria-label="Ask Clarity"
           >
           <button type="submit" class="btn btn-outline-secondary">Send</button>
         </form>
-        <div id="florenceChatHint" class="text-muted small mt-1"></div>
+        <div id="clarityChatHint" class="text-muted small mt-1"></div>
       </div>
     </div>
   </div>
@@ -800,21 +804,21 @@
     })();
   </script>
   <script>
-    // Florence chat sidebar (persistent, app-wide)
+    // Clarity chat sidebar (persistent, app-wide)
     document.addEventListener('DOMContentLoaded', function () {
-      var chatEl = document.getElementById('florenceChat');
-      var messagesEl = document.getElementById('florenceChatMessages');
-      var formEl = document.getElementById('florenceChatForm');
-      var inputEl = document.getElementById('florenceChatInput');
-      var hintEl = document.getElementById('florenceChatHint');
-      var clearBtn = document.getElementById('florenceChatClearBtn');
-      var copyBtn = document.getElementById('florenceChatCopyBtn');
-      var toggleBtn = document.getElementById('florenceChatToggle');
-      var closeBtn = document.getElementById('florenceChatCloseBtn');
+      var chatEl = document.getElementById('clarityChat');
+      var messagesEl = document.getElementById('clarityChatMessages');
+      var formEl = document.getElementById('clarityChatForm');
+      var inputEl = document.getElementById('clarityChatInput');
+      var hintEl = document.getElementById('clarityChatHint');
+      var clearBtn = document.getElementById('clarityChatClearBtn');
+      var copyBtn = document.getElementById('clarityChatCopyBtn');
+      var toggleBtn = document.getElementById('clarityChatToggle');
+      var closeBtn = document.getElementById('clarityChatCloseBtn');
 
       if (!chatEl || !messagesEl || !formEl || !inputEl) return;
 
-      // Docked chat: no Bootstrap offcanvas; we manage open/close by toggling body.florence-open
+      // Docked chat: no Bootstrap offcanvas; we manage open/close by toggling body.clarity-open
       // Infer lightweight context (matches /api/florence/query expectations)
       var context = {};
       if (document.body.dataset.claimId) {
@@ -958,12 +962,12 @@
       });
 
       var scopeKey = (context.claim_id || context.invoice_id || context.report_id || 'system');
-      var storageKey = 'florence_chat:' + scopeKey;
-      var openKey = 'florence_chat_open';
+      var storageKey = 'clarity_chat:' + scopeKey;
+      var openKey = 'clarity_chat_open';
 
       // Thread state persistence (required for clarifying-question followups)
       // Store separately from message history; per-scope so claim threads don't bleed.
-      var threadKey = 'florence_thread_state:' + scopeKey;
+      var threadKey = 'clarity_thread_state:' + scopeKey;
 
       function loadThreadState() {
         try {
@@ -1039,7 +1043,7 @@
           bubble.style.border = '1px solid rgba(214,135,31,0.30)';
 
           // Main answer text
-          bubble.innerHTML = '<strong>Florence:</strong> ' + escapeHtml(text);
+          bubble.innerHTML = '<strong>Clarity:</strong> ' + escapeHtml(text);
 
           // --- INSERT ---
           // Confidence badge (compact)
@@ -1066,13 +1070,13 @@
             citesWrap.appendChild(label);
 
             var cites = document.createElement('div');
-            cites.className = 'florence-citations';
+            cites.className = 'clarity-citations';
 
             m.citations.forEach(function (c, idx) {
               if (!c) return;
 
               var pill = document.createElement('a');
-              pill.className = 'badge rounded-pill florence-citation-pill';
+              pill.className = 'badge rounded-pill clarity-citation-pill';
 
               if (typeof c === 'string') {
                 pill.textContent = c;
@@ -1167,7 +1171,7 @@
 
       function setOpen(isOpen) {
         try {
-          document.body.classList.toggle('florence-open', !!isOpen);
+          document.body.classList.toggle('clarity-open', !!isOpen);
           chatEl.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
           if (toggleBtn) {
             toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
@@ -1179,7 +1183,7 @@
       }
 
       function toggleOpen() {
-        var isOpen = document.body.classList.contains('florence-open');
+        var isOpen = document.body.classList.contains('clarity-open');
         setOpen(!isOpen);
         if (!isOpen) {
           window.setTimeout(function () {
@@ -1215,7 +1219,7 @@
           try { window.localStorage.removeItem(threadKey); } catch (e) {}
           renderAll();
           if (window.showFloatingAlert) {
-            window.showFloatingAlert('Florence chat cleared', 'info', { autoDismissMs: 1200 });
+            window.showFloatingAlert('Clarity chat cleared', 'info', { autoDismissMs: 1200 });
           }
         });
       }
@@ -1227,7 +1231,7 @@
           if (!txt) return;
           var ok = await copyTextToClipboard(txt);
           if (ok && window.showFloatingAlert) {
-            window.showFloatingAlert('Copied latest Florence reply', 'info', { autoDismissMs: 1200 });
+            window.showFloatingAlert('Copied latest Clarity reply', 'info', { autoDismissMs: 1200 });
           }
         });
       }
@@ -1284,12 +1288,12 @@
           });
 
           if (!resp.ok) {
-            throw new Error('Florence request failed');
+            throw new Error('Clarity request failed');
           }
 
           var data = await resp.json();
           if (data && data.ok === false) {
-            throw new Error(data.error || data.message || 'Florence returned ok=false');
+            throw new Error(data.error || data.message || 'Clarity returned ok=false');
           }
 
           // Persist thread state so follow-up answers (e.g., "both") resolve pending clarifiers.
@@ -1341,7 +1345,7 @@
           } else if (data && typeof data.message === 'string' && data.message.trim() !== '') {
             msg = data.message;
           } else {
-            msg = 'Florence responded, but returned an empty/unknown payload.';
+            msg = 'Clarity responded, but returned an empty/unknown payload.';
           }
 
           push('assistant', msg, {
@@ -1351,7 +1355,7 @@
           });
 
         } catch (err) {
-          push('assistant', 'Florence error: ' + (err && err.message ? err.message : String(err)));
+          push('assistant', 'Clarity error: ' + (err && err.message ? err.message : String(err)));
         } finally {
           inputEl.disabled = false;
           inputEl.focus();

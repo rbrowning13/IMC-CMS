@@ -11,7 +11,7 @@ from app.services import ai_service
 
 
 # -----------------------------------------------------------------------------
-# Florence universal API endpoint
+# Clarity universal API endpoint
 #
 # Key goals:
 # - Accept payloads from multiple UI implementations (query/question/page_data)
@@ -225,11 +225,9 @@ def _rewrite_query_with_context(query: str, context: Dict[str, Any]) -> str:
             return f"How many billable items are on invoice {invoice_id}?"
 
     return query
-
-
-@bp.route("/api/florence/query", methods=["POST"])
-def florence_query():
-    """Universal Florence entrypoint."""
+@bp.route("/api/clarity/query", methods=["POST"])
+def clarity_query():
+    """Universal Clarity entrypoint."""
     data: Dict[str, Any] = request.get_json(force=True) or {}
 
     # Accept either "query" or "question" (UI variations)
@@ -256,7 +254,7 @@ def florence_query():
     pending_intent: Optional[str] = (
         _pending_intent_from_request(data)
         or (thread_state.get("pending_intent") if isinstance(thread_state, dict) else None)
-        or session.get("florence_pending_intent")
+        or session.get("clarity_pending_intent")
     )
 
     # If user replied with only open/closed/both and we have pending intent, expand it.
@@ -264,11 +262,11 @@ def florence_query():
     if expanded_query != query:
         query = expanded_query
         # Consume pending intent so it doesn't pollute future turns
-        session.pop("florence_pending_intent", None)
+        session.pop("clarity_pending_intent", None)
         session.modified = True
 
-    # Ask Florence via the service layer
-    result: Dict[str, Any] = ai_service.ask_florence(question=query, context=context)
+    # Ask Clarity via the service layer
+    result: Dict[str, Any] = ai_service.ask_clarity(question=query, context=context)
 
     # Round-trip thread state for the chat UI (client-owned).
     # Backend may return `thread_state_update` (preferred) or `thread_state`.
@@ -289,7 +287,7 @@ def florence_query():
     try:
         pi = result.get("pending_intent")
         if isinstance(pi, str) and pi.strip():
-            session["florence_pending_intent"] = pi.strip()
+            session["clarity_pending_intent"] = pi.strip()
             session.modified = True
     except Exception:
         pass
@@ -316,7 +314,7 @@ def florence_query():
     # Echo back pending intent so the UI can store it client-side.
     # Prefer explicit result pending_intent (possibly set from thread_state_update), else session.
     if not (isinstance(result.get("pending_intent"), str) and result.get("pending_intent").strip()):
-        pi_sess = session.get("florence_pending_intent")
+        pi_sess = session.get("clarity_pending_intent")
         if isinstance(pi_sess, str) and pi_sess.strip():
             result["pending_intent"] = pi_sess.strip()
         else:
