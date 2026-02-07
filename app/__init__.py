@@ -4,6 +4,7 @@ import json
 import re
 from pathlib import Path
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
 
 from markupsafe import Markup, escape
 from sqlalchemy.exc import ProgrammingError, OperationalError
@@ -46,23 +47,32 @@ def format_date(value, fmt="%m/%d/%Y"):
         return str(value)
 
 def format_datetime(value, fmt="%m/%d/%Y %H:%M"):
-    """Format a datetime for display.
+    """Format a datetime for display, using local time when possible.
 
-    Default format is MM/DD/YYYY HH:MM (24-hour). If value is falsy, return an empty string.
+    - Datetime values are converted to local time if timezone-aware.
+    - Naive datetimes are assumed to already be local.
+    - Dates are promoted to midnight local time.
     """
     if not value:
         return ""
+
+    local_tz = ZoneInfo(os.environ.get("TZ", "America/Denver"))
+
     if isinstance(value, datetime):
-        return value.strftime(fmt)
-    if isinstance(value, date):
-        # Promote date to datetime at midnight
+        dt = value
+    elif isinstance(value, date):
         dt = datetime.combine(value, datetime.min.time())
-        return dt.strftime(fmt)
-    try:
-        parsed = datetime.fromisoformat(str(value))
-        return parsed.strftime(fmt)
-    except Exception:
-        return str(value)
+    else:
+        try:
+            dt = datetime.fromisoformat(str(value))
+        except Exception:
+            return str(value)
+
+    # If timezone-aware, convert to local time
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(local_tz)
+
+    return dt.strftime(fmt)
 
 
 def _normalize_multiline_text(value) -> str:

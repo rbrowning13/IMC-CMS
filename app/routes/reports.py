@@ -1620,8 +1620,9 @@ def report_print(claim_id, report_id):
         pass
 
 
-    page_title = _build_report_page_title(claim, report, display_report_number)
+    generated_at = datetime.now()
 
+    page_title = _build_report_page_title(claim, report, display_report_number)
 
     claim_providers = _claim_load_providers(claim)
     claim_surgeries = _claim_load_surgeries(claim)
@@ -1669,6 +1670,7 @@ def report_print(claim_id, report_id):
         page_title=page_title,
         report_display_number=display_report_number,
         claim_surgeries=claim_surgeries,
+        generated_at=generated_at,
     )
 
 

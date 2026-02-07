@@ -1,3 +1,4 @@
+import re
 from typing import Any, Dict, List, Optional, Tuple, Iterable, Sequence
 # -----------------------------------------------------------------------------
 # Deterministic Clarity routing (fast-paths that do NOT use the LLM)

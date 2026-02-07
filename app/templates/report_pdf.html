@@ -222,6 +222,19 @@
   {% endif %}
 {% endif %}
 
+<div style="margin-top: 1.5rem;">
+  <p><strong>{{ settings.signature_name or settings.business_contact_name or 'Gina Browning, RN' }}</strong></p>
+  {% if settings.signature_title %}
+    <p class="muted">{{ settings.signature_title }}</p>
+  {% endif %}
+  {% if settings.phone or settings.email %}
+    <p class="muted">
+      {% if settings.phone %}{{ settings.phone }}{% endif %}
+      {% if settings.phone and settings.email %} &nbsp;•&nbsp; {% endif %}
+      {% if settings.email %}{{ settings.email }}{% endif %}
+    </p>
+  {% endif %}
+</div>
 <p class="muted">Generated on {{ report.updated_at|format_datetime }}</p>
 
 </body>

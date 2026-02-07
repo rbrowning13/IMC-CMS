@@ -332,16 +332,6 @@
             alt="{{ settings.business_name or 'Business Logo' }}"
           >
         {% endif %}
-        <div class="rp-bizmeta">
-          {% if settings.address1 %}{{ settings.address1 }}{% endif %}
-          {% if settings.address2 %}<br>{{ settings.address2 }}{% endif %}
-          {% if settings.city or settings.state or settings.postal_code %}
-            <br>
-            {{ settings.city or '' }}{% if settings.city and (settings.state or settings.postal_code) %}, {% endif %}{{ settings.state or '' }} {{ settings.postal_code or '' }}
-          {% endif %}
-          {% if settings.phone %}<br>{{ settings.phone }}{% if settings.phone_ext %} x{{ settings.phone_ext }}{% endif %}{% endif %}
-          {% if settings.email %}<br>{{ settings.email }}{% endif %}
-        </div>
       </div>
 
     <div class="rp-title">
@@ -469,6 +459,7 @@
       {% set _providers = [report.treating_provider] %}
     {% endif %}
 
+
     {% if _providers and _providers|length > 0 %}
       <div class="rp-providerbox avoid-break">
         <div class="rp-provider-title">Treating Provider(s)</div>
@@ -501,6 +492,14 @@
               {% endif %}
             </div>
           {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if report.report_type == 'progress' %}
+      <div class="rp-section">
+        <div class="rp-body rp-na">
+          This progress report summarizes case activity and status changes since the prior reporting period.
         </div>
       </div>
     {% endif %}
@@ -681,6 +680,16 @@
         {% if settings.responsible_case_manager %}
           <p class="rp-signame">{{ settings.responsible_case_manager }}</p>
           <p class="rp-sigtitle">Case Manager</p>
+          {# Muted contact info block under signature #}
+          <div class="rp-footer">
+            {% if settings.phone %}
+              {{ settings.phone }}{% if settings.phone_ext %} x{{ settings.phone_ext }}{% endif %}
+              <br>
+            {% endif %}
+            {% if settings.email %}
+              {{ settings.email }}
+            {% endif %}
+          </div>
           <div class="rp-sigline"></div>
         {% else %}
           <div class="rp-sigline"></div>
@@ -695,7 +704,7 @@
     {% endif %}
 
     <div class="rp-footer" style="margin-top: 10px;">
-      Generated {{ report.updated_at|format_datetime('%m/%d/%Y %H:%M') }}
+      Generated {{ generated_at|format_datetime('%m/%d/%Y %H:%M') }}
     </div>
 
   </div>
