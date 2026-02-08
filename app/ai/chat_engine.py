@@ -659,7 +659,7 @@ def handle_chat_turn(
         if turn is not None:
             return turn
 
-    # --- (legacy inline routing remains for now; will be removed as migrated) ---
+    # --- Routing complete: all deterministic skills are dispatched via ROUTES ---
 
     return None
 
