@@ -1,3 +1,208 @@
+from typing import Any, Dict, Tuple, Optional, List
+# -----------------------------
+# Frame stack expiration / reset helper
+# -----------------------------
+# Frame reset philosophy: Clear the frame stack when the user asks a new top-level question,
+# navigates away from claim context, or explicitly requests a reset.
+def maybe_reset_frame_stack(question: str, context: Dict[str, Any], thread_state: Dict[str, Any]) -> None:
+    """
+    Mutates thread_state in-place.
+    Clears ["frame_stack"] and ["last_frame"] if a reset trigger is detected.
+    Reset triggers:
+      - Explicit navigation phrases ("new question", "start over", "reset")
+      - Obvious top-level/system questions ("system overview", "how many claims do I have")
+      - Page context change away from claim_detail with no claim_id present
+    """
+    q = (question or "").strip().lower()
+    # 1. Explicit navigation/reset phrases
+    if any(kw in q for kw in ["new question", "start over", "reset"]):
+        thread_state.pop("frame_stack", None)
+        thread_state.pop("last_frame", None)
+        return
+    # 2. Obvious top-level/system questions
+    system_triggers = [
+        "system overview", "system snapshot", "system", "snapshot", "diagnostic",
+        "how many claims do i have", "how many open claims", "how many closed claims",
+        "my system", "overview",
+    ]
+    if any(kw in q for kw in system_triggers):
+        # If not asking about a specific claim, treat as reset
+        if "claim" not in q or "this claim" not in q:
+            thread_state.pop("frame_stack", None)
+            thread_state.pop("last_frame", None)
+            return
+    # 3. Page context changed away from claim_detail and no claim_id
+    page_ctx = (context or {}).get("page_context") or (context or {}).get("context") or ""
+    claim_id = (context or {}).get("claim_id") or thread_state.get("last_claim_id")
+    if str(page_ctx) != "claim_detail" and not claim_id:
+        thread_state.pop("frame_stack", None)
+        thread_state.pop("last_frame", None)
+        return
+# -----------------------------
+# Option B: Conversation Frame + Domain Registry
+# -----------------------------
+from typing import cast
+# -----------------------------
+# Frame/domain registry for frame-relative follow-ups.
+# Enables "what about X?" to be reliably interpreted in context.
+# -----------------------------
+FRAME_REGISTRY = {
+    # Added support for synonyms and canonical questions for each domain
+    "system_overview": {
+        "domains": {
+            "claims": {
+                "synonyms": ["claim", "cases", "files"],
+                "question": "How many claims do I have?"
+            },
+            "invoices": {
+                "synonyms": ["invoice", "bills", "statements"],
+                "question": "How many invoices do I have?"
+            },
+            "billing": {
+                "synonyms": ["bill", "outstanding billing", "unpaid bills"],
+                "question": "How much outstanding billing do I have?"
+            },
+            "billables": {
+                "synonyms": ["billable", "work", "billable items"],
+                "question": "Summarize billables"
+            },
+            "reports": {
+                "synonyms": ["report", "documents", "summaries"],
+                "question": "How many reports do I have?"
+            },
+        }
+    },
+    "claim_overview": {
+        "domains": {
+            "billables": {
+                "synonyms": ["billable", "work", "billable items"],
+                "question": "Summarize billables on this claim"
+            },
+            "billing": {
+                "synonyms": ["bill", "outstanding billing", "unpaid bills"],
+                "question": "How much billing is on this claim?"
+            },
+            "invoices": {
+                "synonyms": ["invoice", "bills", "statements"],
+                "question": "How many invoices are on this claim?"
+            },
+            "reports": {
+                "synonyms": ["report", "documents", "summaries"],
+                "question": "Summarize reports on this claim"
+            },
+        }
+    },
+}
+# -----------------------------
+# Frame-relative follow-up canonicalization
+# -----------------------------
+def maybe_canonicalize_frame_followup(question: str, thread_state: Dict[str, Any]) -> Tuple[str, bool]:
+    """
+    Rewrite frame-relative follow-ups like "what about claims?" to canonical questions.
+    Resolves against the most specific active frame in thread_state["frame_stack"] (top of stack).
+    Walks backward through the stack (most specific to least), stopping at first match.
+    """
+    q = (question or "").strip().lower()
+    if not (q.startswith("what about") or q.startswith("how about")):
+        return question, False
+    # Use frame_stack if present, else fallback to last_frame for backward compatibility
+    frame_stack = thread_state.get("frame_stack") or []
+    if not isinstance(frame_stack, list):
+        frame_stack = []
+    frames_to_try = list(reversed(frame_stack)) if frame_stack else []
+    last_frame = thread_state.get("last_frame")
+    # For backward compatibility, try last_frame if stack empty or not present
+    if not frames_to_try and last_frame:
+        frames_to_try = [last_frame]
+    # Extract the noun after "what about" or "how about"
+    parts = q.split()
+    if len(parts) < 3:
+        return question, False
+    noun = parts[2]
+    noun = noun.rstrip("?.!,")
+    # Walk from most specific (top of stack) to least
+    for frame in frames_to_try:
+        frame_entry = FRAME_REGISTRY.get(frame)
+        if not frame_entry or "domains" not in frame_entry:
+            continue
+        domains = frame_entry["domains"]
+        # 1. Try exact key match (including plural/singular normalization)
+        for dom_key, dom_entry in domains.items():
+            if noun == dom_key or noun.rstrip("s") == dom_key.rstrip("s"):
+                return dom_entry["question"], True
+        # 2. Try synonym match (including plural/singular normalization)
+        for dom_key, dom_entry in domains.items():
+            synonyms = dom_entry.get("synonyms", [])
+            for syn in synonyms:
+                if noun == syn or noun.rstrip("s") == syn.rstrip("s"):
+                    return dom_entry["question"], True
+    # No match found
+    return question, False
+# -----------------------------
+# Follow-up canonicalization helper
+# -----------------------------
+def maybe_canonicalize_followup(question: str, thread_state: Dict[str, Any]) -> Tuple[str, bool]:
+    """
+    If the user asks a short, referential follow-up ("what about closed", "and unpaid", etc)
+    and we have a last_intent, rewrite it into a canonical, full question.
+    This improves conversational awareness while preserving determinism.
+    Returns (canonical_question, was_rewritten).
+    """
+    q = (question or "").strip().lower()
+    last_intent = thread_state.get("last_intent")
+    if not last_intent:
+        return question, False
+    # claim_count follow-ups
+    if last_intent == "claim_count":
+        # Handle e.g. "what about closed", "and open", "only closed", etc.
+        if any(q in s for s in [
+            "what about closed", "and closed", "only closed", "just closed", "closed?",
+            "what about open", "and open", "only open", "just open", "open?",
+            "what about both", "and both", "all", "everything", "both?",
+        ]):
+            # Map to canonical claim_count question
+            if "closed" in q:
+                return "How many closed claims do I have?", True
+            if "open" in q:
+                return "How many open claims do I have?", True
+            if "both" in q or "all" in q or "everything" in q:
+                return "How many claims do I have?", True
+    # billing_total follow-ups
+    if last_intent == "billing_total":
+        # Handle e.g. "what about outstanding", "and unpaid", "only total", etc.
+        if any(q in s for s in [
+            "what about outstanding", "and outstanding", "only outstanding", "outstanding?",
+            "what about unpaid", "and unpaid", "only unpaid", "unpaid?",
+            "what about total", "and total", "only total", "total?",
+        ]):
+            if "outstanding" in q or "unpaid" in q:
+                return "How much outstanding billing do I have?", True
+            if "total" in q:
+                return "How much total billed do I have?", True
+    # system_overview follow-ups
+    if last_intent == "system_overview":
+        if any(q in s for s in [
+            "what about open", "open claims?", "and open", "only open",
+            "what about closed", "closed claims?", "and closed", "only closed",
+        ]):
+            if "open" in q:
+                return "How many open claims do I have?", True
+            if "closed" in q:
+                return "How many closed claims do I have?", True
+    # Scope shifts: "this claim" vs "all claims"
+    if last_intent in {"claim_count", "billing_total"}:
+        if any(x in q for x in ["this claim", "for this claim", "on this claim", "just this claim"]):
+            # Try to rephrase to claim-specific
+            if last_intent == "claim_count":
+                return "How many claims do I have on this claim?", True
+            if last_intent == "billing_total":
+                return "How much billing do I have on this claim?", True
+        if any(x in q for x in ["all claims", "every claim", "across all claims"]):
+            if last_intent == "claim_count":
+                return "How many claims do I have?", True
+            if last_intent == "billing_total":
+                return "How much billing do I have?", True
+    return question, False
 """app.ai.chat_engine
 
 Lightweight, deterministic chat orchestration helpers for Florence.
@@ -1254,8 +1459,17 @@ def handle_chat_turn(
     """Handle a single chat turn deterministically when possible.
 
     Returns ChatTurn if handled here; otherwise returns None (caller may fall back to retrieval/LLM).
+    Frame stack reset: If the user asks a new top-level/system question, navigates away from claim context,
+    or explicitly requests a reset, clear the frame stack to avoid stale context.
     """
     ts: Dict[str, Any] = dict(thread_state or {})
+
+    # --- FRAME STACK: maintain hierarchical frame navigation in thread_state["frame_stack"] ---
+    # The stack holds the current frame context(s) in order, most specific last.
+    # All frame transitions should push to the stack (without consecutive duplicates).
+
+    # Reset frame stack if context clearly changes (see helper for rules)
+    maybe_reset_frame_stack(question, context, ts)
 
     # Persist last-known context so follow-ups like "both" can be resolved reliably.
     page_ctx = _ctx_page_context(context)
@@ -1286,6 +1500,7 @@ def handle_chat_turn(
         # CLAIM COUNT
         if intent == "claim_count" and slot == "claim_status":
             count, label = answer_claim_count(scope=choice, db=db, ClaimModel=ClaimModel)
+            ts["last_intent"] = "claim_count"
             return ChatTurn(
                 response=make_answer(text=f"There are {count} {label}.", thread_state_update=ts),
                 thread_state=ts,
@@ -1312,8 +1527,21 @@ def handle_chat_turn(
                 ReportModel=ReportModel,
             )
 
-    # 2) Small intent detection (deterministic first)
-    q = _qnorm(question)
+    # 2) Canonicalize frame-relative follow-ups (if any), before intent detection.
+    canonical_frame_q, frame_was_rewritten = maybe_canonicalize_frame_followup(question, ts)
+    if frame_was_rewritten:
+        ts["last_canonical_question"] = canonical_frame_q
+        ts["last_followup_rewrite"] = True
+        q = _qnorm(canonical_frame_q)
+    else:
+        # 3) Canonicalize intent follow-up (existing logic)
+        canonical_q, was_rewritten = maybe_canonicalize_followup(question, ts)
+        if was_rewritten:
+            ts["last_canonical_question"] = canonical_q
+            ts["last_followup_rewrite"] = True
+            q = _qnorm(canonical_q)
+        else:
+            q = _qnorm(question)
 
     # CAPABILITIES / HELP
     if any(k in q for k in [
@@ -1367,6 +1595,15 @@ def handle_chat_turn(
                 CarrierModel=CarrierModel,
                 ReportModel=ReportModel2,
             )
+            ts["last_intent"] = "system_overview"
+            # --- FRAME STACK LOGIC: push "system_overview" frame if not already top ---
+            frame_stack = ts.get("frame_stack") or []
+            if not isinstance(frame_stack, list):
+                frame_stack = []
+            if not frame_stack or frame_stack[-1] != "system_overview":
+                frame_stack = frame_stack + ["system_overview"]
+            ts["frame_stack"] = frame_stack
+            ts["last_frame"] = "system_overview"  # For backward compatibility
             return ChatTurn(response=make_answer(text=_trim_to_brief(text), thread_state_update=ts), thread_state=ts)
 
     # INVOICE STATUS BREAKDOWN (run before claim count)
@@ -1447,6 +1684,15 @@ def handle_chat_turn(
         if claim_id is None:
             return ChatTurn(response=make_answer(text=_trim_to_brief("Please open a claim first, then ask again."), thread_state_update=ts), thread_state=ts)
         summary = answer_claim_summary(db=db, ClaimModel=ClaimModel, claim_id=claim_id, InvoiceModel=InvoiceModel, BillableItemModel=BillableItemModel)
+        ts["last_intent"] = "claim_summary"
+        # --- FRAME STACK LOGIC: push "claim_overview" frame if not already top ---
+        frame_stack = ts.get("frame_stack") or []
+        if not isinstance(frame_stack, list):
+            frame_stack = []
+        if not frame_stack or frame_stack[-1] != "claim_overview":
+            frame_stack = frame_stack + ["claim_overview"]
+        ts["frame_stack"] = frame_stack
+        ts["last_frame"] = "claim_overview"  # For backward compatibility
         return ChatTurn(response=make_answer(text=_trim_to_brief(summary), thread_state_update=ts), thread_state=ts)
 
     # LATEST REPORT: work status
@@ -1757,6 +2003,15 @@ def handle_chat_turn(
         if claim_id is None:
             return ChatTurn(response=make_answer(text=_trim_to_brief("Please open a claim first to get a summary."), thread_state_update=ts), thread_state=ts)
         summary = answer_claim_summary(db=db, ClaimModel=ClaimModel, claim_id=claim_id, InvoiceModel=InvoiceModel, BillableItemModel=BillableItemModel)
+        ts["last_intent"] = "claim_summary"
+        # --- FRAME STACK LOGIC: push "claim_overview" frame if not already top ---
+        frame_stack = ts.get("frame_stack") or []
+        if not isinstance(frame_stack, list):
+            frame_stack = []
+        if not frame_stack or frame_stack[-1] != "claim_overview":
+            frame_stack = frame_stack + ["claim_overview"]
+        ts["frame_stack"] = frame_stack
+        ts["last_frame"] = "claim_overview"  # For backward compatibility
         return ChatTurn(response=make_answer(text=_trim_to_brief(summary), thread_state_update=ts), thread_state=ts)
 
     # Claim count
@@ -1768,6 +2023,7 @@ def handle_chat_turn(
             scope = "both"
 
         count, label = answer_claim_count(scope=scope, db=db, ClaimModel=ClaimModel)
+        ts["last_intent"] = "claim_count"
         return ChatTurn(response=make_answer(text=_trim_to_brief(f"There are {count} {label}."), thread_state_update=ts), thread_state=ts)
 
     return None

@@ -1807,6 +1807,7 @@ def generate_report_field(
         "citations": normalized.get("citations", []),
         "is_guess": normalized.get("is_guess", False),
         "confidence": normalized.get("confidence"),
+        "instructions": instructions,
     }
 
 

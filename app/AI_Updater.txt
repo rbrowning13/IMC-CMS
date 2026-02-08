@@ -1,0 +1,302 @@
+
+
+---
+
+Impact Medical CMS  
+AI_Updater / Continuity & Working Agreement  
+Living Document
+
+Last updated: 2026-02-08  
+Owner: Riley Browning  
+
+This file is a **living continuity document**.  
+Its purpose is to preserve architectural intent, collaboration rules, and system state so that work on this project can be resumed without loss of context, assumptions, or design discipline.
+
+This file is authoritative.
+
+====================================================================
+SECTION 1 — PROJECT PURPOSE (HIGH LEVEL)
+====================================================================
+
+Impact Medical CMS is a local-first, single-user medical case management system built for Gina Browning, RN.
+
+Primary responsibilities:
+- Claims
+- Reports (Initial / Progress / Closure)
+- Billable Items
+- Invoices
+- Documents
+- Contacts (Providers, Employers, Carriers)
+
+Core goals:
+- Zero data loss
+- Deterministic behavior
+- Court-defensible records
+- Predictable workflows
+- Conservative failure modes
+
+This system prioritizes correctness, traceability, and trust over convenience or cleverness.
+
+====================================================================
+SECTION 2 — AI SYSTEM OVERVIEW (FLORENCE / CLARITY)
+====================================================================
+
+Internal name: Florence  
+User-facing name: Clarity  
+
+Clarity is an assistant, not an authority.
+
+Design intent:
+- Deterministic answers first (database truth)
+- LLMs used only when deterministic logic is insufficient
+- Conservative, auditable behavior
+- No hallucination accepted as fact
+- Natural conversational follow-ups supported
+
+LLMs may:
+- Summarize
+- Rephrase
+- Explain
+- Assist with interpretation
+
+LLMs may NOT:
+- Invent facts
+- Override database truth
+- Make decisions on behalf of the user
+
+If confidence < 1.0, the system must say so.
+
+====================================================================
+SECTION 3 — CURRENT AI SYSTEM STATE
+====================================================================
+
+As of 2026-02-08:
+
+- Ollama running locally (Homebrew service)
+- Endpoint: http://127.0.0.1:11434
+- Model: llama3.1:latest (8B, Q4_K_M)
+- Backend reported as local
+- Deterministic logic active
+- LLM fallback active
+- Conversational follow-ups supported
+
+Benign warning:
+- MLX: Failed to load symbol: mlx_metal_device_info
+- Cosmetic only; inference works correctly
+
+====================================================================
+SECTION 4 — CONVERSATIONAL CONTEXT HANDLING
+====================================================================
+
+Short-term conversational awareness is implemented.
+
+Key properties:
+- Rolling buffer of recent turns (~6)
+- Stored in thread_state["conversation_history"]
+- Includes user messages and assistant replies
+- Used only for referential follow-ups
+- No long-term memory
+- No database persistence
+- No cross-session bleed
+
+This enables understanding of:
+- "What about closed?"
+- "And unpaid?"
+- "Both."
+- "What about this claim?"
+
+Design constraint:
+- No hidden memory
+- All state must be explicit and visible in code
+- Failure mode is conservative clarification, not guessing
+
+====================================================================
+SECTION 5 — PROGRAMMING CHAT WORKING RULES
+====================================================================
+
+These rules govern how Riley and the assistant collaborate in this project.
+
+1. Authority & roles
+- Riley is the system architect and final authority
+- The assistant acts as:
+  - Senior implementation partner
+  - Code reviewer
+  - Rubber-duck with opinions
+- The assistant does not redesign architecture unilaterally
+- The assistant does not override explicit design decisions
+- If uncertain, ask once clearly, then proceed
+
+2. Determinism over cleverness
+- Prefer explicit logic and readable control flow
+- Avoid magic abstractions and implicit side effects
+- Ambiguity is made explicit, even if verbose
+
+3. Edits are intentional and scoped
+- No surprise edits
+- File(s) to edit must be explicitly selected
+- One file at a time unless explicitly approved
+- No drive-by refactors
+
+4. Full-file edits > fragments
+- Prefer full function or full-file replacements
+- Avoid partial snippets and vague insertion instructions
+
+5. Context must be preserved
+- Follow-up questions are expected
+- Thread state must be explicit
+- No hidden memory or spooky action at a distance
+
+6. Safety before feature velocity
+- No schema changes without migrations
+- No silent data drops
+- No destructive actions without confirmation
+- Default to read-only or summary-only when uncertain
+
+7. AI is a tool, not an authority
+- Deterministic answers come first
+- LLMs assist but do not decide
+- If confidence < 1.0, say so
+
+8. Executive brevity by default
+- Default responses are short and skimmable
+- Detail provided only on request
+
+9. Errors are surfaced, not hidden
+- Failures must be visible and explainable
+- Exceptions are not swallowed for convenience
+- Logs are first-class debugging tools
+
+10. No premature generalization
+- Build for this user and this workflow
+- Abstractions must pay rent immediately
+
+11. Conversation discipline
+- One hypothesis at a time when debugging
+- One command at a time
+- Pause and confirm behavior between steps
+
+12. Documentation is part of the work
+- Non-obvious behavior must be written down
+- Transition states must be recorded
+- Architectural intent must be preserved
+
+13. Tone & collaboration
+- Direct > polite
+- Clear > diplomatic
+- Ego-free correction is welcome
+
+14. End-of-session rule
+Before stopping:
+- Summarize what changed
+- What’s working
+- What’s next
+- Explicitly name loose ends
+
+====================================================================
+SECTION 6 — HIGH-LEVEL FILE MAP
+====================================================================
+
+This is a conceptual map. It is intentionally high-level.
+
+app/api.py
+- Flask API routes
+- Entry point for frontend requests
+- Routes AI requests to ai_service
+
+app/ai/chat_engine.py
+- Core intelligence of Clarity
+- Deterministic intent handling
+- Claim scoping
+- Clarifications
+- Thread state management
+- Conversational context buffer
+- LLM handoff hints
+
+app/ai/ai_service.py
+- AI orchestration layer
+- Calls chat_engine
+- Selects backend (local / future remote)
+- Normalizes responses for frontend
+
+app/templates/base.html
+- Frontend chat UI
+- Sends user input to backend
+- Displays responses
+- Maintains UI session state
+
+SQLAlchemy Models
+- Claim
+- Report
+- BillableItem
+- Invoice
+- Provider
+- Employer
+- Carrier
+- Source of deterministic truth
+
+Documents / Storage
+- Local-first
+- RAID-backed in production
+- PDFs stored as artifacts
+- No cloud dependency required
+
+====================================================================
+SECTION 7 — SERVER & ENVIRONMENT NOTES
+====================================================================
+
+Local development:
+- macOS (Apple Silicon)
+- Python virtualenv
+- Ollama via Homebrew
+- Models stored in ~/.ollama/models
+
+Target production:
+- Ubuntu Server
+- RAID-1 storage
+- Postgres + Alembic
+- Local-only access (VPN / LAN)
+- No mandatory cloud services
+
+====================================================================
+SECTION 8 — DESIGN PHILOSOPHY (NON-NEGOTIABLE)
+====================================================================
+
+- Local-first
+- Deterministic before probabilistic
+- No silent data loss
+- Conservative failure modes
+- Human trust > AI cleverness
+
+Clarity assists. Humans decide.
+
+====================================================================
+SECTION 9 — ROADMAP SNAPSHOT
+====================================================================
+
+Short-term:
+- Canonicalize follow-up questions internally
+- Improve chained clarifications
+- UI distinction between “asking” vs “answering”
+
+Mid-term:
+- Smarter summaries across reports + billables
+- Inline citations to claims and invoices
+
+Long-term (optional):
+- Pattern detection
+- Trend summaries
+- Exportable AI summaries attached to reports
+
+====================================================================
+END OF DOCUMENT
+====================================================================
+
+This file should be updated whenever:
+- Architectural intent changes
+- Collaboration rules change
+- AI behavior meaningfully changes
+- Major milestones are completed
+
+Future-you is a stakeholder.
+
+---
