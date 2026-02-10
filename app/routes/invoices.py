@@ -371,11 +371,33 @@ def _billable_service_date_attr():
 
 
 def _billable_complete_clause():
-    """Return a SQLAlchemy filter clause for 'complete' items, if supported."""
-
-    if hasattr(BillableItem, "is_complete"):
-        return BillableItem.is_complete.is_(True)
-    return None
+    """Return a SQLAlchemy filter clause for 'complete' items, if supported.
+    NEW: Instead of using is_complete, enforce:
+        - activity_code == 'NO BILL' → allow if (service_date IS NOT NULL OR quantity IS NOT NULL)
+        - all other codes → require (service_date IS NOT NULL AND quantity IS NOT NULL)
+    """
+    # Get the service date attribute
+    service_date = _billable_service_date_attr()
+    if service_date is None:
+        return None
+    from sqlalchemy import or_, and_
+    # Compose clause:
+    # (activity_code == 'NO BILL' AND (service_date IS NOT NULL OR quantity IS NOT NULL))
+    # OR (activity_code != 'NO BILL' AND (service_date IS NOT NULL AND quantity IS NOT NULL))
+    return or_(
+        and_(
+            func.upper(BillableItem.activity_code) == "NO BILL",
+            or_(
+                service_date.isnot(None),
+                BillableItem.quantity.isnot(None)
+            )
+        ),
+        and_(
+            func.upper(BillableItem.activity_code) != "NO BILL",
+            service_date.isnot(None),
+            BillableItem.quantity.isnot(None)
+        )
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -682,11 +704,28 @@ def invoice_new_for_claim(claim_id: int):
     claim = Claim.query.get_or_404(claim_id)
 
     q = BillableItem.query.filter_by(claim_id=claim.id, invoice_id=None)
-    complete_clause = _billable_complete_clause()
-    if complete_clause is not None:
-        q = q.filter(complete_clause)
-
     service_date = _billable_service_date_attr()
+    from sqlalchemy import or_, and_
+    # Inline completeness logic:
+    # (activity_code == 'NO BILL' AND (service_date IS NOT NULL OR quantity IS NOT NULL))
+    # OR (activity_code != 'NO BILL' AND (service_date IS NOT NULL AND quantity IS NOT NULL))
+    if service_date is not None:
+        q = q.filter(
+            or_(
+                and_(
+                    func.upper(BillableItem.activity_code) == "NO BILL",
+                    or_(
+                        service_date.isnot(None),
+                        BillableItem.quantity.isnot(None)
+                    )
+                ),
+                and_(
+                    func.upper(BillableItem.activity_code) != "NO BILL",
+                    service_date.isnot(None),
+                    BillableItem.quantity.isnot(None)
+                )
+            )
+        )
     # Prefer chronological ordering by service date
     if service_date is not None:
         q = q.order_by(service_date.asc(), BillableItem.id.asc())
@@ -734,7 +773,7 @@ def invoice_new_for_report(claim_id: int, report_id: int):
     """Create a new invoice from a report DOS window.
 
     Uses all *uninvoiced* + *complete* billable items for the claim where
-    date_of_service is within [report.dos_start, report.dos_end].
+    service_date is within [report.dos_start, report.dos_end].
     """
 
     claim = Claim.query.get_or_404(claim_id)
@@ -753,11 +792,23 @@ def invoice_new_for_report(claim_id: int, report_id: int):
         return redirect(url_for("main.report_edit", claim_id=claim.id, report_id=report.id))
 
     q_base = BillableItem.query.filter_by(claim_id=claim.id, invoice_id=None)
-
-    complete_clause = _billable_complete_clause()
-    q = q_base
-    if complete_clause is not None:
-        q = q.filter(complete_clause)
+    from sqlalchemy import or_, and_
+    # Inline completeness logic as in claim invoice:
+    completeness_clause = or_(
+        and_(
+            func.upper(BillableItem.activity_code) == "NO BILL",
+            or_(
+                service_date.isnot(None),
+                BillableItem.quantity.isnot(None)
+            )
+        ),
+        and_(
+            func.upper(BillableItem.activity_code) != "NO BILL",
+            service_date.isnot(None),
+            BillableItem.quantity.isnot(None)
+        )
+    )
+    q = q_base.filter(completeness_clause)
 
     # Warn if any uninvoiced items are missing a service date (they cannot be auto-gathered into a DOS window)
     try:
@@ -771,6 +822,7 @@ def invoice_new_for_report(claim_id: int, report_id: int):
             "warning",
         )
 
+    # Only filter by service_date in range (do NOT use created_at)
     items = (
         q.filter(service_date.isnot(None))
         .filter(service_date >= report.dos_start)
