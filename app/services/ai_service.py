@@ -75,8 +75,11 @@ def detect_deterministic_intent(question: str) -> str | None:
 
     # Claim overview / summary
     if any(k in q for k in [
-        "summarize this claim", "summarize the claim", "claim summary", "summary of this claim",
-        "overview", "what's going on", "what is going on", "status of this claim",
+        "summarize this claim",
+        "summarize the claim",
+        "claim summary",
+        "summary of this claim",
+        "status of this claim",
     ]):
         return "claim_summary"
 
@@ -93,6 +96,23 @@ def detect_deterministic_intent(question: str) -> str | None:
             return "billables_compare_system"
         else:
             return "billables_compare_claim"
+
+    # ------------------------------------------------------------------
+    # BILLING / INVOICE DOLLAR INTENTS (MUST OVERRIDE BILLABLES)
+    # ------------------------------------------------------------------
+    if any(k in q for k in ["total billing exposure", "billing exposure", "total exposure"]):
+        return "billing_total_exposure"
+
+    if any(k in q for k in ["outstanding billing", "outstanding invoices", "accounts receivable", "a/r"]):
+        return "billing_outstanding_total"
+
+    if any(k in q for k in ["total billing", "total billed", "billing total"]):
+        return "billing_total"
+
+    if any(k in q for k in ["unpaid invoices", "open invoices"]) and any(
+        k in q for k in ["how many", "count", "number"]
+    ):
+        return "invoice_count"
 
     # Billables
     if any(k in q for k in billable_terms):
@@ -127,18 +147,47 @@ def detect_deterministic_intent(question: str) -> str | None:
             return "latest_report_status_plan"
         return "latest_report_summary"
 
-    # Invoices
+    # Billing dollar questions that omit the word "invoice"
+    if any(k in q for k in ["unpaid", "outstanding", "due"]) and any(
+        k in q for k in ["dollar", "dollars", "amount", "$"]
+    ):
+        return "billing_outstanding_total"
+    # Invoices — amounts MUST override counts
     if any(k in q for k in ["invoice", "invoices"]):
+        # Dollar / amount intent wins over count intent
+        if any(k in q for k in ["dollar", "dollars", "amount", "total", "balance", "$", "outstanding"]):
+            if any(k in q for k in ["unpaid", "outstanding", "due", "open"]):
+                return "billing_outstanding_total"
+            return "billing_total"
+
         if any(k in q for k in ["how many", "count", "number of"]):
             return "invoice_count"
+
         return "invoice_list"
 
     # System billing / A/R totals (no claim_id required)
     if any(k in q for k in [
-        "outstanding billing", "accounts receivable", "a/r", "ar total",
-        "how much outstanding", "total outstanding",
+        "accounts receivable", "a/r", "ar total",
+        "outstanding invoices", "unpaid invoices", "open invoices",
     ]):
         return "billing_outstanding_total"
+
+    # IMPORTANT: default meaning of "outstanding billing" = unpaid invoices ONLY
+    if "outstanding billing" in q:
+        return "billing_outstanding_total"
+
+    # Explicit future / potential revenue language
+    if any(k in q for k in [
+        "unbilled work", "uninvoiced work", "uninvoiced billables",
+        "potential revenue", "future billing", "billable exposure",
+    ]):
+        return "global_billables_uninvoiced"
+
+    # Combined exposure (AR + uninvoiced)
+    if any(k in q for k in [
+        "total exposure", "billing exposure", "total owed and unbilled",
+    ]):
+        return "billing_total_exposure"
 
     if any(k in q for k in [
         "total billing", "total billed", "how much billing", "how much have i billed",
@@ -374,8 +423,9 @@ def _deterministic_capabilities() -> Dict[str, Any]:
             "Rewrite/shorten/expand an existing field value (no auto-save)",
         ],
         "notes": [
-            "Answers are grounded in retrieved claim context; if context is missing a field, Clarity will say so.",
-            "PHI is intentionally minimized in prompts (no claimant name/DOB/claim #/contact identifiers).",
+            "Answers are grounded in retrieved database context.",
+            "All available claim, billing, report, invoice, and system data may be referenced.",
+            "If data is missing, Clarity will say so explicitly."
         ],
     }
 """AI service layer for Impact Medical CMS.
@@ -501,7 +551,13 @@ def _try_chat_engine(*, question: str, context: Dict[str, Any]) -> Optional[Dict
 def _context_to_prompt_text(ctx: Dict[str, Any]) -> str:
     """Serialize structured context to a stable prompt string."""
     try:
-        return json.dumps(ctx, ensure_ascii=False, indent=2, default=str)
+        payload = dict(ctx)
+        if "full_system_snapshot" in payload:
+            payload = {
+                "SYSTEM_DATABASE": payload["full_system_snapshot"],
+                "OTHER_CONTEXT": {k: v for k, v in payload.items() if k != "full_system_snapshot"},
+            }
+        return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
     except Exception:
         return str(ctx)
 
@@ -540,6 +596,17 @@ def generate(prompt: str) -> Dict[str, Any]:
     }
 
 def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
+    trace = {
+        "question_raw": question,
+        "question_norm": _qnorm(question),
+        "metric_detected": None,
+        "deterministic_intent": None,
+        "exploratory_bypass": False,
+        "chat_engine_handled": False,
+        "return_path": None,
+        "context_keys_at_start": sorted((context or {}).keys()),
+        "structured_counts": {},
+    }
     # ------------------------------------------------------------------
     # System-level invoice helpers (best-effort across schema variants)
     # ------------------------------------------------------------------
@@ -616,13 +683,32 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
     # Chat engine first (persistent, multi-turn). If it can handle the request,
     # return immediately. Otherwise, fall back to deterministic routing + LLM.
     chat_resp = _try_chat_engine(question=question, context=context or {})
+    # Check for chat_engine reasoning context injection.
     if isinstance(chat_resp, dict):
-        return chat_resp
+        # If chat_engine returned an LLM handoff with reasoning context, inject it for prompt building.
+        llm_handoff = chat_resp.get("llm_handoff")
+        if isinstance(llm_handoff, dict) and "reasoning_context" in llm_handoff:
+            # The reasoning_context is trusted, deterministic data supplied by chat_engine (non-hallucinated).
+            context = {**context, "reasoning_context": llm_handoff["reasoning_context"]}
+        # chat_engine is authoritative when it returns a response
+        if chat_resp.get("handled", True):
+            trace["chat_engine_handled"] = True
+            trace["return_path"] = "chat_engine"
+            if _env_truthy("CLARITY_DEBUG", "0"):
+                print("[CLARITY TRACE]", json.dumps(trace, default=str))
+            # Merge diagnostics if present
+            if _env_truthy("CLARITY_DEBUG", "0"):
+                if isinstance(chat_resp, dict):
+                    chat_resp = dict(chat_resp)
+                    chat_resp.setdefault("diagnostics", {})
+                    chat_resp["diagnostics"]["trace"] = trace
+            return chat_resp
     if _ai_globally_disabled():
         raise RuntimeError("AI is globally disabled (OPENAI_DISABLED).")
 
     # Fast-path metric handler before retrieval
     metric = detect_metric_query(question)
+    trace["metric_detected"] = metric
     if metric:
         from app.models import Claim, Invoice
         from app.extensions import db
@@ -663,7 +749,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                 msg = f"There are {closed_count} closed claims."
             else:
                 msg = f"There are {open_count} open and {closed_count} closed claims ({total_count} total)."
-
+            trace["return_path"] = "metric_claim_count"
+            if _env_truthy("CLARITY_DEBUG", "0"):
+                print("[CLARITY TRACE]", json.dumps(trace, default=str))
             return {
                 "answer": msg,
                 "citations": [],
@@ -673,10 +761,14 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                 "model": None,
                 "local_only": True,
                 "answer_mode": "brief",
+                **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
             }
 
         if metric == "invoice_count":
             count = db.session.query(Invoice).count()
+            trace["return_path"] = "metric_invoice_count"
+            if _env_truthy("CLARITY_DEBUG", "0"):
+                print("[CLARITY TRACE]", json.dumps(trace, default=str))
             return {
                 "answer": f"There are {count} invoices.",
                 "citations": [],
@@ -686,6 +778,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                 "model": None,
                 "local_only": True,
                 "answer_mode": "brief",
+                **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
             }
         # For billable_totals, fall through to normal retrieval (not handled here)
 
@@ -693,8 +786,48 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
     # Deterministic system-level billing totals (no claim_id required)
     # ---------------------------------------------------------------------
     det_intent = detect_deterministic_intent(question)
+    trace["deterministic_intent"] = det_intent
+
+    # ------------------------------------------------------------------
+    # Exploratory system-level questions should bypass deterministic routing
+    # and go directly to LLM synthesis with full context.
+    # ------------------------------------------------------------------
+    exploratory_phrases = [
+        "system overview",
+        "system health",
+        "how am i doing",
+        "how are things going",
+        "what's going on",
+        "what is going on",
+        "big picture",
+        "overall",
+        "high level",
+        "general overview",
+        "billing and workload",
+        "my workload",
+        "my billing",
+        "how is my billing",
+        "am i on track",
+    ]
+
+    ql = _qnorm(question)
+    # Exploratory questions should NOT override deterministic billing / invoice math
+    if det_intent not in {
+        "billing_outstanding_total",
+        "billing_total",
+        "billing_total_exposure",
+        "invoice_count",
+    }:
+        if any(p in ql for p in exploratory_phrases):
+            context.pop("claim_id", None)
+            context["scope"] = "system"
+            det_intent = None
+            trace["exploratory_bypass"] = True
     # Smalltalk fast-path (keeps chat from acting like a report generator)
     if det_intent == "smalltalk_ack":
+        trace["return_path"] = "deterministic_smalltalk_ack"
+        if _env_truthy("CLARITY_DEBUG", "0"):
+            print("[CLARITY TRACE]", json.dumps(trace, default=str))
         return {
             "answer": "You got it. Want unpaid invoices, uninvoiced billables, or claims next?",
             "citations": [],
@@ -704,6 +837,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
             "model": None,
             "local_only": True,
             "answer_mode": "brief",
+            **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
         }
 
     if det_intent in {"billing_outstanding_total", "billing_total"}:
@@ -737,6 +871,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
         invoices = db.session.query(Invoice).all()
         if det_intent == "billing_total":
             total = sum(_invoice_total(inv) for inv in invoices)
+            trace["return_path"] = "deterministic_billing_total"
+            if _env_truthy("CLARITY_DEBUG", "0"):
+                print("[CLARITY TRACE]", json.dumps(trace, default=str))
             return {
                 "answer": f"Total billed (all invoices): ${total:,.2f}",
                 "citations": [],
@@ -746,12 +883,86 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                 "model": None,
                 "local_only": True,
                 "answer_mode": "brief",
+                **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
             }
 
-        # Outstanding = sum of unpaid invoices
-        outstanding = sum(_invoice_total(inv) for inv in invoices if not _is_paid(inv))
+        if det_intent == "billing_outstanding_total":
+            # Outstanding = sum of unpaid invoices
+            unpaid_invoices = [inv for inv in invoices if not _is_paid(inv)]
+            outstanding = sum(_invoice_total(inv) for inv in unpaid_invoices)
+
+            count_total = len(invoices)
+            count_unpaid = len(unpaid_invoices)
+            count_paid = count_total - count_unpaid
+
+            trace["return_path"] = "deterministic_billing_outstanding"
+            if _env_truthy("CLARITY_DEBUG", "0"):
+                print("[CLARITY TRACE]", json.dumps(trace, default=str))
+
+            return {
+                "answer": (
+                    f"Outstanding billing summary:\n"
+                    f"- Unpaid invoices: {count_unpaid} of {count_total}\n"
+                    f"- Paid invoices: {count_paid}\n"
+                    f"- Total outstanding amount: ${outstanding:,.2f}\n\n"
+                    f"This represents money already invoiced but not yet paid."
+                ),
+                "citations": [],
+                "is_guess": False,
+                "confidence": 1.0,
+                "model_source": "system",
+                "model": None,
+                "local_only": True,
+                "answer_mode": "summary",
+                **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
+            }
+
+    # New deterministic handler: billing_total_exposure
+    if det_intent == "billing_total_exposure":
+        from app.models import Invoice, BillableItem
+        from app.extensions import db
+
+        # unpaid invoices
+        unpaid_total = 0.0
+        def _invoice_total(inv: Any) -> float:
+            for attr in ("total", "total_amount", "amount_total", "grand_total", "balance", "amount"):
+                if hasattr(inv, attr):
+                    v = getattr(inv, attr)
+                    if v not in (None, ""):
+                        try:
+                            return float(v)
+                        except Exception:
+                            pass
+            return 0.0
+        def _is_paid(inv: Any) -> bool:
+            for attr in ("is_paid", "paid"):
+                if hasattr(inv, attr):
+                    try:
+                        if bool(getattr(inv, attr)):
+                            return True
+                    except Exception:
+                        pass
+            status = (getattr(inv, "status", "") or "").strip().lower()
+            return status in {"paid", "complete", "completed", "closed"}
+        for inv in db.session.query(Invoice).all():
+            if not _is_paid(inv):
+                unpaid_total += _invoice_total(inv)
+
+        # uninvoiced billables (quantity * rate assumed precomputed upstream)
+        try:
+            from app.ai.analytics import compute_uninvoiced_billables_total
+            uninvoiced_total = compute_uninvoiced_billables_total()
+        except Exception:
+            uninvoiced_total = 0.0
+
+        exposure = unpaid_total + uninvoiced_total
+
         return {
-            "answer": f"Outstanding billing (unpaid invoices): ${outstanding:,.2f}",
+            "answer": (
+                f"Total billing exposure: ${exposure:,.2f}\n"
+                f"• Unpaid invoices: ${unpaid_total:,.2f}\n"
+                f"• Uninvoiced work: ${uninvoiced_total:,.2f}"
+            ),
             "citations": [],
             "is_guess": False,
             "confidence": 1.0,
@@ -789,6 +1000,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
             # Default: give a useful breakdown when the user didn't specify.
             msg = f"There are {total} invoices ({paid} paid, {unpaid} unpaid, {draft} draft)."
 
+        trace["return_path"] = "deterministic_invoice_count"
+        if _env_truthy("CLARITY_DEBUG", "0"):
+            print("[CLARITY TRACE]", json.dumps(trace, default=str))
         return {
             "answer": msg,
             "citations": [],
@@ -798,6 +1012,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
             "model": None,
             "local_only": True,
             "answer_mode": "brief",
+            **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
         }
 
     # ---------------------------------------------------------------------
@@ -857,12 +1072,16 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                 msg = f"Uninvoiced billable items (all claims): {count} (quantity sum: {qty_sum:,.2f})"
             else:
                 msg = f"Uninvoiced billable items (all claims): {count}"
+            trace["return_path"] = "deterministic_billables_uninvoiced"
         else:
             if qty_ok:
                 msg = f"Billable items (all claims): {count} (quantity sum: {qty_sum:,.2f})"
             else:
                 msg = f"Billable items (all claims): {count}"
+            trace["return_path"] = "deterministic_billables_summary"
 
+        if _env_truthy("CLARITY_DEBUG", "0"):
+            print("[CLARITY TRACE]", json.dumps(trace, default=str))
         return {
             "answer": msg,
             "citations": [],
@@ -872,6 +1091,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
             "model": None,
             "local_only": True,
             "answer_mode": "brief",
+            **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
         }
 
     # Deterministic intent (only used after we have claim context; some intents don't require it)
@@ -880,17 +1100,63 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
 
     # Always use this module's retrieve() for Clarity context
     claim_id = context.get("claim_id")
-    retrieval_data = None
-    if claim_id:
+
+    # Always retrieve full system state when no claim_id is present
+    if not claim_id:
+        try:
+            from app.ai.retrieval import retrieve as _retrieve
+            snap = _retrieve(context={}, question=None)
+            context = {
+                **context,
+                "full_system_snapshot": snap.get("full_snapshot"),
+                "sources": snap.get("sources", []),
+            }
+        except Exception:
+            context = {**context}
+    else:
         retrieval_data = retrieve(context=context, question=question)
+
+        # Always retrieve full system snapshot so the LLM can reason globally
+        try:
+            from app.ai.retrieval import retrieve as _retrieve
+            system_snap = _retrieve(context={}, question=None)
+            full_snapshot = system_snap.get("full_snapshot")
+        except Exception:
+            full_snapshot = None
+
         context = {
             **context,
             "facts": retrieval_data.get("facts", []),
             "chunks": retrieval_data.get("chunks", []),
             "sources": retrieval_data.get("sources", []),
+            # (removed full_system_snapshot to aggressively scope context for billing/workload)
         }
-    else:
-        context = {**context}
+
+    # ------------------------------------------------------------------
+    # SYSTEM-LEVEL STRUCTURED BILLING CONTEXT (AUTHORITATIVE NUMBERS)
+    # ------------------------------------------------------------------
+    # For billing / invoice / workload questions, ALWAYS compute structured
+    # system-wide analytics so the LLM never guesses dollar amounts.
+    billing_terms = ["billing", "invoice", "invoices", "outstanding", "unpaid", "accounts receivable", "a/r"]
+    if any(t in _qnorm(question) for t in billing_terms):
+        try:
+            from app.ai.retrieval import retrieve_context as _retrieve_context
+            system_structured = _retrieve_context(
+                claim_id=None,
+                report=None,
+                max_billables=int(context.get("max_billables") or 500),
+                max_reports=0,
+            )
+            if isinstance(system_structured, dict):
+                context.setdefault("structured", {})
+                for k in ("billables", "invoices", "invoice_summary", "summary"):
+                    if system_structured.get(k) is not None:
+                        context["structured"][k] = system_structured.get(k)
+                # Preserve legacy alias
+                if system_structured.get("summary") is not None:
+                    context["billable_summary"] = system_structured.get("summary")
+        except Exception:
+            pass
 
     # Optional: enrich with structured claim context for deterministic answers.
     # This is best-effort and must never crash the endpoint.
@@ -943,6 +1209,15 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
             if structured:
                 context.setdefault("structured", structured)
 
+            # 🔥 Guarantee billing visibility to the LLM
+            context.setdefault("structured", {})
+
+            if structured.get("invoices"):
+                context["structured"]["invoices"] = structured.get("invoices")
+
+            if structured.get("billables"):
+                context["structured"]["billables"] = structured.get("billables")
+
     except Exception:
         # Ignore any retrieval issues; LLM path can still run with chunks/sources.
         pass
@@ -955,6 +1230,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
     # Capabilities/help can be answered without a claim_id.
     if det_intent == "capabilities":
         caps = _deterministic_capabilities()
+        trace["return_path"] = "deterministic_capabilities"
+        if _env_truthy("CLARITY_DEBUG", "0"):
+            print("[CLARITY TRACE]", json.dumps(trace, default=str))
         return {
             "answer": json.dumps(caps, ensure_ascii=False, indent=2),
             "citations": [],
@@ -964,6 +1242,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
             "model": None,
             "local_only": True,
             "answer_mode": "debug",
+            **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
         }
 
     # Everything below this line benefits from claim context.
@@ -972,6 +1251,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
         if det_intent == "claim_summary":
             summary_text = _deterministic_claim_summary(context)
             if summary_text:
+                trace["return_path"] = "deterministic_claim_summary"
+                if _env_truthy("CLARITY_DEBUG", "0"):
+                    print("[CLARITY TRACE]", json.dumps(trace, default=str))
                 resp = {
                     "answer": summary_text,
                     "citations": [],
@@ -981,6 +1263,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                     "model": None,
                     "local_only": True,
                     "answer_mode": "summary",
+                    **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
                 }
                 if _env_truthy("FLORENCE_DEBUG", "0"):
                     resp["diagnostics"] = debug_retrieval_snapshot(context)
@@ -995,6 +1278,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
             dos_start = (lr.get("dos_start") if isinstance(lr, dict) else None) or cr.get("dos_start") or header.get("dos_start")
             dos_end = (lr.get("dos_end") if isinstance(lr, dict) else None) or cr.get("dos_end") or header.get("dos_end")
             if dos_start or dos_end:
+                trace["return_path"] = "deterministic_latest_dos"
+                if _env_truthy("CLARITY_DEBUG", "0"):
+                    print("[CLARITY TRACE]", json.dumps(trace, default=str))
                 return {
                     "answer": f"Latest DOS: {dos_start or '?'} → {dos_end or '?'}",
                     "citations": [],
@@ -1004,6 +1290,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                     "model": None,
                     "local_only": True,
                     "answer_mode": "brief",
+                    **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
                 }
 
         # Latest report narrative (best-effort; prefers retrieval-provided latest_report)
@@ -1014,6 +1301,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                 if det_intent == "latest_report_work_status":
                     ws = (r0.get("work_status") or "").strip()
                     if ws:
+                        trace["return_path"] = "deterministic_latest_report_work_status"
+                        if _env_truthy("CLARITY_DEBUG", "0"):
+                            print("[CLARITY TRACE]", json.dumps(trace, default=str))
                         return {
                             "answer": ws,
                             "citations": [],
@@ -1023,11 +1313,15 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                             "model": None,
                             "local_only": True,
                             "answer_mode": "brief",
+                            **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
                         }
 
                 if det_intent == "latest_report_status_plan":
                     stp = (r0.get("status_treatment_plan") or "").strip()
                     if stp:
+                        trace["return_path"] = "deterministic_latest_report_status_plan"
+                        if _env_truthy("CLARITY_DEBUG", "0"):
+                            print("[CLARITY TRACE]", json.dumps(trace, default=str))
                         return {
                             "answer": stp,
                             "citations": [],
@@ -1037,6 +1331,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                             "model": None,
                             "local_only": True,
                             "answer_mode": "brief",
+                            **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
                         }
 
                 # Generic latest report summary (compact)
@@ -1061,6 +1356,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                     bits.append("Work status: " + ws)
 
                 if bits:
+                    trace["return_path"] = "deterministic_latest_report_summary"
+                    if _env_truthy("CLARITY_DEBUG", "0"):
+                        print("[CLARITY TRACE]", json.dumps(trace, default=str))
                     return {
                         "answer": "\n".join(bits),
                         "citations": [],
@@ -1070,6 +1368,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                         "model": None,
                         "local_only": True,
                         "answer_mode": "summary",
+                        **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
                     }
 
         # Billables comparison handler (deterministic)
@@ -1105,6 +1404,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                 answer_parts.append(", ".join(subbits) + ".")
             answer = " ".join(answer_parts)
             answer = answer.strip()
+            trace["return_path"] = "deterministic_billables_compare_claim"
+            if _env_truthy("CLARITY_DEBUG", "0"):
+                print("[CLARITY TRACE]", json.dumps(trace, default=str))
             return {
                 "answer": answer,
                 "citations": ["system:billables_rollup", f"claim:{claim_id}:billables_rollup"],
@@ -1114,6 +1416,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                 "model": None,
                 "local_only": True,
                 "answer_mode": "brief",
+                **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
             }
 
         # Billables summary / list / uninvoiced list
@@ -1141,6 +1444,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                             continue
                         lines.append(f"- {k}: {v}")
                 if lines:
+                    trace["return_path"] = "deterministic_billables_summary"
+                    if _env_truthy("CLARITY_DEBUG", "0"):
+                        print("[CLARITY TRACE]", json.dumps(trace, default=str))
                     return {
                         "answer": "Billable summary:\n" + "\n".join(lines),
                         "citations": [],
@@ -1150,6 +1456,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                         "model": None,
                         "local_only": True,
                         "answer_mode": "brief",
+                        **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
                     }
 
             if billables:
@@ -1166,6 +1473,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                 if not lines:
                     lines = ["(No billables matched the filter.)"]
                 header_line = "Billables:" if det_intent != "billables_uninvoiced" else "Uninvoiced billables:"
+                trace["return_path"] = "deterministic_billables_list" if det_intent != "billables_uninvoiced" else "deterministic_billables_uninvoiced"
+                if _env_truthy("CLARITY_DEBUG", "0"):
+                    print("[CLARITY TRACE]", json.dumps(trace, default=str))
                 return {
                     "answer": header_line + "\n" + "\n".join(lines),
                     "citations": [],
@@ -1175,6 +1485,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                     "model": None,
                     "local_only": True,
                     "answer_mode": "list",
+                    **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
                 }
 
             # If we have only summary totals, return those deterministically.
@@ -1186,6 +1497,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                         continue
                     lines.append(f"- {k}: {v}")
                 if lines:
+                    trace["return_path"] = "deterministic_billables_summary"
+                    if _env_truthy("CLARITY_DEBUG", "0"):
+                        print("[CLARITY TRACE]", json.dumps(trace, default=str))
                     return {
                         "answer": "Billable summary:\n" + "\n".join(lines),
                         "citations": [],
@@ -1195,6 +1509,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                         "model": None,
                         "local_only": True,
                         "answer_mode": "brief",
+                        **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
                     }
 
         # Invoice list (best-effort from structured context if present)
@@ -1213,6 +1528,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                     if parts:
                         lines.append(f"{i}. " + "; ".join(parts))
                 if lines:
+                    trace["return_path"] = "deterministic_invoice_list"
+                    if _env_truthy("CLARITY_DEBUG", "0"):
+                        print("[CLARITY TRACE]", json.dumps(trace, default=str))
                     return {
                         "answer": "Invoices:\n" + "\n".join(lines),
                         "citations": [],
@@ -1222,10 +1540,14 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                         "model": None,
                         "local_only": True,
                         "answer_mode": "list",
+                        **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
                     }
 
     # System/global comparison intent
     if det_intent == "billables_compare_system":
+        trace["return_path"] = "deterministic_billables_compare_system"
+        if _env_truthy("CLARITY_DEBUG", "0"):
+            print("[CLARITY TRACE]", json.dumps(trace, default=str))
         return {
             "answer": "Comparisons require a specific claim. Open a claim and ask: 'Is this claim typical?'",
             "citations": [],
@@ -1235,6 +1557,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
             "model": None,
             "local_only": True,
             "answer_mode": "brief",
+            **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
         }
 
     # ---------------------------------------------------------------------
@@ -1243,6 +1566,9 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
 
     # Clarity debug mode: only when explicitly requested
     if ql.startswith("debug"):
+        trace["return_path"] = "clarity_debug_snapshot"
+        if _env_truthy("CLARITY_DEBUG", "0"):
+            print("[CLARITY TRACE]", json.dumps(trace, default=str))
         return {
             "answer": "Clarity diagnostic snapshot (no LLM)",
             "diagnostics": debug_retrieval_snapshot(context),
@@ -1251,20 +1577,93 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
             "model": None,
             "local_only": True,
             "answer_mode": "debug",
+            **({"diagnostics": {"trace": trace}} if _env_truthy("CLARITY_DEBUG", "0") else {}),
         }
 
-    prompt_context_text = _context_to_prompt_text(context)
+    # If context contains reasoning_context, wrap for prompt construction.
+    if "reasoning_context" in context:
+        # The reasoning_context is trusted, deterministic data supplied by chat_engine (non-hallucinated).
+        merged_for_prompt = {
+            "REASONING_CONTEXT": context["reasoning_context"],
+            "CONTEXT": {k: v for k, v in context.items() if k != "reasoning_context"}
+        }
+        prompt_context_text = _context_to_prompt_text(merged_for_prompt)
+    else:
+        prompt_context_text = _context_to_prompt_text(context)
+    # LLM routing trace
+    trace["return_path"] = "llm"
+    trace["context_keys_before_prompt"] = sorted(context.keys())
+    # structured visibility diagnostics
+    structured = context.get("structured") or {}
+    trace["structured_counts"] = {
+        "claims": len(structured.get("claims", [])) if isinstance(structured.get("claims"), list) else None,
+        "reports": len(structured.get("reports", [])) if isinstance(structured.get("reports"), list) else None,
+        "billables": len(structured.get("billables", [])) if isinstance(structured.get("billables"), list) else None,
+        "invoices": len(structured.get("invoices", [])) if isinstance(structured.get("invoices"), list) else None,
+    }
     # Intent-aware mode selection
-    # (ql already defined above)
-    if any(k in ql for k in ["summarize", "summary", "overview", "what's going on", "what is going on", "status of this claim"]):
+    # Exploratory / analytical questions should use exploration mode
+    if context.get("scope") == "system" or context.get("mode") == "analysis":
+        mode = "explore"
+    elif any(k in ql for k in ["summarize", "summary", "overview", "what's going on", "what is going on", "status of this claim"]):
         mode = "summary"
     elif any(k in ql for k in ["draft", "write", "rewrite", "generate"]):
         mode = "draft"
     else:
-        mode = (context.get("mode") or "read")
+        mode = "read"
+
+    # ------------------------------------------------------------------
+    # HARD CONTEXT SHAPING (aggressive, MVP behavior)
+    # ------------------------------------------------------------------
+    billing_focus_terms = ["billing", "invoice", "invoices", "paid", "unpaid", "outstanding", "accounts receivable", "a/r"]
+    ql = _qnorm(question)
+
+    forced_instructions = None
+    if any(t in ql for t in billing_focus_terms):
+        forced_instructions = (
+            "You are answering a BILLING question.\n"
+            "- Focus on invoices, billing totals, unpaid amounts, cash flow, and trends.\n"
+            "- Do NOT summarize claims, diagnoses, reports, or treatment unless explicitly asked.\n"
+            "- If exact numbers are present, reference them.\n"
+            "- If summarizing, provide financial insight, not medical context.\n"
+        )
 
     # NOTE: summary mode is intentionally less restrictive than read mode
     # to allow higher-level synthesis while still grounded in retrieved context.
+    if forced_instructions:
+        prompt_context_text = (
+            "INSTRUCTIONS:\n"
+            + forced_instructions
+            + "\n\nCONTEXT:\n"
+            + prompt_context_text
+        )
+
+        # 🔥 AGGRESSIVE CONTEXT PRUNING (MVP)
+        # If this is a billing-focused question, REMOVE claim/report medical noise
+        pruned_context = {}
+        # Keep only billing-relevant data
+        for k in (
+            "invoices",
+            "billables",
+            "billable_summary",
+            "structured",
+            "sources",
+            "counts",
+            "scope",
+        ):
+            if k in context:
+                pruned_context[k] = context.get(k)
+
+        # If structured exists, aggressively trim it too
+        structured = pruned_context.get("structured")
+        if isinstance(structured, dict):
+            pruned_context["structured"] = {
+                "invoices": structured.get("invoices"),
+                "billables": structured.get("billables"),
+            }
+
+        context = pruned_context
+
     prompt = build_prompt(
         question=question,
         context=prompt_context_text,
@@ -1309,6 +1708,19 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
     diagnostics = None
     if _env_truthy("FLORENCE_DEBUG", "0"):
         diagnostics = debug_retrieval_snapshot(context)
+    # Merge diagnostics
+    diagnostics_out = {}
+    if diagnostics:
+        diagnostics_out = {"diagnostics": diagnostics, "context_keys": sorted(context.keys())}
+    # If CLARITY_DEBUG, add trace to diagnostics, merging if needed
+    if _env_truthy("CLARITY_DEBUG", "0"):
+        if "diagnostics" in diagnostics_out:
+            # Merge trace into existing diagnostics
+            if isinstance(diagnostics_out["diagnostics"], dict):
+                diagnostics_out["diagnostics"]["trace"] = trace
+        else:
+            diagnostics_out["diagnostics"] = {"trace": trace}
+        print("[CLARITY TRACE]", json.dumps(trace, default=str))
     return {
         "answer": answer_text,
         "citations": normalized.get("citations", []),
@@ -1318,7 +1730,7 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
         "model": llm_info.get("model"),
         "local_only": llm_info.get("local", False),
         "answer_mode": answer_mode,
-        **({"diagnostics": diagnostics, "context_keys": sorted(context.keys())} if diagnostics else {}),
+        **diagnostics_out,
     }
 
 from app.ai.retrieval import retrieve_context, retrieve as clarity_retrieve
@@ -1687,22 +2099,6 @@ class ToneProfile:
     # If you later want to get fancy: tense, voice, headings patterns, etc.
 
 
-@dataclass(frozen=True)
-class AIPrivacyRules:
-    """Rules controlling what the AI may see."""
-
-    allow_provider_names: bool
-
-
-@dataclass(frozen=True)
-class FaxLikeContactFields:
-    """Helper structure for redacting common contact identifiers."""
-
-    phone: str = ""
-    fax: str = ""
-    email: str = ""
-
-
 # -----------------------------------------------------------------------------
 # Public API (routes should call these)
 # -----------------------------------------------------------------------------
@@ -1719,10 +2115,6 @@ def generate_report_field(
     """Generate draft text for one report field.
 
     This is the single entry point routes should use.
-
-    Privacy behavior:
-    - Always removes claimant name, DOB, phone/fax, emails (best-effort)
-    - Provider names are included only if Settings allow them
 
     NOTE: This function intentionally does NOT persist anything.
 
@@ -1755,14 +2147,9 @@ def generate_report_field(
     if not report:
         raise RuntimeError(f"Report {report_id} not found")
 
-    rules = AIPrivacyRules(
-        allow_provider_names=bool(getattr(settings, "ai_allow_provider_names", False))
-    )
-
     context = build_context(
         report=report,
         field_name=field_name,
-        rules=rules,
         max_prior_reports=max_prior_reports,
         max_billables=max_billables,
         BillableItem=BillableItem,
@@ -1807,6 +2194,7 @@ def generate_report_field(
         "citations": normalized.get("citations", []),
         "is_guess": normalized.get("is_guess", False),
         "confidence": normalized.get("confidence"),
+        "instructions": instructions,
     }
 
 
@@ -1869,14 +2257,9 @@ def build_report_field_draft_prompt(
     if not report:
         raise RuntimeError(f"Report {report_id} not found")
 
-    rules = AIPrivacyRules(
-        allow_provider_names=bool(getattr(settings, "ai_allow_provider_names", False))
-    )
-
     context = build_context(
         report=report,
         field_name=field_name,
-        rules=rules,
         max_prior_reports=max_prior_reports,
         max_billables=max_billables,
         BillableItem=BillableItem,
@@ -1927,13 +2310,12 @@ def build_context(
     *,
     report: Any,
     field_name: str,
-    rules: AIPrivacyRules,
     max_prior_reports: int,
     max_billables: int,
     BillableItem: Any,
     db: Any,
 ) -> Dict[str, Any]:
-    """Assemble a redacted context payload for AI generation."""
+    """Assemble a full, unredacted context payload for AI generation."""
 
     claim = getattr(report, "claim", None)
     claim_id = getattr(report, "claim_id", None)
@@ -1964,7 +2346,7 @@ def build_context(
     # Provide the current field's existing value so the model can revise/improve it.
     current_field_value = _clip_text(getattr(report, field_name, None)) if hasattr(report, field_name) else None
 
-    # Include additional current report fields as context (best-effort; scrubbed later).
+    # Include additional current report fields as context (best-effort)
     current_fields: Dict[str, Any] = {
         "field_being_drafted": field_name,
         "existing_field_value": current_field_value,
@@ -1982,20 +2364,13 @@ def build_context(
         if hasattr(report, fname):
             current_fields[fname] = _clip_text(getattr(report, fname, None))
 
-    # Redact everything we can.
-    header = scrub_dict(header, rules=rules)
-
-    # Add resolved barrier labels to prior reports before scrubbing.
+    # Add resolved barrier labels to prior reports before returning.
     prior_reports_enriched: List[Dict[str, Any]] = []
     for r in prior_reports:
         ids = _parse_barrier_ids(r.get("barriers_json"))
         r = dict(r)
         r["barriers_to_recovery"] = _resolve_barrier_labels(barrier_ids=ids)
         prior_reports_enriched.append(r)
-
-    prior_reports = [scrub_dict(r, rules=rules) for r in prior_reports_enriched]
-    billables = [scrub_dict(b, rules=rules) for b in billables]
-    current_fields = scrub_dict(current_fields, rules=rules)
 
     # Numeric billable totals (summary, e.g. hours/miles/dollars) come from retrieval only.
     # Do NOT recompute, infer, or transform these values in prompts or the service layer.
@@ -2009,43 +2384,37 @@ def build_context(
             "dos_end": _safe_date(getattr(report, "dos_end", None)),
             "next_report_due": _safe_date(getattr(report, "next_report_due", None)),
         },
-        "prior_reports": prior_reports,
+        "prior_reports": prior_reports_enriched,
         "billables": billables,
         "billable_summary": billable_summary,
-        "privacy": {
-            "allow_provider_names": rules.allow_provider_names,
-        },
     }
 
 def build_safe_header(*, report: Any, claim: Any) -> Dict[str, Any]:
-    """Build a minimal header for context.
-
-    IMPORTANT: We intentionally do NOT include claimant name, DOB, phone, email,
-    claim number, address, or other identifying fields.
-
-    We do include dates and high-level claim/report metadata.
-    """
-
-    header: Dict[str, Any] = {
-        # High-level, non-identifying claim/report context
-        "claim_state": getattr(claim, "claim_state", None) if claim else None,
-        "doi": _safe_date(getattr(claim, "doi", None) if claim else None),
-        "referral_date": _safe_date(getattr(claim, "referral_date", None) if claim else None),
-        "surgery_date": _safe_date(getattr(claim, "surgery_date", None) if claim else None),
-        "injured_body_part": getattr(claim, "injured_body_part", None) if claim else None,
-
-        "report_type": getattr(report, "report_type", None),
-        "dos_start": _safe_date(getattr(report, "dos_start", None)),
-        "dos_end": _safe_date(getattr(report, "dos_end", None)),
-        "next_report_due": _safe_date(getattr(report, "next_report_due", None)),
-    }
-
-    # Provider identity is conditionally allowed; other provider metadata is okay.
-    treating_provider = getattr(report, "treating_provider", None)
-    if treating_provider is not None:
-        header["treating_provider_name"] = getattr(treating_provider, "name", None)
-        header["treating_provider_specialty"] = getattr(treating_provider, "specialty", None)
-
+    """Build a header for context including all available claim and report fields."""
+    header: Dict[str, Any] = {}
+    # Claim fields (if present)
+    if claim:
+        for attr in dir(claim):
+            if not attr.startswith("_"):
+                try:
+                    val = getattr(claim, attr)
+                    # Only include serializable fields
+                    if callable(val):
+                        continue
+                    header[attr] = val
+                except Exception:
+                    continue
+    # Report fields (if present)
+    if report:
+        for attr in dir(report):
+            if not attr.startswith("_"):
+                try:
+                    val = getattr(report, attr)
+                    if callable(val):
+                        continue
+                    header[attr] = val
+                except Exception:
+                    continue
     return header
 
 def collect_prior_reports(
