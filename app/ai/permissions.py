@@ -46,6 +46,19 @@ class AICapabilities:
     use_local_llm: bool
 
 
+@dataclass(frozen=True)
+class AIPrivacyRules:
+    """
+    Controls how sensitive information is scrubbed before
+    being sent to an LLM or embeddings.
+    """
+    redact_names: bool = True
+    redact_dates: bool = True
+    redact_claim_numbers: bool = True
+    redact_policy_numbers: bool = True
+    redact_addresses: bool = True
+
+
 def _get_settings() -> Optional[Settings]:
     try:
         return Settings.query.first()
