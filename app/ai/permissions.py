@@ -31,6 +31,7 @@ class AICapabilities:
     read_claims: bool
     read_reports: bool
     read_billables: bool
+    read_invoices: bool
     read_documents: bool
 
     # PHI handling
@@ -61,45 +62,26 @@ def get_ai_capabilities() -> AICapabilities:
 
     settings = _get_settings()
 
-    # Hard kill switch via env
-    if current_app.config.get("OPENAI_DISABLED") or (
-        settings and not getattr(settings, "ai_enabled", False)
-    ):
-        return AICapabilities(
-            enabled=False,
-            read_claims=False,
-            read_reports=False,
-            read_billables=False,
-            read_documents=False,
-            allow_phi=False,
-            allow_suggestions=False,
-            allow_writes=False,
-            use_embeddings=False,
-            use_local_llm=False,
-        )
-
-    # Defaults: read-only, suggest-only
-    allow_phi = bool(getattr(settings, "ai_allow_phi", False)) if settings else False
-
     return AICapabilities(
         enabled=True,
 
-        # Read permissions
+        # Full read access
         read_claims=True,
         read_reports=True,
         read_billables=True,
+        read_invoices=True,
         read_documents=True,
 
-        # PHI
-        allow_phi=allow_phi,
+        # PHI allowed (local-only system)
+        allow_phi=True,
 
-        # Write control
+        # Suggestions only (no DB writes)
         allow_suggestions=True,
-        allow_writes=False,  # NEVER default this to True
+        allow_writes=False,
 
-        # Infra flags (future-wired)
-        use_embeddings=bool(getattr(settings, "ai_use_embeddings", False)) if settings else False,
-        use_local_llm=bool(getattr(settings, "ai_use_local_llm", False)) if settings else False,
+        # Infrastructure
+        use_embeddings=True,
+        use_local_llm=True,
     )
 
 
@@ -129,13 +111,14 @@ def _coerce_caps(obj: Any) -> Optional[AICapabilities]:
         return obj
 
     # Duck-typing fallback (only if it actually looks like caps)
-    if all(hasattr(obj, attr) for attr in ("enabled", "read_claims", "read_reports", "read_billables", "read_documents")):
+    if all(hasattr(obj, attr) for attr in ("enabled", "read_claims", "read_reports", "read_billables", "read_invoices", "read_documents")):
         try:
             return AICapabilities(
                 enabled=bool(getattr(obj, "enabled")),
                 read_claims=bool(getattr(obj, "read_claims")),
                 read_reports=bool(getattr(obj, "read_reports")),
                 read_billables=bool(getattr(obj, "read_billables")),
+                read_invoices=bool(getattr(obj, "read_invoices", False)),
                 read_documents=bool(getattr(obj, "read_documents")),
                 allow_phi=bool(getattr(obj, "allow_phi", False)),
                 allow_suggestions=bool(getattr(obj, "allow_suggestions", False)),
@@ -197,3 +180,8 @@ def allow_any_ai(caps: AICapabilities) -> bool:
     """Quick check for any AI capability at all."""
     caps = _coerce_caps(caps)
     return bool(caps and caps.enabled)
+
+def allow_invoices(caps: AICapabilities) -> bool:
+    """Whether AI may read invoice records and financial totals."""
+    caps = _coerce_caps(caps)
+    return bool(caps and caps.enabled and caps.read_invoices)

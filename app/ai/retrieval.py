@@ -34,6 +34,69 @@ except Exception:  # pragma: no cover
     Report = None
 
 # =========================
+# FULL DATABASE SNAPSHOT RETRIEVAL
+# =========================
+def _retrieve_full_database_snapshot() -> dict:
+    """
+    FULL SYSTEM SNAPSHOT.
+    Returns raw, structured data for *all* major tables.
+    Intended for system-level reasoning and analysis.
+    """
+    return {
+        "claims": [c.__dict__ for c in Claim.query.all()],
+        "invoices": [i.__dict__ for i in Invoice.query.all()],
+        "billables": [b.__dict__ for b in BillableItem.query.all()],
+        "carriers": [c.__dict__ for c in Carrier.query.all()],
+        "employers": [e.__dict__ for e in Employer.query.all()],
+        "providers": [p.__dict__ for p in Provider.query.all()],
+        "reports": (
+            [r.__dict__ for r in Report.query.all()]
+            if Report is not None else []
+        ),
+    }
+
+# =========================
+# Domain-shaped system snapshot (context shaping)
+# =========================
+def _select_system_snapshot(query: str | None) -> dict:
+    """
+    Return a domain-shaped system snapshot based on the query.
+    This intentionally suppresses unrelated domains to avoid LLM dominance.
+    """
+    if not query:
+        return {}
+
+    q = query.lower()
+
+    billing_terms = {"billing", "invoice", "invoices", "outstanding", "owed", "owe", "due", "ar", "receivable", "paid", "unpaid"}
+    workload_terms = {"workload", "busy", "capacity", "work", "reports", "billables"}
+    claim_terms = {"claim", "claims", "claimant", "injury", "doi", "dos"}
+
+    tokens = set(re.findall(r"[a-zA-Z0-9]+", q))
+
+    snapshot = {}
+
+    if tokens & billing_terms:
+        snapshot["invoices"] = [i.__dict__ for i in Invoice.query.all()]
+        snapshot["billables"] = [b.__dict__ for b in BillableItem.query.all()]
+        return snapshot
+
+    if tokens & workload_terms:
+        snapshot["reports"] = [r.__dict__ for r in Report.query.all()] if Report is not None else []
+        snapshot["billables"] = [b.__dict__ for b in BillableItem.query.all()]
+        snapshot["claims"] = [c.__dict__ for c in Claim.query.all()]
+        return snapshot
+
+    if tokens & claim_terms:
+        snapshot["claims"] = [c.__dict__ for c in Claim.query.all()]
+        snapshot["reports"] = [r.__dict__ for r in Report.query.all()] if Report is not None else []
+        return snapshot
+
+    # Fallback: minimal system context
+    snapshot["claims"] = [c.__dict__ for c in Claim.query.all()]
+    return snapshot
+
+# =========================
 # Helpers for identity and contacts
 # =========================
 
@@ -2159,9 +2222,9 @@ def retrieve_context(
     """
 
     if query is None:
+        # Structured retrieval for fast-path deterministic answers
         return _retrieve_context_structured(
             claim_id=claim_id,
-            report=report,
             max_billables=max_billables,
             max_reports=max_reports,
         )
@@ -2211,6 +2274,11 @@ def retrieve(*args, **kwargs):
     if claim_id is not None and not isinstance(claim_id, int):
         claim_id = None
 
+    # IMPORTANT: Do NOT send full database context unless explicitly needed.
+    # Context must be domain-shaped or the LLM will collapse to claims analysis.
+    full_snapshot = _select_system_snapshot(query)
+
+    # Retrieve chunked context as supplemental signal (ranking / anchors)
     chunks = retrieve_context(
         claim_id=claim_id,
         query=query,
@@ -2218,33 +2286,28 @@ def retrieve(*args, **kwargs):
         mode=mode,
     )
 
-    # If the wrapper returned structured data (dict), convert to an empty chunk set.
-    # The Florence adapter path expects chunk objects.
-    if isinstance(chunks, dict):
-        chunks = []
+    chunk_dicts = []
+    if isinstance(chunks, list):
+        chunk_dicts = [
+            {
+                "source_id": c.source_id,
+                "label": c.label,
+                "text": c.text,
+                "score": c.score,
+                "quantity": c.quantity,
+                "unit": c.unit,
+                "activity_code": c.activity_code,
+                "amount": c.amount,
+                "invoice_id": c.invoice_id,
+                "is_invoiced": c.is_invoiced,
+                "intent_hint": c.intent_hint,
+                "authority": c.authority,
+            }
+            for c in chunks
+        ]
 
-    print(f"[retrieval] retrieve() got {len(chunks)} chunks (claim_id={claim_id})")
-
-    chunk_dicts = [
-        {
-            "source_id": c.source_id,
-            "label": c.label,
-            "text": c.text,
-            "score": c.score,
-            "quantity": c.quantity,
-            "unit": c.unit,
-            "activity_code": c.activity_code,
-            "amount": c.amount,
-            "invoice_id": c.invoice_id,
-            "is_invoiced": c.is_invoiced,
-            "intent_hint": c.intent_hint,
-            "authority": c.authority,
-        }
-        for c in chunks
-    ]
-
-    # Florence expects JSON-serializable payloads.
     return {
+        "full_snapshot": full_snapshot,
         "facts": chunk_dicts,
         "chunks": chunk_dicts,
         "sources": [c["source_id"] for c in chunk_dicts],

@@ -1,4 +1,81 @@
 from __future__ import annotations
+def is_exploratory_system_query(question: str) -> bool:
+    q = (question or "").lower().strip()
+
+    # Quantitative billing / money questions must remain deterministic
+    if any(k in q for k in ["how much", "total", "sum", "$", "amount"]) and any(
+        k in q for k in [
+            "billing",
+            "invoice",
+            "invoices",
+            "outstanding",
+            "unpaid",
+            "owed",
+            "receivable",
+        ]
+    ):
+        return False
+
+    # Money / value questions MUST be exploratory (analytics-first)
+    if any(k in q for k in [
+        "$",
+        "dollar",
+        "dollars",
+        "amount",
+        "value",
+        "worth",
+        "revenue",
+        "income",
+        "outstanding",
+        "unpaid",
+        "owed",
+        "receivable",
+    ]) and "invoice" in q:
+        return True
+
+    # Explicit executive / system queries
+    if any(k in q for k in [
+        "system overview",
+        "overview",
+        "system health",
+        "health",
+        "diagnostic",
+        "big picture",
+        "what do you know about my system",
+        "what do you know",
+        "how am i doing",
+        "what's going on",
+        "what is going on",
+        "am i on track",
+    ]):
+        return True
+
+
+
+    # Infrastructure / system metrics
+    if any(k in q for k in [
+        "server",
+        "temperature",
+        "temps",
+        "cpu",
+        "ram",
+        "memory",
+        "disk",
+        "storage",
+        "space",
+        "backup",
+        "backups",
+        "uptime",
+        "load",
+        "filesystem",
+    ]):
+        return True
+
+    return False
+
+# -----------------------------
+# Exploratory system planner
+# -----------------------------
 
 from typing import Any, Dict, Tuple, Optional, List
 from ai.sources import (
@@ -27,8 +104,14 @@ from ai.sources import (
     top_claims_by_uninvoiced_hours,
     answer_latest_report_work_status,
     answer_system_overview,
+    system_claims_snapshot,
+    system_billing_snapshot,
+    system_workload_snapshot,
+    system_health_snapshot,
 )
+# --- SYSTEM HEALTH import for exploratory system queries ---
 from ai.confidence import compute_confidence
+from ai.health import compute_health_snapshot
 # --- CLAIM-SCOPED ORCHESTRATION (delegated) ---
 from ai.claims import (
     handle_claim_summary,
@@ -179,8 +262,11 @@ def extract_claim_status_scope(question: str) -> Optional[str]:
 
 
 def extract_billing_scope(question: str) -> Optional[str]:
-    """Return 'outstanding' | 'total' based on keywords, else None."""
     q = _qnorm(question)
+
+    # Money questions must never hit deterministic billing scopes
+    if any(k in q for k in ["$", "dollar", "dollars", "amount", "value", "worth"]):
+        return None
 
     outstanding_keywords = ["outstanding", "owed", "due", "receivable", "unpaid"]
     total_keywords = ["total billing", "total invoices", "total billed", "total invoiced"]
@@ -573,6 +659,53 @@ def handle_chat_turn(
     if cid is not None:
         ts["last_claim_id"] = cid
 
+
+    # -------------------------------------------------
+    # Executive snapshot (single source of truth)
+    # -------------------------------------------------
+    from ai.analytics import compute_executive_snapshot
+    from ai.health import compute_health_snapshot
+
+    executive_snapshot = compute_executive_snapshot(
+        db=db,
+        ClaimModel=ClaimModel,
+        InvoiceModel=InvoiceModel,
+        BillableItemModel=BillableItemModel,
+        ReportModel=ReportModel,
+    )
+
+    # Attach lightweight system health
+    executive_snapshot["health"] = compute_health_snapshot()
+
+    # Always route system-level questions to LLM with snapshot only
+    llm_handoff = {
+        "mode": "analysis",
+        "task": "executive_system",
+        "scope": "system",
+        "page_context": "system",
+        "reasoning_context": {"executive": executive_snapshot},
+        "instructions": (
+            "You are Clarity, an executive-level analytical assistant.\n"
+            "You may ONLY use reasoning_context['executive'].\n"
+            "If data is missing, say so explicitly.\n\n"
+            "Begin with **Direct Answer**.\n"
+            "Do not describe schemas, tables, or data quality unless asked.\n"
+            "Explain what the numbers mean for decisions.\n"
+        ),
+    }
+
+    ts["last_system_intent"] = "executive_snapshot"
+
+    return ChatTurn(
+        response={
+            "handled": False,
+            "ok": True,
+            "thread_state_update": ts,
+            "llm_handoff": llm_handoff,
+        },
+        thread_state=ts,
+    )
+
     # 1) Resolve pending clarifications
     pending, choice = maybe_resolve_pending_choice(ts, question)
     if pending and choice:
@@ -621,6 +754,12 @@ def handle_chat_turn(
                 ReportModel=ReportModel,
             )
 
+    # --- System-level follow-up rewriting (health)
+    if ts.get("last_system_intent") == "route_system_health":
+        qlow = _qnorm(question)
+        if any(k in qlow for k in ["space", "disk", "storage", "memory", "backup", "uptime"]):
+            question = "system health " + question
+
     # 2) Canonicalize frame-relative follow-ups (if any), before intent detection.
     canonical_frame_q, frame_was_rewritten = maybe_canonicalize_frame_followup(question, ts)
     if frame_was_rewritten:
@@ -643,7 +782,51 @@ def handle_chat_turn(
     intent, intent_data = detect_intent(question=q, context=context)
     ts["last_detected_intent"] = intent
 
-    # --- ROUTING TABLE DISPATCH ---
+
+
+    # -----------------------------
+    # System Overview (synthesis lane)
+    # -----------------------------
+    # NOTE: system_overview is now handled by exploratory LLM analysis above
+    # if intent == "system_overview":
+    #     reasoning = build_system_reasoning_context(
+    #         db=db,
+    #         ClaimModel=ClaimModel,
+    #         InvoiceModel=InvoiceModel,
+    #         BillableItemModel=BillableItemModel,
+    #     )
+    #
+    #     ts["last_system_intent"] = "system_overview"
+    #     ts["last_system_reasoning"] = {
+    #         "claims_total": (reasoning.get("claims") or {}).get("total"),
+    #         "claims_open": (reasoning.get("claims") or {}).get("open"),
+    #         "claims_closed": (reasoning.get("claims") or {}).get("closed"),
+    #     }
+    #
+    #     return ChatTurn(
+    #         response={
+    #             "handled": False,
+    #             "ok": True,
+    #             "thread_state_update": ts,
+    #             "llm_handoff": {
+    #                 "mode": "summary",
+    #                 "task": "system_overview",
+    #                 "scope": "system",
+    #                 "page_context": "system",
+    #                 "reasoning_context": reasoning,
+    #                 "instructions": (
+    #                     "You are Clarity. Use ONLY the provided reasoning_context. "
+    #                     "Do not invent facts or numbers. "
+    #                     "Compute relationships and surface notable signals. "
+    #                     "Produce a system overview with sections: "
+    #                     "Claims, Billing, Workload, Health, Signals."
+    #                 ),
+    #             },
+    #         },
+    #         thread_state=ts,
+    #     )
+
+    # --- Deterministic routing (only for non-exploratory questions) ---
     for handler in ROUTES:
         turn = handler(
             question=question,
@@ -657,6 +840,8 @@ def handle_chat_turn(
             ReportModel=ReportModel,
         )
         if turn is not None:
+            if handler.__name__.startswith("route_system"):
+                ts["last_system_intent"] = handler.__name__
             return turn
 
     # --- Routing complete: all deterministic skills are dispatched via ROUTES ---
@@ -723,11 +908,16 @@ def respond(question: str, context: Optional[Dict[str, Any]] = None) -> Dict[str
     )
 
     if not turn:
+        # 3) Prevent fallback LLM handoff from receiving raw context
         return {
             "handled": False,
             "ok": True,
             "thread_state_update": ts,
-            "llm_handoff": build_llm_handoff(question=question, context=ctx, thread_state=ts),
+            "llm_handoff": build_llm_handoff(
+                question=question,
+                context={"executive": {}},
+                thread_state=ts,
+            ),
         }
 
     resp = dict(turn.response)
