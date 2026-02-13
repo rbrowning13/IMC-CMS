@@ -242,35 +242,56 @@ def _safe_segment(text: str) -> str:
 
 def _build_report_pdf_filename(claim: Claim, report: Report, display_report_number: int | None) -> str:
     """Human-friendly filename for report PDF downloads."""
-    claimant = _claimant_last_first(getattr(claim, "claimant_name", None))
-    claimant_seg = _safe_segment(claimant).strip("_")
+    # Format: LastName_ClaimNumber_IR_2-12-26.pdf
 
+    # --- Claimant last name only ---
+    claimant_full = (getattr(claim, "claimant_name", None) or "").strip()
+    last_name = ""
+    if claimant_full:
+        parts = claimant_full.split()
+        if parts:
+            last_name = parts[-1]
+
+    last_name_seg = _safe_segment(last_name).strip("_")
+
+    # --- Claim number ---
     claim_no = (getattr(claim, "claim_number", None) or "").strip()
     claim_no_seg = _safe_segment(claim_no).strip("_")
 
+    # --- Report type abbreviation ---
     rt_raw = (getattr(report, "report_type", None) or "").strip().lower()
-    rt = rt_raw.title() if rt_raw else "Report"
+    if rt_raw == "initial":
+        rt_abbrev = "IR"
+    elif rt_raw == "progress":
+        rt_abbrev = "PR"
+    elif rt_raw == "closure":
+        rt_abbrev = "CR"
+    else:
+        rt_abbrev = "R"
 
-    num = f"{display_report_number}" if display_report_number else f"{getattr(report, 'id', '')}".strip()
-    num_seg = _safe_segment(num).strip("_")
+    # --- Append display report number (e.g., PR3) ---
+    if display_report_number:
+        rt_with_number = f"{rt_abbrev}{display_report_number}"
+    else:
+        rt_with_number = rt_abbrev
 
-    # Prefer DOS end; fall back to today.
+    # --- Date (M-D-YY, no leading zeros, not ISO) ---
     d = getattr(report, "dos_end", None) or getattr(report, "created_at", None)
     if isinstance(d, datetime):
         d = d.date()
     if not isinstance(d, date):
         d = date.today()
-    d_seg = d.strftime("%Y-%m-%d")
 
-    parts = [p for p in [claimant_seg, claim_no_seg] if p]
-    left = "_".join(parts) if parts else f"claim_{claim.id}"
+    year_short = str(d.year)[2:]
+    date_seg = f"{d.month}-{d.day}-{year_short}"
 
-    middle = "_".join([p for p in [rt, ("Report" if "report" not in rt.lower() else "")] if p]).replace("__", "_")
-    middle = _safe_segment(middle).strip("_") or "Report"
+    parts = [p for p in [last_name_seg, claim_no_seg, rt_with_number, date_seg] if p]
 
-    right = "_".join([p for p in [num_seg, d_seg] if p])
+    if parts:
+        filename = "_".join(parts) + ".pdf"
+    else:
+        filename = f"report_{report.id}.pdf"
 
-    filename = f"{left}_{middle}_{right}.pdf".replace("__", "_")
     return filename
 
 # --- Playwright PDF rendering helper ---
@@ -1683,6 +1704,7 @@ def report_pdf(claim_id, report_id):
         db.session.rollback()
     except Exception:
         pass
+
     claim = Claim.query.get_or_404(claim_id)
     report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
 
@@ -1692,21 +1714,18 @@ def report_pdf(claim_id, report_id):
     except Exception:
         pass
 
-    # Build the canonical filename (stable, user-friendly)
+    # Canonical filename
     filename = _build_report_pdf_filename(claim, report, display_report_number)
 
-    # By default, reuse the latest stored PDF artifact so we don't generate a new one on every click.
     regen_raw = (request.args.get("regen") or "").strip().lower()
     regen = regen_raw in {"1", "true", "yes"}
 
-    # Support inline view (?view=1, ?view=true, ?view=yes) or download (default)
     view_raw = (request.args.get("view") or "").strip().lower()
     view = view_raw in {"1", "true", "yes"}
 
-    # Determine when the report last changed (prefer updated_at; fall back to created_at).
+    # Determine last-modified time of source data
     report_updated = getattr(report, "updated_at", None) or getattr(report, "created_at", None)
 
-    # Also consider changes to any claim-level treating providers.
     provider_updated = None
     try:
         provider_ids = _claim_load_provider_ids(claim.id)
@@ -1722,7 +1741,6 @@ def report_pdf(claim_id, report_id):
     except Exception:
         provider_updated = None
 
-    # The effective "source updated" timestamp for staleness checks.
     effective_updated = report_updated
     if provider_updated is not None:
         try:
@@ -1731,42 +1749,34 @@ def report_pdf(claim_id, report_id):
         except Exception:
             pass
 
-    latest_q = DocumentArtifact.query.filter_by(claim_id=claim.id, report_id=report.id, artifact_type="report_pdf")
-    if hasattr(DocumentArtifact, "storage_backend"):
-        latest_q = latest_q.filter_by(storage_backend="db")
+    # Filesystem target path
+    report_folder = _get_report_folder(report)
+    pdf_path = report_folder / filename
 
-    latest_art = (
-        latest_q.order_by(DocumentArtifact.created_at.desc().nullslast(), DocumentArtifact.id.desc())
-        .first()
-    )
+    def _send_pdf_from_disk(path: Path):
+        resp = send_file(
+            path,
+            mimetype="application/pdf",
+            as_attachment=not view,
+            download_name=filename,
+        )
+        if view:
+            resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+        return resp
 
-    if (not regen) and latest_art is not None:
-        art_created = getattr(latest_art, "created_at", None)
-        # If we have timestamps, only reuse when the artifact is at least as new as the report or referenced providers.
-        # If timestamps are missing, still reuse to avoid duplicate PDFs.
+    # Reuse existing file if fresh
+    if (not regen) and pdf_path.exists():
         is_fresh = True
-        if art_created is not None and effective_updated is not None:
+        if effective_updated is not None:
             try:
-                is_fresh = art_created >= effective_updated
+                mtime = datetime.fromtimestamp(pdf_path.stat().st_mtime)
+                is_fresh = mtime >= effective_updated
             except Exception:
                 is_fresh = True
-
         if is_fresh:
-            art_bytes = getattr(latest_art, "content", None)
-            if art_bytes:
-                dl_name = getattr(latest_art, "download_filename", None) or filename
-                resp = send_file(
-                    io.BytesIO(art_bytes),
-                    mimetype="application/pdf",
-                    as_attachment=not view,
-                    download_name=dl_name,
-                )
-                if view:
-                    resp.headers["Content-Disposition"] = f'inline; filename="{dl_name}"'
-                return resp
+            return _send_pdf_from_disk(pdf_path)
 
-    # Render the existing print view to PDF using Chromium.
-    # Use an absolute URL so Chromium can load assets correctly.
+    # Generate new PDF via Playwright
     print_url = url_for(
         "main.report_print",
         claim_id=claim.id,
@@ -1781,31 +1791,55 @@ def report_pdf(claim_id, report_id):
         flash(f"PDF generation failed: {e}", "danger")
         return redirect(url_for("main.report_print", claim_id=claim.id, report_id=report.id))
 
-    # Store as a DB artifact (Option B)
-    art = DocumentArtifact(
-        claim_id=claim.id,
-        report_id=report.id,
-        artifact_type="report_pdf",
-        content_type="application/pdf",
-        download_filename=filename,
-        file_size_bytes=len(pdf_bytes),
-        storage_backend="db",
-        content=pdf_bytes,
-        created_at=datetime.utcnow(),
-    )
+    # Persist to disk atomically
+    try:
+        report_folder.mkdir(parents=True, exist_ok=True)
+        tmp_path = report_folder / (filename + ".tmp")
+        with open(tmp_path, "wb") as f:
+            f.write(pdf_bytes)
+        os.replace(tmp_path, pdf_path)
+    except Exception as e:
+        current_app.logger.exception("Report PDF save-to-disk failed")
+        flash(f"PDF save failed: {e}", "danger")
+        # Fallback: stream generated bytes even if disk write fails
+        resp = send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=not view,
+            download_name=filename,
+        )
+        if view:
+            resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+        return resp
 
-    db.session.add(art)
-    db.session.commit()
+    # Store metadata only (no blob) in DB
+    try:
+        art = DocumentArtifact(
+            claim_id=claim.id,
+            report_id=report.id,
+            artifact_type="report_pdf",
+            content_type="application/pdf",
+            download_filename=filename,
+            file_size_bytes=int(pdf_path.stat().st_size),
+            storage_backend="fs",
+            created_at=datetime.utcnow(),
+        )
+        if hasattr(art, "stored_path"):
+            art.stored_path = str(pdf_path)
+        if hasattr(art, "content"):
+            art.content = None
+        if hasattr(art, "data"):
+            art.data = None
 
-    resp = send_file(
-        io.BytesIO(pdf_bytes),
-        mimetype="application/pdf",
-        as_attachment=not view,
-        download_name=filename,
-    )
-    if view:
-        resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
-    return resp
+        db.session.add(art)
+        db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
+    return _send_pdf_from_disk(pdf_path)
 
 
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/pdf/regenerate", methods=["POST"])

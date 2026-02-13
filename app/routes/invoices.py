@@ -14,6 +14,7 @@ Registered via app/routes/__init__.py by importing this module.
 from __future__ import annotations
 from io import BytesIO
 import re
+import os
 
 from datetime import date, datetime
 from typing import Optional
@@ -604,31 +605,47 @@ def _invoice_pdf_filename(invoice: Invoice) -> str:
     return f"{base}.pdf"
 
 
-def _store_invoice_pdf_artifact(invoice: Invoice, pdf_bytes: bytes, filename: str):
-    """Persist the generated invoice PDF as a DocumentArtifact (DB-backed), if available."""
-    if DocumentArtifact is None:
-        return None
-
+# Filesystem storage helpers for invoice PDFs
+def _get_documents_root() -> str:
+    """Return configured documents_root from Settings."""
     try:
-        artifact = DocumentArtifact(
-            claim_id=invoice.claim_id,
-            invoice_id=invoice.id,
-            artifact_type="invoice_pdf",
-            content_type="application/pdf",
-            download_filename=filename,
-            file_size_bytes=len(pdf_bytes),
-            storage_backend="db",
-            content=pdf_bytes,
-            created_at=datetime.utcnow(),
-        )
-
-        db.session.add(artifact)
-        db.session.commit()
-        return artifact
+        from ..models import Settings
+        s = Settings.query.first()
+        root = getattr(s, "documents_root", None)
+        if root:
+            return root
     except Exception:
-        # Never break user flow if artifact persistence fails
-        db.session.rollback()
-        return None
+        pass
+    raise RuntimeError("documents_root not configured")
+
+
+def _get_claim_upload_dir(claim: Claim) -> str:
+    """Resolve the real claim folder (e.g. 15_Daniel_Middleton)."""
+    documents_root = _get_documents_root()
+
+    # First, try to find an existing folder that starts with "<claim.id>_"
+    for entry in os.listdir(documents_root):
+        if entry.startswith(f"{claim.id}_"):
+            return os.path.join(documents_root, entry)
+
+    # If not found (common in local dev or fresh DB), create one.
+    # Format: "<id>_<Last_First>" sanitized.
+    claimant_name = (getattr(claim, "claimant_name", "") or "").strip()
+    safe_name = re.sub(r"[^A-Za-z0-9]+", "_", claimant_name).strip("_")
+    folder_name = f"{claim.id}_{safe_name}" if safe_name else f"{claim.id}_Claim"
+
+    claim_dir = os.path.join(documents_root, folder_name)
+    os.makedirs(claim_dir, exist_ok=True)
+
+    return claim_dir
+
+
+def _get_invoice_pdf_path(invoice: Invoice, filename: str) -> str:
+    """Return absolute filesystem path for invoice PDF."""
+    claim_dir = _get_claim_upload_dir(invoice.claim)
+    invoices_dir = os.path.join(claim_dir, "invoices")
+    os.makedirs(invoices_dir, exist_ok=True)
+    return os.path.join(invoices_dir, filename)
 
 
 
@@ -1008,6 +1025,7 @@ def invoice_print(invoice_id: int):
         amount_paid=(fin.get("paid_total", 0.0) if isinstance(fin, dict) else 0.0),
     )
 
+
 @bp.route("/billing/<int:invoice_id>/pdf", endpoint="invoice_pdf_invoices")
 def invoice_pdf(invoice_id: int):
     """Generate + download an invoice PDF (and store it as a DB artifact if available)."""
@@ -1072,43 +1090,20 @@ def invoice_pdf(invoice_id: int):
         except Exception:
             pass
 
-    if (not regen) and DocumentArtifact is not None:
-        latest_q = DocumentArtifact.query.filter_by(
-            claim_id=invoice.claim_id,
-            invoice_id=invoice.id,
-            artifact_type="invoice_pdf",
-        )
-        if hasattr(DocumentArtifact, "storage_backend"):
-            latest_q = latest_q.filter_by(storage_backend="db")
+    # Filesystem reuse logic
+    pdf_path = _get_invoice_pdf_path(invoice, filename)
 
-        latest_art = (
-            latest_q.order_by(DocumentArtifact.created_at.desc().nullslast(), DocumentArtifact.id.desc())
-            .first()
-        )
-
-        if latest_art is not None:
-            art_created = getattr(latest_art, "created_at", None)
-            is_fresh = True
-            if art_created is not None and effective_updated is not None:
-                try:
-                    is_fresh = art_created >= effective_updated
-                except Exception:
-                    is_fresh = True
-
-            if is_fresh:
-                art_bytes = getattr(latest_art, "content", None)
-                if art_bytes:
-                    dl_name = getattr(latest_art, "download_filename", None) or filename
-                    resp = send_file(
-                        BytesIO(art_bytes),
-                        mimetype="application/pdf",
-                        as_attachment=(not view),
-                        download_name=dl_name,
-                        max_age=0,
-                    )
-                    if view:
-                        resp.headers["Content-Disposition"] = f'inline; filename="{dl_name}"'
-                    return resp
+    if (not regen) and os.path.exists(pdf_path):
+        try:
+            return send_file(
+                pdf_path,
+                mimetype="application/pdf",
+                as_attachment=(not view),
+                download_name=filename,
+                max_age=0,
+            )
+        except Exception:
+            pass
 
     print_url = url_for("main.invoice_print_invoices", invoice_id=invoice.id, _external=True)
 
@@ -1119,7 +1114,10 @@ def invoice_pdf(invoice_id: int):
         flash(f"Invoice PDF generation failed: {e}", "danger")
         return redirect(url_for("main.invoice_print_invoices", invoice_id=invoice.id))
 
-    _store_invoice_pdf_artifact(invoice, pdf_bytes, filename)
+    # Save to filesystem (RAID-backed)
+    pdf_path = _get_invoice_pdf_path(invoice, filename)
+    with open(pdf_path, "wb") as f:
+        f.write(pdf_bytes)
 
     resp = send_file(
         BytesIO(pdf_bytes),
