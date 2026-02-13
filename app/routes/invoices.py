@@ -569,34 +569,38 @@ def _safe_slug(value: str, max_len: int = 80) -> str:
 
 
 def _invoice_pdf_filename(invoice: Invoice) -> str:
-    """Human filename for invoice PDF downloads."""
+    """Human filename for invoice PDF downloads.
+
+    Format:
+        INV-YY-###-LastName-ClaimNumber.pdf
+
+    Example:
+        INV-26-001-Middleton-2390116410.pdf
+    """
+
     claim = getattr(invoice, "claim", None)
 
-    last = _safe_slug(getattr(claim, "claimant_last", "") if claim else "")
-    first = _safe_slug(getattr(claim, "claimant_first", "") if claim else "")
+    # Core invoice number (already INV-YY-###)
+    inv_no = _safe_slug(
+        getattr(invoice, "invoice_number", "")
+        or f"INV-{getattr(invoice, 'id', '')}"
+    )
 
+    # Claimant last name (derived from claimant_name)
+    last = ""
+    if claim:
+        full_name = getattr(claim, "claimant_name", "") or ""
+        parts = full_name.strip().split()
+        if parts:
+            last = _safe_slug(parts[-1])
+
+    # Claim number
     claim_no = _safe_slug(getattr(claim, "claim_number", "") if claim else "")
-    inv_no = _safe_slug(getattr(invoice, "invoice_number", "") or f"INV-{getattr(invoice, 'id', '')}")
 
-    inv_date = getattr(invoice, "invoice_date", None) or getattr(invoice, "created_at", None)
-    date_str = ""
-    try:
-        if isinstance(inv_date, datetime):
-            date_str = inv_date.strftime("%Y-%m-%d")
-        elif isinstance(inv_date, date):
-            date_str = inv_date.strftime("%Y-%m-%d")
-    except Exception:
-        date_str = ""
+    parts = [p for p in [inv_no, last, claim_no] if p]
 
-    name_part = ""
-    if last or first:
-        if last and first:
-            name_part = f"{last},{first}"
-        else:
-            name_part = last or first
+    base = "-".join(parts) if parts else f"Invoice-{getattr(invoice, 'id', '')}"
 
-    parts = [p for p in [name_part, claim_no, inv_no, "Invoice", date_str] if p]
-    base = " - ".join(parts) if parts else f"Invoice-{getattr(invoice, 'id', '')}"
     return f"{base}.pdf"
 
 

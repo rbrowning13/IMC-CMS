@@ -397,14 +397,45 @@ def _billable_is_complete(activity_code: str, service_date: Optional[date], quan
 # Routes and templates should never re-calculate rates, subtotals, or balances.
 
 def _generate_invoice_number(prefix: str = "INV") -> str:
-    """Generate a human-friendly invoice number.
+    """Generate a global, per-year sequential invoice number.
 
-    Prefer uniqueness but avoid heavy DB coupling; this is "good enough" for a
-    single-user local app.
+    Format:
+        INV-YY-###
+
+    Where:
+        YY  = 2-digit year
+        ### = zero-padded global sequence for that year (001, 002, ...)
+
+    This is system-wide (not per-claim).
     """
+
+    from app.extensions import db
+    from app.models import Invoice
+
     today = date.today()
-    # Example: INV-20251214-4832
-    return f"{prefix}-{today.strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+    year_short = today.strftime("%y")
+    year_prefix = f"{prefix}-{year_short}-"
+
+    # Find all invoices for this year by prefix match
+    existing = (
+        db.session.query(Invoice)
+        .filter(Invoice.invoice_number.like(f"{year_prefix}%"))
+        .all()
+    )
+
+    max_seq = 0
+    for inv in existing:
+        try:
+            parts = inv.invoice_number.split("-")
+            if len(parts) >= 3 and parts[1] == year_short:
+                seq = int(parts[2])
+                if seq > max_seq:
+                    max_seq = seq
+        except Exception:
+            continue
+
+    next_seq = max_seq + 1
+    return f"{year_prefix}{next_seq:03d}"
 
 
 def _iter_invoice_items(invoice) -> Iterable[Any]:

@@ -145,6 +145,51 @@
         background: rgba(0, 0, 0, 0.3);
       }
 
+      .mobile-switch {
+        position: relative;
+        display: inline-block;
+        width: 36px;
+        height: 20px;
+      }
+
+      .mobile-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .mobile-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(255, 255, 255, 0.2);
+        transition: 0.2s;
+        border-radius: 999px;
+      }
+
+      .mobile-slider:before {
+        position: absolute;
+        content: "";
+        height: 14px;
+        width: 14px;
+        left: 3px;
+        bottom: 3px;
+        background-color: #fff;
+        transition: 0.2s;
+        border-radius: 50%;
+      }
+
+      .mobile-switch input:checked + .mobile-slider {
+        background-color: var(--mobile-accent);
+      }
+
+      .mobile-switch input:checked + .mobile-slider:before {
+        transform: translateX(16px);
+      }
+
       .mobile-empty {
         font-size: 0.85rem;
         opacity: 0.75;
@@ -207,6 +252,15 @@
         placeholder="Search by name, claim number, carrier..."
         autocomplete="off"
       >
+      <label
+        style="margin-left: 0.5rem; display:flex; align-items:center; gap:0.35rem; font-size:0.7rem; letter-spacing:0.05em; text-transform:uppercase;"
+      >
+        <span>Show Closed</span>
+        <span class="mobile-switch">
+          <input type="checkbox" id="toggle-closed-switch">
+          <span class="mobile-slider"></span>
+        </span>
+      </label>
     </div>
 
     <section class="mobile-claims-list" id="mobile-claims-list">
@@ -215,11 +269,13 @@
           <a
             href="{{ url_for('mobile.mobile_billable_new', claim_id=claim.id) }}"
             class="mobile-claim-card claim-row"
+            data-closed="{{ 'true' if claim.is_closed else 'false' }}"
             data-search-text="
               {{ (claim.claimant_name or '') | lower }}
               {{ (claim.claim_number or '') | lower }}
               {{ (claim.carrier.name if claim.carrier else '') | lower }}
               {{ (claim.employer.name if claim.employer else '') | lower }}
+              {{ (claim.dob|string if claim.dob else '') | lower }}
             "
           >
             <div class="mobile-claim-card-header">
@@ -227,6 +283,11 @@
                 <div class="mobile-claim-name">
                   {{ claim.claimant_name or 'Unnamed Claimant' }}
                 </div>
+                {% if claim.dob %}
+                  <div class="mobile-claim-number">
+                    DOB: {{ claim.dob|format_date }}
+                  </div>
+                {% endif %}
                 {% if claim.claim_number %}
                   <div class="mobile-claim-number">
                     Claim #{{ claim.claim_number }}
@@ -269,21 +330,35 @@
   <script>
     (function () {
       const searchInput = document.getElementById('mobile-claim-search');
+      const toggleSwitch = document.getElementById('toggle-closed-switch');
       const rows = Array.from(document.querySelectorAll('.claim-row'));
 
-      if (!searchInput || !rows.length) {
-        return;
-      }
+      if (!rows.length) return;
 
-      searchInput.addEventListener('input', function () {
-        const needle = this.value.trim().toLowerCase();
+      function applyFilters() {
+        const needle = (searchInput?.value || '').trim().toLowerCase();
+        const showClosed = toggleSwitch?.checked === true;
 
         rows.forEach(row => {
           const haystack = (row.getAttribute('data-search-text') || '').toLowerCase();
-          const match = !needle || haystack.includes(needle);
-          row.style.display = match ? '' : 'none';
+          const isClosed = row.getAttribute('data-closed') === 'true';
+
+          const matchesSearch = !needle || haystack.includes(needle);
+          const matchesClosed = showClosed || !isClosed;
+
+          row.style.display = (matchesSearch && matchesClosed) ? '' : 'none';
         });
-      });
+      }
+
+      if (searchInput) {
+        searchInput.addEventListener('input', applyFilters);
+      }
+
+      if (toggleSwitch) {
+        toggleSwitch.addEventListener('change', applyFilters);
+      }
+
+      applyFilters();
     })();
   </script>
 </body>
