@@ -12,7 +12,7 @@ Notes during transition:
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import timedelta
 
 import os
 from pathlib import Path
@@ -35,6 +35,8 @@ from ..models import (
     Settings,
     BillableItem,
     Provider,
+    now,
+    today,
 )
 
 from . import bp
@@ -623,7 +625,7 @@ def claims_list():
                 last_date = d
 
         if last_date:
-            delta = (date.today() - last_date).days
+            delta = (today() - last_date).days
             is_dormant = dormant_threshold_days > 0 and delta >= dormant_threshold_days
         else:
             is_dormant = False
@@ -679,6 +681,24 @@ def claims_list():
         except Exception:
             db.session.rollback()
 
+    # ------------------------------------------------------------
+    # Next Report Due per claim (latest report only)
+    # ------------------------------------------------------------
+    next_report_due_map: dict[int, date | None] = {}
+
+    for c in claims:
+        latest_report = (
+            Report.query.filter_by(claim_id=c.id)
+            .order_by(Report.created_at.desc())
+            .first()
+        )
+        if latest_report and getattr(latest_report, "next_report_due", None):
+            next_report_due_map[c.id] = latest_report.next_report_due
+        else:
+            next_report_due_map[c.id] = None
+
+    today_value = today()
+
     # Apply filters
     filtered_claims = []
     for c in claims:
@@ -716,6 +736,8 @@ def claims_list():
         billing_filter=billing_filter,
         show_closed=show_closed,
         claim_status_map=claim_status_map,
+        next_report_due_map=next_report_due_map,
+        today=today_value,
     )
 
 
@@ -1816,7 +1838,7 @@ def report_new_from_claim(claim_id: int):
         flash("Select a report type before creating a new report.", "error")
         return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
-    today = date.today()
+    today_value = today()
 
     # Find the most recent report for DOS defaults and carry-forward
     last = (
@@ -1827,22 +1849,22 @@ def report_new_from_claim(claim_id: int):
 
     # DOS defaults
     if report_type == "initial":
-        dos_start = claim.referral_date or today
-        dos_end = today
+        dos_start = claim.referral_date or today_value
+        dos_end = today_value
     else:
         # progress/closure: start = day after last DOS end (fallback to today)
         if last and last.dos_end:
             dos_start = last.dos_end + timedelta(days=1)  # type: ignore[attr-defined]
         else:
-            dos_start = today
-        dos_end = today
+            dos_start = today_value
+        dos_end = today_value
 
     # Create
     rpt = Report(
         claim_id=claim.id,
         report_type=report_type,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=now(),
+        updated_at=now(),
         referral_date=claim.referral_date,
         dos_start=dos_start,
         dos_end=dos_end,

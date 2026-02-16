@@ -18,7 +18,9 @@ Note: It is OK for this module to provide *aliases* for older endpoint names
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import timedelta, date, datetime
+
+from app.models import system_today, system_now
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
 from jinja2 import TemplateNotFound
@@ -566,7 +568,7 @@ def reporting_dashboard():
     """
 
     settings = _ensure_settings()
-    today = date.today()
+    today = system_today()
 
     carrier_filter = (request.args.get("carrier") or "").strip() or None
     bucket_filter = (request.args.get("bucket") or "").strip() or None
@@ -1833,7 +1835,7 @@ def claim_report_new(claim_id: int):
         flash("Please select a report type before creating a report.", "warning")
         return redirect(url_for("main.claim_detail", claim_id=claim_id))
 
-    today = date.today()
+    today = system_today()
 
     # Determine DOS defaults.
     # Initial: referral date -> today
@@ -1872,7 +1874,7 @@ def claim_report_new(claim_id: int):
 
     # Some schemas include created_at/updated_at defaults; set created_at if present.
     if hasattr(report, "created_at") and getattr(report, "created_at", None) is None:
-        report.created_at = datetime.utcnow()
+        report.created_at = system_now()
 
     db.session.add(report)
     db.session.commit()

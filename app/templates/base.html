@@ -543,6 +543,10 @@
         <div class="collapse navbar-collapse d-flex align-items-center" id="mainNavbar">
           <ul class="navbar-nav me-auto mb-2 mb-lg-0">
             <li class="nav-item">
+              <a class="nav-link {% if active_page == 'analysis' %}active{% endif %}"
+                 href="{{ url_for('main.analysis_view') }}">Dashboard</a>
+            </li>
+            <li class="nav-item">
               <a class="nav-link {% if active_page == 'claims' %}active{% endif %}"
                  href="{{ url_for('main.claims_list') }}">Claims</a>
             </li>
@@ -571,10 +575,6 @@
             <li class="nav-item">
               <a class="nav-link {% if active_page == 'reporting' %}active{% endif %}"
                  href="{{ url_for('main.reporting_dashboard') }}">Reporting</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if active_page == 'analysis' %}active{% endif %}"
-                 href="{{ url_for('main.analysis_view') }}">Analysis</a>
             </li>
           <li class="nav-item">
             <a class="nav-link {% if active_page == 'settings' %}active{% endif %}"
@@ -1367,93 +1367,36 @@
   <!-- Flatpickr date picker JS (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script>
-    // Global Flatpickr init. Use on inputs with: class="js-date" or data-flatpickr="1".
-    // Standard format: MM/DD/YYYY, allow typed entry, and use an explicit calendar button on supported pages.
+    // Global Flatpickr init.
     document.addEventListener('DOMContentLoaded', function () {
       if (!window.flatpickr) return;
 
-      // Attach Flatpickr to our standard selectors.
-      var dateInputs = document.querySelectorAll('input.js-date, input[data-flatpickr="1"]');
-      if (!dateInputs || !dateInputs.length) return;
+      // Date fields (MM/DD/YYYY system-wide)
+      var dateInputs = document.querySelectorAll(
+        'input.js-date, input[data-flatpickr="1"], input.js-flatpickr-date'
+      );
 
       dateInputs.forEach(function (el) {
-        // Avoid double-init if pages re-run scripts.
         if (el._flatpickr) return;
 
         window.flatpickr(el, {
           allowInput: true,
-          onInput: function(selectedDates, dateStr, instance) {
-            var raw = (instance.input && instance.input.value) ? instance.input.value.trim() : '';
-            if (!raw) return;
+          dateFormat: 'm/d/Y'
+        });
+      });
 
-            // Normalize MMDDYYYY → MM/DD/YYYY while typing
-            var digits = raw.replace(/\D/g, '');
-            if (digits.length === 8) {
-              var mm = digits.slice(0, 2);
-              var dd = digits.slice(2, 4);
-              var yy = digits.slice(4, 8);
-              instance.input.value = mm + '/' + dd + '/' + yy;
-            }
-          },
-          dateFormat: 'm/d/Y',
-          // Keep behavior consistent with our UI expectations
-          // (no time selection here; we can enable time per-field later).
-          enableTime: false,
+      // Time fields (12-hour with AM/PM)
+      var timeInputs = document.querySelectorAll('input.js-flatpickr-time');
 
-          // Typed date entry fix:
-          // Flatpickr will revert typed text if it can't parse it.
-          // Accept a few common formats so typing doesn't "snap back".
-          parseDate: function (dateStr, format) {
-            if (!dateStr) return null;
-            var s = String(dateStr).trim();
+      timeInputs.forEach(function (el) {
+        if (el._flatpickr) return;
 
-            // MM/DD/YYYY or M/D/YYYY
-            var mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-            if (mdy) {
-              return new Date(
-                parseInt(mdy[3], 10),
-                parseInt(mdy[1], 10) - 1,
-                parseInt(mdy[2], 10)
-              );
-            }
-
-            // ISO YYYY-MM-DD
-            var iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-            if (iso) {
-              return new Date(
-                parseInt(iso[1], 10),
-                parseInt(iso[2], 10) - 1,
-                parseInt(iso[3], 10)
-              );
-            }
-
-            // Raw MMDDYYYY (no slashes)
-            var digits = s.replace(/\D/g, '');
-            if (digits.length === 8) {
-              return new Date(
-                parseInt(digits.slice(4, 8), 10),
-                parseInt(digits.slice(0, 2), 10) - 1,
-                parseInt(digits.slice(2, 4), 10)
-              );
-            }
-
-            try {
-              return window.flatpickr.parseDate(s, format);
-            } catch (e) {
-              return null;
-            }
-          },
-
-          onClose: function (selectedDates, dateStr, instance) {
-            // If the user typed something valid, commit it as the selected date.
-            var raw = (instance && instance.input) ? (instance.input.value || '').trim() : '';
-            if (!raw) return;
-
-            var d = instance.parseDate(raw, instance.config.dateFormat);
-            if (d && !isNaN(d.getTime())) {
-              instance.setDate(d, true); // triggerChange so forms capture the normalized value
-            }
-          },
+        window.flatpickr(el, {
+          enableTime: true,
+          noCalendar: true,
+          allowInput: true,
+          dateFormat: 'h:i K',
+          time_24hr: false
         });
       });
     });

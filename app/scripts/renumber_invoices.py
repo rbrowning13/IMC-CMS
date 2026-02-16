@@ -1,6 +1,6 @@
 from datetime import datetime
 from app import create_app
-from app.models import Invoice
+from app.models import Invoice, _now_local
 from app import db
 
 
@@ -8,7 +8,7 @@ def main():
     app = create_app()
     app.app_context().push()
 
-    year_suffix = datetime.now().strftime("%y")
+    year_suffix = _now_local().strftime("%y")
     prefix = f"INV-{year_suffix}-"
 
     invoices = (

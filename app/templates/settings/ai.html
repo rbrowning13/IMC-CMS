@@ -1,0 +1,100 @@
+
+
+{% extends "settings/layout.html" %}
+{% set active_section = "ai" %}
+{% block title %}AI Settings – Impact CMS{% endblock %}
+
+{% block settings_content %}
+
+<h2 class="h4 mb-4">Clarity AI Settings</h2>
+
+<form method="post">
+
+  <!-- Enable / Disable -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h6 class="text-muted mb-3">AI Engine Control</h6>
+
+      <div class="form-check form-switch">
+        <input class="form-check-input" 
+               type="checkbox" 
+               name="clarity_enabled" 
+               id="clarity_enabled"
+               {% if settings.clarity_enabled %}checked{% endif %}>
+        <label class="form-check-label" for="clarity_enabled">
+          Enable Clarity AI
+        </label>
+      </div>
+
+      <div class="form-text">
+        When enabled, AI-assisted drafting and summarization tools will be available throughout the system.
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Configuration (Future Use) -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h6 class="text-muted mb-3">Model Configuration</h6>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Model Name</label>
+        <input type="text"
+               name="clarity_model"
+               class="form-control form-control-sm"
+               value="{{ settings.clarity_model or '' }}"
+               placeholder="e.g. clarity-pro-v1">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Response Temperature</label>
+        <input type="number"
+               step="0.1"
+               min="0"
+               max="1"
+               name="clarity_temperature"
+               class="form-control form-control-sm"
+               value="{{ settings.clarity_temperature or '' }}"
+               placeholder="0.3">
+        <div class="form-text">
+          Lower values = more deterministic. Higher values = more creative.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Prompt Templates (Future Expansion) -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h6 class="text-muted mb-3">Prompt Defaults</h6>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Report Summary Prompt</label>
+        <textarea name="clarity_summary_prompt"
+                  rows="4"
+                  class="form-control form-control-sm"
+                  placeholder="Default instructions for summarizing reports...">{{ settings.clarity_summary_prompt or '' }}</textarea>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Case Plan Drafting Prompt</label>
+        <textarea name="clarity_plan_prompt"
+                  rows="4"
+                  class="form-control form-control-sm"
+                  placeholder="Default instructions for drafting case plans...">{{ settings.clarity_plan_prompt or '' }}</textarea>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Sticky Save Bar -->
+  <div class="position-sticky bottom-0 bg-white border-top py-3 d-flex justify-content-end">
+    <button type="submit" class="btn btn-primary btn-sm">
+      Save Changes
+    </button>
+  </div>
+
+</form>
+
+{% endblock %}

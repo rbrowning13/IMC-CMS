@@ -54,33 +54,18 @@
         {% endif %}
       </div>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 justify-content-end">
       <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary btn-sm">
         Cancel
       </a>
       <a href="{{ url_for('main.claim_detail', claim_id=claim.id) }}" class="btn btn-outline-secondary btn-sm">
         Back to Claim
       </a>
-      <a href="{{ url_for('main.report_pdf', claim_id=claim.id, report_id=report.id, view=1) }}"
-         class="btn btn-outline-secondary btn-sm"
-         target="_blank"
-         rel="noopener">
-        View PDF
-      </a>
-      <a href="{{ url_for('main.report_pdf', claim_id=claim.id, report_id=report.id) }}"
-         class="btn btn-outline-primary btn-sm">
-        Download PDF
-      </a>
 
-      <form method="post"
-            action="{{ url_for('main.report_pdf_regenerate', claim_id=claim.id, report_id=report.id) }}"
-            class="d-inline"
-            target="_blank"
-            onsubmit="return confirm('Regenerate the report PDF? This will create a new saved PDF version.');">
-        <button type="submit" class="btn btn-outline-warning btn-sm">
-          Regenerate PDF
-        </button>
-      </form>
+      <a href="{{ url_for('main.report_email', claim_id=claim.id, report_id=report.id) }}"
+         class="btn btn-outline-success btn-sm">
+        Email Report
+      </a>
     </div>
   </div>
 
@@ -663,13 +648,23 @@
                      value="{{ report.initial_next_appt_notes if report.initial_next_appt_notes is defined and report.initial_next_appt_notes else '' }}">
             </div>
 
-            <div class="col-12">
-              <label class="form-label form-label-sm mb-0">Date / Time</label>
-              <input type="datetime-local"
-                     id="initial_next_appt_datetime"
-                     name="initial_next_appt_datetime"
-                     class="form-control form-control-sm"
-                     value="{% if report.initial_next_appt_datetime %}{{ report.initial_next_appt_datetime.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
+            <div class="col-6">
+              <label class="form-label form-label-sm mb-0">Date</label>
+              <input type="text"
+                     id="initial_next_appt_date"
+                     name="initial_next_appt_date"
+                     class="form-control form-control-sm js-flatpickr-date"
+                     placeholder="MM/DD/YYYY"
+                     value="{{ report.initial_next_appt_datetime.strftime('%m/%d/%Y') if report.initial_next_appt_datetime else '' }}">
+            </div>
+            <div class="col-6">
+              <label class="form-label form-label-sm mb-0">Time</label>
+              <input type="text"
+                     id="initial_next_appt_time"
+                     name="initial_next_appt_time"
+                     class="form-control form-control-sm js-flatpickr-time"
+                     placeholder="HH:MM"
+                     value="{{ report.initial_next_appt_datetime.strftime('%I:%M %p') if report.initial_next_appt_datetime else '' }}">
             </div>
 
             <div class="col-12">
@@ -1102,18 +1097,20 @@
         });
     };
 
-    // Enable/disable the ICS download button based on datetime field
-    const dtInput = document.getElementById("initial_next_appt_datetime");
+    // Enable/disable the ICS download button based on date/time/provider fields
+    const dateInput = document.getElementById("initial_next_appt_date");
+    const timeInput = document.getElementById("initial_next_appt_time");
     const icsButton = document.getElementById("download_ics_btn");
     const providerSelect = document.getElementById("initial_next_appt_provider_name");
     const notesInput = document.getElementById("initial_next_appt_notes");
 
     function updateIcsButtonState() {
-      if (!dtInput || !icsButton || !providerSelect) return;
+      if (!dateInput || !timeInput || !icsButton || !providerSelect) return;
 
-      const hasDt = !!dtInput.value;
+      const hasDate = !!dateInput.value;
+      const hasTime = !!timeInput.value;
       const hasProvider = !!providerSelect.value;
-      const shouldDisableIcs = !(hasDt && hasProvider);
+      const shouldDisableIcs = !(hasDate && hasTime && hasProvider);
 
       if (shouldDisableIcs) {
         icsButton.classList.add("disabled");
@@ -1126,9 +1123,13 @@
       }
     }
 
-    if (dtInput) {
-      dtInput.addEventListener("input", updateIcsButtonState);
-      dtInput.addEventListener("change", updateIcsButtonState);
+    if (dateInput) {
+      dateInput.addEventListener("input", updateIcsButtonState);
+      dateInput.addEventListener("change", updateIcsButtonState);
+    }
+    if (timeInput) {
+      timeInput.addEventListener("input", updateIcsButtonState);
+      timeInput.addEventListener("change", updateIcsButtonState);
     }
     if (providerSelect) {
       providerSelect.addEventListener("change", updateIcsButtonState);
@@ -1162,14 +1163,18 @@
     }
 
     function buildNextApptIcs() {
-      if (!dtInput || !providerSelect) return null;
-      if (!dtInput.value || !providerSelect.value) return null;
+      if (!dateInput || !timeInput || !providerSelect) return null;
+      if (!dateInput.value || !timeInput.value || !providerSelect.value) return null;
 
       const providerName = providerSelect.value;
       const notes = notesInput ? (notesInput.value || "").trim() : "";
 
-      // dtInput is datetime-local => parse as local
-      const dt = new Date(dtInput.value);
+      // Combine date and time fields into a datetime-local string
+      const dateStr = dateInput.value; // yyyy-mm-dd
+      const timeStr = timeInput.value; // HH:MM
+      if (!dateStr || !timeStr) return null;
+      // Compose ISO string for local time
+      const dt = new Date(dateStr + "T" + timeStr);
       if (isNaN(dt.getTime())) return null;
 
       // Default duration: 30 minutes
@@ -1265,6 +1270,26 @@
         }
       });
     }
-  })();
+    // Initialize Flatpickr for date and time fields (including Next Appointment)
+    if (window.flatpickr) {
+
+      // Date pickers (MM/DD/YYYY system-wide)
+      document.querySelectorAll(".js-flatpickr-date").forEach(function (el) {
+        flatpickr(el, {
+          dateFormat: "m/d/Y"
+        });
+      });
+
+      // Time pickers (12-hour format with AM/PM)
+      document.querySelectorAll(".js-flatpickr-time").forEach(function (el) {
+        flatpickr(el, {
+          enableTime: true,
+          noCalendar: true,
+          dateFormat: "h:i K",
+          time_24hr: false
+        });
+      });
+
+    }
 </script>
 {% endblock %}

@@ -1,5 +1,5 @@
 import argparse
-from datetime import date, datetime, timedelta
+from datetime import timedelta
 import random
 import json
 from faker import Faker
@@ -14,6 +14,15 @@ from app.models import (
 )
 
 fake = Faker()
+
+# Helper functions for local date/time
+from datetime import date, datetime
+
+def _today_local():
+    return date.today()
+
+def _now_local():
+    return datetime.now()
 
 # ============================================================
 #  WIPE (FK-safe order)
@@ -238,7 +247,7 @@ def seed_claims(carriers, employers, n=10):
     ]
     status_choices = ["Open", "Closed", "Pending"]
     claims = []
-    today = date.today()
+    today = _today_local()
     for _ in range(n):
         first = fake.first_name()
         last = fake.last_name()
@@ -290,7 +299,7 @@ def seed_claims(carriers, employers, n=10):
 def seed_reports(claims, providers, barriers):
     reports = []
     for claim in claims:
-        base_start = claim.doi or (date.today() - timedelta(days=90))
+        base_start = claim.doi or (_today_local() - timedelta(days=90))
         treating_providers = random.sample(providers, k=random.randint(1, 2))
         barrier_ids = random.sample([b.id for b in barriers], k=random.randint(1, min(4, len(barriers))))
         # Initial report
@@ -409,10 +418,25 @@ def seed_billables(claims, reports):
                 quantity = round(random.uniform(0.25, 2.5), 2)  # hours
                 description = f"{activity_code} services"
                 notes = fake.sentence()
+            # Anchor billable dates within last 12 months (weighted recent)
+            today = _today_local()
+            roll = random.random()
+            if roll < 0.4:
+                # Last 30 days (40%)
+                date_of_service = today - timedelta(days=random.randint(0, 30))
+            elif roll < 0.7:
+                # 30–180 days (30%)
+                date_of_service = today - timedelta(days=random.randint(31, 180))
+            elif roll < 0.9:
+                # 180–365 days (20%)
+                date_of_service = today - timedelta(days=random.randint(181, 365))
+            else:
+                # Older than 1 year (10%) for realism
+                date_of_service = today - timedelta(days=random.randint(366, 540))
             billable = BillableItem(
                 claim=claim,
                 report=report,
-                date_of_service=report.dos_start + timedelta(days=random.randint(0, max(0, (report.dos_end - report.dos_start).days))),
+                date_of_service=date_of_service,
                 description=description,
                 notes=notes,
                 activity_code=activity_code,

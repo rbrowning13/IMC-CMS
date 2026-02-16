@@ -81,6 +81,7 @@
                 <th class="text-center sortable text-nowrap small" data-sort-key="claim_status"><span>Status</span> <span class="sort-indicator">↕</span></th>
                 <th class="text-center sortable text-nowrap small" data-sort-key="activity"><span>Activity</span> <span class="sort-indicator">↕</span></th>
                 <th class="text-center sortable text-nowrap small" data-sort-key="billing"><span>Billing</span> <span class="sort-indicator">↕</span></th>
+                <th class="text-center sortable text-nowrap small" data-sort-key="next_report_due"><span>Next Report Due</span> <span class="sort-indicator">↕</span></th>
               </tr>
             </thead>
             <tbody>
@@ -198,6 +199,22 @@
                     {% endif %}
                   </td>
 
+                  {# ---------- NEXT REPORT DUE ---------- #}
+                  <td class="text-center text-nowrap">
+                    {% set due = next_report_due_map.get(claim.id) if next_report_due_map else None %}
+                    {% if due %}
+                      {% set days = (due - today).days %}
+                      {% if days > 5 %}
+                        <span class="badge bg-success">{{ due|format_date }}</span>
+                      {% elif days > 0 %}
+                        <span class="badge bg-warning text-dark">{{ due|format_date }}</span>
+                      {% else %}
+                        <span class="badge bg-danger">{{ due|format_date }}</span>
+                      {% endif %}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
                 </tr>
               {% endfor %}
 
@@ -354,6 +371,11 @@
           return (row.children[5].innerText || '').trim().toLowerCase();
         case 'billing':
           return (row.children[6].innerText || '').trim().toLowerCase();
+        case 'next_report_due': {
+          const text = (row.children[7].innerText || '').trim();
+          if (!text || text === '—') return '';
+          return text;
+        }
         default:
           return '';
       }

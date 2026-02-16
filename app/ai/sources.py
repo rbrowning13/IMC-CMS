@@ -7,6 +7,8 @@ No conversation state. No frames. No LLM behavior.
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..models import _today_local
+
 
 # -------------------------------------------------------------------
 # Utility helpers
@@ -482,7 +484,7 @@ def answer_workload_overview(
     Intended for system-wide (non-claim) exploratory questions.
     """
     from sqlalchemy import func
-    from datetime import date, timedelta
+    from datetime import timedelta
 
     lines = []
 
@@ -505,7 +507,7 @@ def answer_workload_overview(
     date_col = _get_first_attr(BillableItemModel, ["service_date", "dos", "date"])
 
     if date_col is not None:
-        today = date.today()
+        today = _today_local()
         last_7 = today - timedelta(days=7)
         last_30 = today - timedelta(days=30)
 
@@ -717,9 +719,9 @@ def answer_system_overview(
 
                 if BillableItemModel is not None:
                     from sqlalchemy import func
-                    from datetime import timedelta, date
+                    from datetime import timedelta
 
-                    today = date.today()
+                    today = _today_local()
                     last_7 = today - timedelta(days=7)
                     last_30 = today - timedelta(days=30)
 

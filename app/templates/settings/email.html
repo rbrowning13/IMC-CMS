@@ -1,0 +1,260 @@
+
+
+{% extends "settings/layout.html" %}
+{% set active_section = "email" %}
+{% block title %}Email Settings – Impact CMS{% endblock %}
+
+{% block settings_content %}
+
+<h2 class="h4 mb-4">Email Settings</h2>
+
+<form method="post">
+
+  <!-- SMTP Configuration -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h6 class="text-muted mb-3">SMTP Configuration</h6>
+
+      <div class="row">
+        <div class="col-md-6 mb-3">
+          <label class="form-label form-label-sm">SMTP Host</label>
+          <input type="text"
+                 name="smtp_host"
+                 class="form-control form-control-sm"
+                 value="{{ settings.smtp_host or '' }}"
+                 placeholder="smtp.yourprovider.com">
+        </div>
+
+        <div class="col-md-3 mb-3">
+          <label class="form-label form-label-sm">Port</label>
+          <input type="number"
+                 name="smtp_port"
+                 class="form-control form-control-sm"
+                 value="{{ settings.smtp_port or '' }}"
+                 placeholder="587">
+        </div>
+
+        <div class="col-md-3 mb-3">
+          <label class="form-label form-label-sm">Encryption</label>
+          <select name="smtp_encryption" class="form-select form-select-sm">
+            <option value="" {% if not settings.smtp_encryption %}selected{% endif %}>None</option>
+            <option value="tls" {% if settings.smtp_encryption == 'tls' %}selected{% endif %}>TLS</option>
+            <option value="ssl" {% if settings.smtp_encryption == 'ssl' %}selected{% endif %}>SSL</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-6 mb-3">
+          <label class="form-label form-label-sm">Username</label>
+          <input type="text"
+                 name="smtp_username"
+                 class="form-control form-control-sm"
+                 value="{{ settings.smtp_username or '' }}">
+        </div>
+
+        <div class="col-md-6 mb-3">
+          <label class="form-label form-label-sm">Password</label>
+          <input type="password"
+                 name="smtp_password"
+                 class="form-control form-control-sm"
+                 value="{{ settings.smtp_password or '' }}">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Default From Address</label>
+        <input type="email"
+               name="email_from"
+               class="form-control form-control-sm"
+               value="{{ settings.email_from or '' }}"
+               placeholder="noreply@yourdomain.com">
+      </div>
+    </div>
+  </div>
+
+  <!-- Test Email -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h6 class="text-muted mb-3">Send Test Email</h6>
+
+      <div class="row">
+        <div class="col-md-6 mb-3">
+          <input type="email"
+                 name="test_email_to"
+                 class="form-control form-control-sm"
+                 placeholder="Send test email to...">
+        </div>
+        <div class="col-md-3 mb-3">
+          <button type="submit"
+                  name="action"
+                  value="test"
+                  class="btn btn-outline-primary btn-sm w-100">
+            Send Test
+          </button>
+        </div>
+      </div>
+
+      <div class="form-text">
+        This will attempt to send a test email using the configured SMTP settings.
+      </div>
+    </div>
+  </div>
+
+  <!-- Email Templates -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h6 class="text-muted mb-3">Email Templates</h6>
+      <p class="form-text mb-4">
+        You can use dynamic tokens in subject and body templates. Click a token below to insert it at your cursor position.
+      </p>
+
+      <div class="mb-4 p-3 border rounded bg-light">
+        <div class="small text-muted mb-2">Available Tokens</div>
+        <div class="d-flex flex-wrap gap-2">
+          {% set tokens = [
+            '{{ claimant_first_name }}',
+            '{{ claimant_last_name }}',
+            '{{ claim_number }}',
+            '{{ report_number }}',
+            '{{ report_date }}',
+            '{{ invoice_number }}',
+            '{{ invoice_date }}',
+            '{{ pdf_filename }}',
+            '{{ business_name }}',
+            '{{ phone }}',
+            '{{ email }}'
+          ] %}
+          {% for token in tokens %}
+            <button type="button"
+                    class="btn btn-outline-secondary btn-sm token-insert"
+                    data-token="{{ token }}">
+              {{ token }}
+            </button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Report Only -->
+      <h6 class="mb-3">Report Only</h6>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Subject Template</label>
+        <input type="text"
+               name="report_email_subject_template"
+               class="form-control form-control-sm"
+               value="{{ settings.report_email_subject_template or '' }}">
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label form-label-sm">Body Template</label>
+        <textarea name="report_email_body_template"
+                  class="form-control form-control-sm"
+                  rows="6">{{ settings.report_email_body_template or '' }}</textarea>
+      </div>
+
+      <hr class="my-4">
+
+      <!-- Invoice Only -->
+      <h6 class="mb-3">Invoice Only</h6>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Subject Template</label>
+        <input type="text"
+               name="invoice_email_subject_template"
+               class="form-control form-control-sm"
+               value="{{ settings.invoice_email_subject_template or '' }}">
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label form-label-sm">Body Template</label>
+        <textarea name="invoice_email_body_template"
+                  class="form-control form-control-sm"
+                  rows="6">{{ settings.invoice_email_body_template or '' }}</textarea>
+      </div>
+
+      <hr class="my-4">
+
+      <!-- Report + Invoice -->
+      <h6 class="mb-3">Report + Invoice</h6>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Subject Template</label>
+        <input type="text"
+               name="report_invoice_email_subject_template"
+               class="form-control form-control-sm"
+               value="{{ settings.report_invoice_email_subject_template or '' }}">
+      </div>
+
+      <div>
+        <label class="form-label form-label-sm">Body Template</label>
+        <textarea name="report_invoice_email_body_template"
+                  class="form-control form-control-sm"
+                  rows="6">{{ settings.report_invoice_email_body_template or '' }}</textarea>
+      </div>
+
+      <hr class="my-4">
+
+      <!-- Email Signature -->
+      <h6 class="mb-3">Email Signature</h6>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Default Signature (appended to all emails)</label>
+        <textarea name="email_signature"
+                  class="form-control form-control-sm"
+                  rows="5">{{ settings.email_signature or '' }}</textarea>
+        <div class="form-text">
+          This signature will automatically be appended to the bottom of all outgoing emails.
+          Tokens may also be used here.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Sticky Save Bar -->
+  <div class="position-sticky bottom-0 bg-white border-top py-3 d-flex justify-content-end gap-2">
+    <button type="submit"
+            name="action"
+            value="save"
+            class="btn btn-primary btn-sm">
+      Save Changes
+    </button>
+  </div>
+
+</form>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    const buttons = document.querySelectorAll(".token-insert");
+    let lastFocusedField = null;
+
+    // Track last focused input/textarea
+    document.addEventListener("focusin", function(e) {
+      if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") {
+        lastFocusedField = e.target;
+      }
+    });
+
+    buttons.forEach(btn => {
+      btn.addEventListener("click", function(e) {
+        e.preventDefault();
+        const token = this.dataset.token;
+
+        if (!lastFocusedField) return;
+
+        const start = lastFocusedField.selectionStart || 0;
+        const end = lastFocusedField.selectionEnd || 0;
+        const value = lastFocusedField.value;
+
+        lastFocusedField.value =
+          value.substring(0, start) + token + value.substring(end);
+
+        lastFocusedField.focus();
+        lastFocusedField.selectionStart =
+          lastFocusedField.selectionEnd = start + token.length;
+      });
+    });
+  });
+</script>
+{% endblock %}

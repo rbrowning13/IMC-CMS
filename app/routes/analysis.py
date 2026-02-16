@@ -19,21 +19,29 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from flask import render_template
+from flask import render_template, request
 from flask import current_app
 from sqlalchemy import text, func
 
 from .. import db
 from ..models import BillableItem, Carrier, Claim, Invoice, Payment, Settings
 
+from ..services.dashboard_service import build_dashboard_context
+
 
 # ---------------------------------------------------------------------
 # Helpers (safe getters)
 # ---------------------------------------------------------------------
 
-def _now_utc_naive() -> datetime:
-    # App uses naive datetimes in a few places; keep this consistent.
+
+def _now_local() -> datetime:
+    """Return current datetime in server-local time (naive)."""
     return datetime.now()
+
+
+def _today_local() -> date:
+    """Return current date in server-local time (naive)."""
+    return _now_local().date()
 
 
 def _as_date(d: Any) -> Optional[date]:
@@ -187,7 +195,10 @@ def _get_settings() -> Settings:
     return settings
 
 
-def _claim_age_days(claim: Claim, today: date) -> Optional[int]:
+def _claim_age_days(claim: Claim, today: Optional[date] = None) -> Optional[int]:
+    # Use local today if not provided
+    if today is None:
+        today = _today_local()
     # Prefer referral_date, then created_at, then doi.
     start = _as_date(_safe_get(claim, "referral_date", "created_at", "doi"))
     if not start:
@@ -217,7 +228,10 @@ def _claim_last_activity_date(claim: Claim) -> Optional[date]:
     return None
 
 
-def _hours_last_n_days(n_days: int, today_dt: datetime) -> float:
+def _hours_last_n_days(n_days: int, today_dt: Optional[datetime] = None) -> float:
+    # Use local now if not provided
+    if today_dt is None:
+        today_dt = _now_local()
     start_dt = today_dt - timedelta(days=n_days)
     start_date = start_dt.date()
 
@@ -384,10 +398,73 @@ def _table_count_sql(table_name: str) -> int:
 def analysis_index():
     settings = _get_settings()
 
+    # Period selector (global dashboard period)
+    # Supported: week, month, six_months, twelve_months (rolling 12)
+    period = request.args.get("period", "week").lower()
+
+    allowed_periods = {
+        "week",
+        "month",
+        "six_months",
+        "twelve_months",
+    }
+
+    if period not in allowed_periods:
+        period = "week"
+
+    dashboard_context = build_dashboard_context(
+        revenue_overview_period=period,
+        billable_breakdown_period=period,
+        productivity_period=period,
+        revenue_health_period=period,
+        active_claim_trend_period=period,
+        reports_period=period,
+        appts_period=period
+    )
+
+    # --- Diagnostic probe for upcoming appointments ---
+    try:
+        upcoming_appts = dashboard_context.get("upcoming_appointments", []) if dashboard_context else []
+        reports_due = dashboard_context.get("upcoming_reports", []) if dashboard_context else []
+
+        count_appts = len(upcoming_appts)
+        count_reports = len(reports_due)
+
+        # Log basic summary
+        current_app.logger.debug(
+            "[DIAGNOSTIC] Upcoming appointments count=%d, sample=%r",
+            count_appts,
+            upcoming_appts[:3],  # first 3 for preview
+        )
+
+        current_app.logger.debug(
+            "[DIAGNOSTIC] Upcoming reports count=%d, sample=%r",
+            count_reports,
+            reports_due[:3],
+        )
+
+        # Add defensive info to the context for templates (optional)
+        dashboard_context["_diagnostic_appts_count"] = count_appts
+        dashboard_context["_diagnostic_reports_count"] = count_reports
+
+    except Exception as e:
+        current_app.logger.exception("[DIAGNOSTIC] Error fetching upcoming appointments/reports: %s", e)
+
+    # --- Normalize dashboard report/appointment keys for template ---
+    # Ensure template always receives expected keys
+    if dashboard_context:
+        reports_due = dashboard_context.get("reports_due", {})
+
+        dashboard_context["overdue_reports"] = reports_due.get("overdue", [])
+        dashboard_context["upcoming_reports"] = reports_due.get("next_7", [])
+
+        # Appointments are returned directly as a flat list from dashboard_service
+        dashboard_context["upcoming_appointments"] = dashboard_context.get("appointments", [])
+
     analysis_errors: List[str] = []
 
-    today_dt = _now_utc_naive()
-    today = today_dt.date()
+    today_dt = _now_local()
+    today = _today_local()
 
     # ---- Claims snapshot ----
     total_claims, err = _try("Claim.query.count", lambda: int(Claim.query.count()), 0)
@@ -414,14 +491,14 @@ def analysis_index():
 
     # Stale/dormant claims
     dormant_days = int(getattr(settings, "dormant_claim_days", 60) or 60)
-    stale_cutoff = today - timedelta(days=dormant_days)
+    stale_cutoff = _today_local() - timedelta(days=dormant_days)
 
     stale_claims_count = 0
     for c in open_claims:
         last_activity = _claim_last_activity_date(c)
         if last_activity is None:
             # If we truly don't know, treat as stale only if claim itself is old.
-            age = _claim_age_days(c, today)
+            age = _claim_age_days(c, _today_local())
             if age is not None and age >= dormant_days:
                 stale_claims_count += 1
         else:
@@ -429,16 +506,27 @@ def analysis_index():
                 stale_claims_count += 1
 
     # ---- Workload snapshot ----
-    hours_last_30_days = _hours_last_n_days(30, today_dt)
+    # Map global period to day span
+    period_days_map = {
+        "week": 7,
+        "month": 30,
+        "six_months": 182,
+        "twelve_months": 365,
+    }
 
-    # Targets are stored weekly; convert to 30-day equivalents.
+    selected_days = period_days_map.get(period, 7)
+
+    hours_last_period = _hours_last_n_days(selected_days, _now_local())
+
+    # Targets are stored weekly; convert to selected period equivalents.
     target_min_week = float(getattr(settings, "target_min_hours_per_week", 0.0) or 0.0)
     target_max_week = float(getattr(settings, "target_max_hours_per_week", 0.0) or 0.0)
 
-    # 30 days ≈ 30/7 weeks
-    factor = 30.0 / 7.0
-    hours_target_min_30 = round(target_min_week * factor, 1) if target_min_week else 0.0
-    hours_target_max_30 = round(target_max_week * factor, 1) if target_max_week else 0.0
+    # Convert selected period days into weeks
+    factor = selected_days / 7.0
+
+    hours_target_min_period = round(target_min_week * factor, 1) if target_min_week else 0.0
+    hours_target_max_period = round(target_max_week * factor, 1) if target_max_week else 0.0
 
     # ---- Accounts receivable (invoice-based v1) ----
     open_invoice_list = _open_invoice_rows()
@@ -513,7 +601,7 @@ def analysis_index():
             ar_aging["days_1_30"] += amount
             continue
 
-        age_days = (today - inv_date).days
+        age_days = (_today_local() - inv_date).days
 
         # Bucket according to what the UI labels show.
         # current = 0–30 days
@@ -527,6 +615,41 @@ def analysis_index():
         else:
             ar_aging["days_90_plus"] += amount
             ar_aging["over_90"] += amount
+
+    # ---- Derived KPI metrics for dashboard (piggyback on A/R logic) ----
+
+    # Average revenue per active claim (simple version: total outstanding / active claims)
+    avg_revenue_per_claim = 0.0
+    if active_claims_count > 0:
+        try:
+            avg_revenue_per_claim = round(total_outstanding_ar / active_claims_count, 2)
+        except Exception:
+            avg_revenue_per_claim = 0.0
+
+    # Aging percentages (based on total outstanding A/R)
+    ar_aging_percent = {
+        "current_pct": 0.0,
+        "days_31_60_pct": 0.0,
+        "days_61_90_pct": 0.0,
+        "days_90_plus_pct": 0.0,
+    }
+
+    if total_outstanding_ar > 0:
+        try:
+            ar_aging_percent["current_pct"] = round(
+                (ar_aging["current"] / total_outstanding_ar) * 100, 1
+            )
+            ar_aging_percent["days_31_60_pct"] = round(
+                (ar_aging["days_31_60"] / total_outstanding_ar) * 100, 1
+            )
+            ar_aging_percent["days_61_90_pct"] = round(
+                (ar_aging["days_61_90"] / total_outstanding_ar) * 100, 1
+            )
+            ar_aging_percent["days_90_plus_pct"] = round(
+                (ar_aging["days_90_plus"] / total_outstanding_ar) * 100, 1
+            )
+        except Exception:
+            pass
 
     # ---- Diagnostics (helps when values are unexpectedly all zeros) ----
     diagnostics = {
@@ -544,6 +667,17 @@ def analysis_index():
         }
     )
 
+    # --- DEBUG: Log upcoming appointments before rendering template ---
+    try:
+        upcoming_appts = dashboard_context.get("upcoming_appointments", []) if dashboard_context else []
+        count = len(upcoming_appts)
+        preview = upcoming_appts[:3]
+        current_app.logger.debug(
+            "Dashboard: upcoming_appointments count=%d, preview=%r", count, preview
+        )
+    except Exception as e:
+        current_app.logger.exception("Error logging upcoming_appointments: %s", e)
+
     return render_template(
         "analysis.html",
         active_page="analysis",
@@ -554,18 +688,22 @@ def analysis_index():
         avg_open_claim_age_days=avg_open_claim_age_days,
         stale_claims_count=stale_claims_count,
         # workload
-        hours_last_30_days=round(hours_last_30_days, 1),
-        hours_target_min_30=hours_target_min_30,
-        hours_target_max_30=hours_target_max_30,
+        hours_last_30_days=round(hours_last_period, 1),
+        hours_target_min_30=hours_target_min_period,
+        hours_target_max_30=hours_target_max_period,
         # A/R
         total_outstanding_ar=total_outstanding_ar,
         open_invoices=open_invoices,
         total_invoices=total_invoices,
         ar_by_carrier=ar_by_carrier,
         ar_aging=ar_aging,
+        avg_revenue_per_claim=avg_revenue_per_claim,
+        ar_aging_percent=ar_aging_percent,
         # WIP placeholders
         uninvoiced_billables_count=uninvoiced_billables_count,
         uninvoiced_billable_hours=uninvoiced_billables_total,
         analysis_errors=analysis_errors,
         diagnostics=diagnostics,
+        period=period,
+        dashboard=dashboard_context,
     )

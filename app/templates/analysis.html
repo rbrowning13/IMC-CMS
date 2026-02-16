@@ -1,199 +1,1278 @@
 {% extends "base.html" %}
 
-{# ---- Safe defaults so the page can render while analysis.py is being built ---- #}
-{% set settings = settings if settings is defined else None %}
-{% set active_claims_count = active_claims_count if active_claims_count is defined else 0 %}
-{% set total_claims = total_claims if total_claims is defined else 0 %}
-{% set avg_open_claim_age_days = avg_open_claim_age_days if avg_open_claim_age_days is defined else none %}
-{% set stale_claims_count = stale_claims_count if stale_claims_count is defined else 0 %}
-{% set uninvoiced_billables = uninvoiced_billables if uninvoiced_billables is defined else 0 %}
-{% set hours_last_30_days = hours_last_30_days if hours_last_30_days is defined else 0 %}
-{% set hours_target_min_30 = hours_target_min_30 if hours_target_min_30 is defined else none %}
-{% set hours_target_max_30 = hours_target_max_30 if hours_target_max_30 is defined else none %}
-{% set total_outstanding_ar = total_outstanding_ar if total_outstanding_ar is defined else 0 %}
-{% set open_invoices = open_invoices if open_invoices is defined else 0 %}
-{% set total_invoices = total_invoices if total_invoices is defined else 0 %}
-{% set ar_aging = ar_aging if ar_aging is defined else {'current': 0, 'days_31_60': 0, 'days_61_90': 0, 'over_90': 0} %}
-{% set ar_by_carrier = ar_by_carrier if ar_by_carrier is defined else [] %}
-
 {% block content %}
-<div class="container-fluid mt-4">
-  <h2 class="mb-4">Analysis Dashboard</h2>
+<div class="container-fluid mt-4 dashboard-container">
 
-  <!-- Summary Cards -->
-  {% if settings and settings.dormant_claim_days %}
-    {% set dormant_days = settings.dormant_claim_days %}
-  {% else %}
-    {% set dormant_days = 60 %}
-  {% endif %}
-  <div class="row mb-4">
-    <div class="col-md-3 mb-3">
-      <div class="card stat-card text-center">
-        <div class="card-body">
-          <div class="stat-label">Active Claims</div>
-          <div class="stat-value">{{ active_claims_count }}</div>
-          <div class="small text-muted mt-2">
-            Total claims: {{ total_claims }}
-          </div>
-        </div>
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="mb-0">Dashboard</h2>
+      <div class="small text-muted">
+        Business Overview & Operational Health
       </div>
     </div>
-    <div class="col-md-3 mb-3">
-      <div class="card stat-card text-center">
-        <div class="card-body">
-          <div class="stat-label">Avg Open Claim Age</div>
-          <div class="stat-value">
-            {% if avg_open_claim_age_days is not none %}
-              {{ avg_open_claim_age_days|round(1) }} days
-            {% else %}
-              &mdash;
-            {% endif %}
-          </div>
-          <div class="small text-muted mt-2">
-            Based on open claims only
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3 mb-3">
-      <div class="card stat-card text-center">
-        <div class="card-body">
-          <div class="stat-label">Inactive Claims (>{{ dormant_days }} days)</div>
-          <div class="stat-value">{{ stale_claims_count }}</div>
-          <div class="small text-muted mt-2">&nbsp;</div>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3 mb-3">
-      <div class="card stat-card text-center">
-        <div class="card-body">
-          <div class="stat-label">Uninvoiced Billables</div>
-          <div class="stat-value">${{ "%.2f"|format(uninvoiced_billables or 0) }}</div>
-          <div class="small text-muted mt-2">&nbsp;</div>
-        </div>
-      </div>
-    </div>
+    
   </div>
 
-  <!-- Workload Summary -->
-  <div class="row mb-4">
-    <div class="col-md-6 mb-3">
-      <div class="card stat-card h-100">
-        <div class="card-body">
-          <div class="stat-label mb-2">Hours Worked (Last 30 Days)</div>
-          <div class="stat-value mb-2">
-            {{ "%.1f"|format(hours_last_30_days or 0) }}
-          </div>
-          {% if hours_target_min_30 and hours_target_max_30 %}
-            {% if hours_last_30_days < hours_target_min_30 %}
-              {% set hours_status = "Below target" %}
-            {% elif hours_last_30_days > hours_target_max_30 %}
-              {% set hours_status = "Above target" %}
-            {% else %}
-              {% set hours_status = "Within target" %}
-            {% endif %}
 
-            <div class="mb-1">
-              {% if hours_status == "Below target" %}
-                <span class="badge bg-danger">Below target</span>
-              {% elif hours_status == "Above target" %}
-                <span class="badge bg-warning text-dark">Above target</span>
-              {% else %}
-                <span class="badge bg-success">Within target</span>
-              {% endif %}
-            </div>
-            <div class="small text-muted">
-              Target range for 30 days:
-              {{ "%.1f"|format(hours_target_min_30) }}&ndash;{{ "%.1f"|format(hours_target_max_30) }} hrs
+  <!-- ============================= -->
+  <!-- REPORT STATUS SECTION -->
+  <!-- ============================= -->
+  <div class="row mb-4">
+
+    <!-- Overdue Reports -->
+    <div class="col-lg-6 mb-3">
+      <div class="card dashboard-card h-100">
+        <div class="card-body">
+          <h5 class="mb-3">Overdue Reports</h5>
+
+          {% if dashboard.overdue_reports %}
+            <div style="max-height: 400px; overflow-y: auto;">
+              <ul class="list-group list-group-flush">
+                {% for r in dashboard.overdue_reports %}
+                  <li class="list-group-item">
+                    <a href="/claims/{{ r.claim_id }}" class="text-decoration-none text-reset d-flex justify-content-between align-items-start">
+                      <div>
+                        <div class="fw-semibold">
+                          {{ r.last_name }}, {{ r.first_name }}
+                        </div>
+                        <div class="small text-muted">
+                          {{ r.claim_number }} · {{ r.report_type }} #{{ r.report_number }}
+                        </div>
+                        <div class="small text-danger">
+                          Due: {{ r.due_date }}
+                        </div>
+                      </div>
+                      <span class="badge bg-danger ms-2">Overdue</span>
+                    </a>
+                  </li>
+                {% endfor %}
+              </ul>
             </div>
           {% else %}
-            <div class="small text-muted">
-              No weekly hour targets configured in Settings.
-            </div>
+            <div class="text-muted small">No overdue reports.</div>
           {% endif %}
         </div>
       </div>
     </div>
 
-    <!-- Billing Summary -->
-    <div class="col-md-6 mb-3">
-      <div class="card stat-card h-100">
+    <!-- Due Next 7 Days -->
+    <div class="col-lg-6 mb-3">
+      <div class="card dashboard-card h-100">
         <div class="card-body">
-          <div class="stat-label mb-2">Outstanding Accounts Receivable</div>
-          <div class="stat-value mb-2">
-            ${{ "%.2f"|format(total_outstanding_ar or 0) }}
-          </div>
-          <div class="small text-muted">
-            Open invoices: {{ open_invoices }}<br>
-            Total invoices: {{ total_invoices }}
-          </div>
+          <h5 class="mb-3">Reports Due Next 7 Days</h5>
+
+          {% if dashboard.upcoming_reports %}
+            <div style="max-height: 400px; overflow-y: auto;">
+              <ul class="list-group list-group-flush">
+                {% for r in dashboard.upcoming_reports %}
+                  <li class="list-group-item">
+                    <a href="/claims/{{ r.claim_id }}" class="text-decoration-none text-reset d-flex justify-content-between align-items-start">
+                      <div>
+                        <div class="fw-semibold">
+                          {{ r.last_name }}, {{ r.first_name }}
+                        </div>
+                        <div class="small text-muted">
+                          {{ r.claim_number }} · {{ r.report_type }} #{{ r.report_number }}
+                        </div>
+                        <div class="small text-warning">
+                          Due: {{ r.due_date }}
+                        </div>
+                      </div>
+                      <span class="badge bg-warning text-dark ms-2">Due Soon</span>
+                    </a>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% else %}
+            <div class="text-muted small">No reports due in the next 7 days.</div>
+          {% endif %}
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Aging Summary -->
-  <h4 class="mt-4 mb-3">Aging Summary</h4>
+  <!-- ============================= -->
+  <!-- APPOINTMENTS -->
+  <!-- ============================= -->
   <div class="row mb-4">
-    <div class="col-md-3 mb-3">
-      <div class="card stat-card text-center h-100">
+    <div class="col-12">
+      <div class="card dashboard-card">
         <div class="card-body">
-          <div class="stat-label">Current (0-30 days)</div>
-          <div class="stat-value">${{ "%.2f"|format(ar_aging['current'] or 0) }}</div>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3 mb-3">
-      <div class="card stat-card text-center h-100">
-        <div class="card-body">
-          <div class="stat-label">31-60 days</div>
-          <div class="stat-value">${{ "%.2f"|format(ar_aging['days_31_60'] or 0) }}</div>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3 mb-3">
-      <div class="card stat-card text-center h-100">
-        <div class="card-body">
-          <div class="stat-label">61-90 days</div>
-          <div class="stat-value">${{ "%.2f"|format(ar_aging['days_61_90'] or 0) }}</div>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3 mb-3">
-      <div class="card stat-card text-center h-100">
-        <div class="card-body">
-          <div class="stat-label">Over 90 days</div>
-          <div class="stat-value">${{ "%.2f"|format(ar_aging['over_90'] or 0) }}</div>
+          <h5 class="mb-3">Upcoming Appointments (Next 7 Days)</h5>
+
+          {% if dashboard.upcoming_appointments %}
+            <div style="max-height: 400px; overflow-y: auto;">
+              <ul class="list-group list-group-flush">
+                {% for appt in dashboard.upcoming_appointments %}
+                  <li class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                      <a href="/reports/{{ appt.report_id }}/edit"
+                         class="text-decoration-none text-reset flex-grow-1">
+                        <div class="fw-semibold">
+                          {{ appt.formatted_date }} – {{ appt.formatted_time }}
+                        </div>
+                        <div class="small">
+                          {{ appt.claim_display }}
+                        </div>
+                        <div class="small text-muted">
+                          {{ appt.provider_name or "No provider" }}
+                        </div>
+                        {% if appt.notes %}
+                          <div class="small text-muted mt-1">
+                            {{ appt.notes }}
+                          </div>
+                        {% endif %}
+                      </a>
+
+                      <div class="ms-3">
+                        <a href="/reports/{{ appt.report_id }}/appointment.ics"
+                           title="Add to Calendar"
+                           class="text-decoration-none">
+                          <span style="font-size: 1.2rem;">📅</span>
+                        </a>
+                      </div>
+                    </div>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% else %}
+            <div class="text-muted small">No upcoming appointments.</div>
+          {% endif %}
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Receivables by Carrier Table -->
-  <h4 class="mt-4 mb-3">Outstanding A/R by Carrier</h4>
-  <div class="table-responsive">
-    <table class="table table-sm table-bordered">
-      <thead>
-        <tr>
-          <th>Carrier</th>
-          <th class="text-end">Total Outstanding</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in ar_by_carrier %}
-          <tr>
-            <td>{{ row.carrier_name }}</td>
-            <td class="text-end">
-              ${{ "%.2f"|format(row.total_outstanding or 0) }}
-            </td>
-          </tr>
-        {% else %}
-          <tr>
-            <td colspan="2" class="text-center text-muted">No open invoices.</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <!-- ============================= -->
+  <!-- FINANCIAL OVERVIEW -->
+  <!-- ============================= -->
+  <div class="row mb-3">
+
+    <!-- Revenue Donut -->
+    <div class="col-lg-6 mb-3">
+      <div class="card dashboard-card h-100">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0">Revenue Overview</h5>
+            <select class="form-select form-select-sm ms-2" style="width:auto; min-width:120px"
+                    onchange="applyRevenueOverviewPeriod(this.value)">
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+              <option value="quarter">3 Months</option>
+              <option value="six_month">6 Months</option>
+              <option value="rolling_year" selected>12 Months</option>
+              <option value="year">Year</option>
+            </select>
+          </div>
+
+          <div class="row align-items-center">
+            <div class="col-md-6">
+              <canvas id="revenueDonut" style="max-height:260px;"></canvas>
+            </div>
+            <div class="col-md-6">
+              <div class="mt-3 text-center text-md-start">
+                <div id="revenueDonutTotal"
+                     class="fs-5 fw-bold"
+                     style="color: var(--accent-color);">
+                </div>
+                <div id="revenueDonutBreakdown"
+                     class="small text-muted mt-2">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="small text-muted mt-2">
+            Shows Open Invoices vs Un‑invoiced Billables.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Billing Breakdown -->
+    <div class="col-lg-6 mb-3">
+      <div class="card dashboard-card h-100">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Billable Breakdown</h5>
+            <select class="form-select form-select-sm ms-2" style="width:auto; min-width:120px"
+                    onchange="applyBillableBreakdownPeriod(this.value)">
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+              <option value="quarter">3 Months</option>
+              <option value="six_month">6 Months</option>
+              <option value="rolling_year">12 Months</option>
+              <option value="year">Year</option>
+            </select>
+          </div>
+          <div class="row align-items-center">
+            <div class="col-md-6">
+              <canvas id="billingDonut" style="max-height:260px;"></canvas>
+            </div>
+            <div class="col-md-6">
+              <div id="billingBreakdownLegend" class="small"></div>
+            </div>
+          </div>
+          <div class="small text-muted mt-2">
+            Percent of total revenue by billing category.
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <!-- ============================= -->
+  <!-- GAUGE METRICS -->
+  <!-- ============================= -->
+  <div class="row mb-3 align-items-stretch">
+
+    <!-- Productivity Gauge -->
+    <div class="col-lg-4 mb-3">
+      <div class="card dashboard-card text-center h-100">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="mb-0 fw-semibold" style="color: var(--accent-color);">
+              Productivity
+            </h6>
+          </div>
+          <canvas id="productivityGauge" height="150"></canvas>
+          <div class="mt-2 text-start px-3">
+            <div id="productivityHoursValue"
+                 class="metric-value fs-4 fw-bold text-center mb-2"
+                 style="color: var(--accent-color);">
+            </div>
+            <div class="small text-muted text-center mb-3">
+              Avg Weekly Hours (Rolling 30 Days)
+            </div>
+
+            <div class="small d-flex justify-content-between">
+              <span>Capacity Baseline</span>
+              <span id="productivityBaselineValue" class="fw-semibold"></span>
+            </div>
+
+            <div class="small d-flex justify-content-between mt-1">
+              <span>Utilization %</span>
+              <span id="productivityPercentValue" class="fw-semibold"></span>
+            </div>
+
+            <div class="small d-flex justify-content-between mt-1">
+              <span>Avg Hours / Claim</span>
+              <span id="productivityAvgPerClaimValue" class="fw-semibold"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Revenue Health Gauge -->
+    <div class="col-lg-4 mb-3">
+      <div class="card dashboard-card text-center h-100">
+        <div class="card-body py-2">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="mb-0 fw-semibold" style="color: var(--accent-color);">
+              Claim Economics
+            </h6>
+          </div>
+          <div class="bg-light rounded p-3 mb-3">
+            <div class="row g-2 text-start">
+
+            <div class="col-6">
+              <div class="small text-muted">Avg Revenue / Claim</div>
+              <div id="revenuePerClaimValue"
+                   class="fw-bold fs-5"
+                   style="color: var(--accent-color);">
+              </div>
+            </div>
+
+            <div class="col-6">
+              <div class="small text-muted">Revenue / Hour</div>
+              <div id="revenuePerHourValue"
+                   class="fw-bold fs-5">
+              </div>
+            </div>
+
+            <div class="col-6">
+              <div class="small text-muted">Rolling 30‑Day Revenue</div>
+              <div id="rollingRevenueValue"
+                   class="fw-bold fs-5">
+              </div>
+            </div>
+
+            <div class="col-6">
+              <div class="small text-muted">Revenue Run Rate (Annualized)</div>
+              <div id="revenueRunRateValue"
+                   class="fw-bold fs-5">
+              </div>
+            </div>
+
+            <div class="col-6">
+              <div class="small text-muted">Active Claims</div>
+              <div id="revenueActiveClaimCountValue"
+                   class="fw-bold fs-5">
+              </div>
+            </div>
+
+          </div>
+          </div>
+
+          <hr class="my-3">
+
+          <div class="small text-muted mb-2">Collections Health</div>
+
+          <div class="bg-light rounded p-3">
+            <div class="row g-3 text-start">
+
+              <!-- Left Column: Totals -->
+              <div class="col-6">
+                <div class="small text-muted">Open Invoices</div>
+                <div id="collectionsOpenTotalValue"
+                     class="fw-bold fs-6 mb-2"></div>
+              </div>
+
+              <!-- Right Column: Aging Buckets -->
+              <div class="col-6">
+
+                <div class="small text-muted">0–30 Days</div>
+                <div class="fw-semibold" id="collectionsBucket0to30Value"></div>
+                <div class="small text-muted mb-2" id="collectionsBucket0to30Percent"></div>
+
+                <div class="small text-muted">31–60 Days</div>
+                <div class="fw-semibold" id="collectionsBucket31to60Value"></div>
+                <div class="small text-muted mb-2" id="collectionsBucket31to60Percent"></div>
+
+                <div class="small text-muted">61–90 Days</div>
+                <div class="fw-semibold" id="collectionsBucket61to90Value"></div>
+                <div class="small text-muted mb-2" id="collectionsBucket61to90Percent"></div>
+
+                <div class="small text-muted">90+ Days</div>
+                <div class="fw-semibold" id="collectionsBucket90PlusValue"></div>
+                <div class="small text-muted" id="collectionsBucket90PlusPercent"></div>
+
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Server Health Gauge -->
+    <div class="col-lg-4 mb-3">
+      <div class="card dashboard-card text-center h-100">
+        <div class="card-body py-2">
+          <h6 class="mb-3 fw-semibold" style="color: var(--accent-color);">Server Health</h6>
+          <div class="mt-2 text-start px-3">
+            <div class="metric-value fs-6 fw-bold text-center mb-3" style="color: var(--accent-color);">
+              System Metrics
+            </div>
+            <div class="small text-muted text-center mb-3">
+              System operational status (live metrics)
+            </div>
+
+            <div class="small d-flex justify-content-between">
+              <span>Health %</span>
+              <span class="fw-semibold">
+                {{ "%.1f"|format(dashboard.server_health_percent or 0) }}%
+              </span>
+            </div>
+
+            <div class="small d-flex justify-content-between">
+              <span>Database Status</span>
+              <span class="fw-semibold">
+                {{ dashboard.db_status or "Unknown" }}
+              </span>
+            </div>
+
+            <div class="small d-flex justify-content-between mt-1">
+              <span>Disk Free</span>
+              <span class="fw-semibold">
+                {{ dashboard.disk_free_percent or "—" }}%
+              </span>
+            </div>
+
+            <div class="small d-flex justify-content-between mt-1">
+              <span>Last Backup</span>
+              <span class="fw-semibold">
+                {{ dashboard.last_backup_status or "Unknown" }}
+              </span>
+            </div>
+
+            <div class="small d-flex justify-content-between mt-1">
+              <span>System Uptime</span>
+              <span class="fw-semibold">
+                {{ dashboard.system_uptime or "—" }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============================= -->
+  <!-- REVENUE TREND (Selectable) -->
+  <!-- ============================= -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card dashboard-card">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">
+              Revenue Trend
+              <span id="trendPeriodLabel" class="small text-muted ms-2"></span>
+            </h5>
+            <select class="form-select form-select-sm ms-2" style="width:auto; min-width:120px"
+                    onchange="applyRevenueTrendPeriod(this.value)">
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+              <option value="quarter">3 Months</option>
+              <option value="six_month">6 Months</option>
+              <option value="rolling_year">12 Months</option>
+              <option value="year">Year</option>
+            </select>
+          </div>
+
+          <!-- Trend KPI Summary -->
+          <div class="row text-center mb-3" id="trendKpiRow">
+            <div class="col-md-4 mb-2">
+              <div class="small text-muted">Total (Selected Period)</div>
+              <div id="trendTotal" class="fs-5 fw-bold"
+                   style="color: var(--accent-color);">$0.00</div>
+            </div>
+            <div class="col-md-4 mb-2">
+              <div class="small text-muted">Avg Per Interval</div>
+              <div id="trendAverage" class="fs-5 fw-bold">$0.00</div>
+            </div>
+            <div class="col-md-4 mb-2">
+              <div class="small text-muted">Change vs Prior Period</div>
+              <div id="trendGrowth" class="fs-5 fw-bold">—</div>
+            </div>
+          </div>
+
+          <div style="min-height: 220px; position: relative;">
+            <canvas id="revenueTrendChart" height="90"></canvas>
+          </div>
+
+          <div class="small text-muted mt-2">
+            Visualizes billed revenue over the selected period.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================= -->
+  <!-- ACTIVE CLAIM TREND -->
+  <!-- ============================= -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card dashboard-card">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">
+              Active Claim Trend
+            </h5>
+            <select class="form-select form-select-sm ms-2" style="width:auto; min-width:120px"
+                    onchange="applyActiveClaimTrendPeriod(this.value)">
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+              <option value="quarter">3 Months</option>
+              <option value="six_month">6 Months</option>
+              <option value="rolling_year">12 Months</option>
+              <option value="year">Year</option>
+            </select>
+          </div>
+
+          <!-- Active Claim KPI Summary -->
+          <div class="row text-center mb-3">
+            <div class="col-md-4 mb-2">
+              <div class="small text-muted">Current Active</div>
+              <div id="activeCurrent" class="fs-5 fw-bold"
+                   style="color: var(--accent-color);">0</div>
+            </div>
+            <div class="col-md-4 mb-2">
+              <div class="small text-muted">Avg (Selected Period)</div>
+              <div id="activeAverage" class="fs-5 fw-bold">0</div>
+            </div>
+            <div class="col-md-4 mb-2">
+              <div class="small text-muted">Net Change</div>
+              <div id="activeNetChange" class="fs-5 fw-bold">—</div>
+            </div>
+          </div>
+
+          <div style="min-height: 160px; position: relative;">
+            <canvas id="activeClaimTrendChart" height="75"></canvas>
+          </div>
+
+          <div class="small text-muted mt-2">
+            Tracks total active claims over the selected period.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
+
+
+<style>
+
+.fade-chart {
+  transition: opacity 0.25s ease-in-out;
+  opacity: 1;
+}
+
+.fade-chart.fading {
+  opacity: 0.25;
+}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+  let productivityChartInstance = null;
+
+  function renderProductivityGauge(percent) {
+    const canvas = document.getElementById("productivityGauge");
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+
+    if (productivityChartInstance) {
+      productivityChartInstance.destroy();
+    }
+
+    const capped = Math.min(Math.max(percent || 0, 0), 100);
+
+    const needlePlugin = {
+      id: "needle",
+      afterDatasetDraw(chart) {
+        const { ctx } = chart;
+        const meta = chart.getDatasetMeta(0);
+        const centerX = meta.data[0].x;
+        const centerY = meta.data[0].y;
+        const radius = meta.data[0].outerRadius;
+
+        const angle = Math.PI * (capped / 100);
+
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(-Math.PI + angle);
+
+        let needleColor = "#dc3545";
+        if (capped >= 33 && capped <= 66) {
+          needleColor = "#ffffff";
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(radius - 8, 0);
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = "#000000";
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(radius - 8, 0);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = needleColor;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(0, 0, 8, 0, Math.PI * 2);
+        ctx.fillStyle = "#000000";
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(0, 0, 5, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+
+        ctx.restore();
+      }
+    };
+
+    productivityChartInstance = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        datasets: [{
+          data: [33, 33, 34],
+          backgroundColor: ["#dc3545", "#28a745", "#dc3545"],
+          borderWidth: 0,
+          cutout: "75%"
+        }]
+      },
+      options: {
+        rotation: -90,
+        circumference: 180,
+        plugins: {
+          tooltip: { enabled: false },
+          legend: { display: false }
+        }
+      },
+      plugins: [needlePlugin]
+    });
+  }
+
+function renderRollingProductivity() {
+  const meta = {{ (dashboard.productivity_rolling or {}) | tojson | safe }};
+
+  const totalHours = meta.hours || 0;
+  const avgWeekly = totalHours / 4.33;
+
+  const minWeekly = meta.min_weekly_hours || 0;
+  const maxWeekly = meta.max_weekly_hours || 0;
+
+  const hoursEl = document.getElementById("productivityHoursValue");
+  const baselineEl = document.getElementById("productivityBaselineValue");
+  const percentEl = document.getElementById("productivityPercentValue");
+  const avgEl = document.getElementById("productivityAvgPerClaimValue");
+
+  if (hoursEl) hoursEl.innerText = avgWeekly.toFixed(1);
+  if (baselineEl) baselineEl.innerText = maxWeekly
+      ? maxWeekly.toFixed(1) + " hrs"
+      : "—";
+
+  const rawUtil = meta.utilization_percent_raw || 0;
+  const cappedUtil = meta.utilization_percent_capped || 0;
+  if (percentEl) percentEl.innerText = rawUtil.toFixed(1) + "%";
+
+  if (avgEl) avgEl.innerText = meta.avg_hours_per_claim
+      ? meta.avg_hours_per_claim.toFixed(1)
+      : "—";
+
+  const cappedPercent = meta.utilization_percent_capped || 0;
+  renderProductivityGauge(cappedPercent);
+}
+
+function renderClaimEconomics() {
+  const meta = {{ (dashboard.claim_economics or {}) | tojson | safe }};
+
+  // ---- Core Revenue Metrics ----
+  const revenuePerClaim = meta.avg_revenue_per_claim_12m || 0;
+  const revenuePerHour = meta.revenue_per_hour || 0;
+  const rollingRevenue = meta.rolling_30_day_revenue || 0;
+  const revenueRunRate = meta.revenue_run_rate || 0;
+  const activeClaims = meta.active_claims || 0;
+
+  const openInvoices = meta.open_invoices_total || 0;
+  const bucket0to30 = meta.open_current || 0;
+  const bucket31to60 = meta.open_31_60 || 0;
+  const bucket61to90 = meta.open_61_90 || 0;
+  const bucket90Plus = meta.open_90_plus || 0;
+
+  const totalAging =
+    bucket0to30 + bucket31to60 + bucket61to90 + bucket90Plus;
+
+  function pct(value) {
+    return totalAging
+      ? ((value / totalAging) * 100).toFixed(1) + "%"
+      : "0.0%";
+  }
+
+  // ---- KPI Fields ----
+  const perClaimEl = document.getElementById("revenuePerClaimValue");
+  const perHourEl = document.getElementById("revenuePerHourValue");
+  const rollingEl = document.getElementById("rollingRevenueValue");
+  const runRateEl = document.getElementById("revenueRunRateValue");
+  const activeEl = document.getElementById("revenueActiveClaimCountValue");
+
+  if (perClaimEl) perClaimEl.innerText = "$" + revenuePerClaim.toFixed(2);
+  if (perHourEl) perHourEl.innerText = "$" + revenuePerHour.toFixed(2);
+  if (rollingEl) rollingEl.innerText = "$" + rollingRevenue.toFixed(2);
+  if (runRateEl) runRateEl.innerText = "$" + revenueRunRate.toFixed(0);
+  if (activeEl) activeEl.innerText = activeClaims;
+
+  // ---- Collections ----
+  const openTotalEl = document.getElementById("collectionsOpenTotalValue");
+  const b0El = document.getElementById("collectionsBucket0to30Value");
+  const b31El = document.getElementById("collectionsBucket31to60Value");
+  const b61El = document.getElementById("collectionsBucket61to90Value");
+  const b90El = document.getElementById("collectionsBucket90PlusValue");
+
+  const b0PctEl = document.getElementById("collectionsBucket0to30Percent");
+  const b31PctEl = document.getElementById("collectionsBucket31to60Percent");
+  const b61PctEl = document.getElementById("collectionsBucket61to90Percent");
+  const b90PctEl = document.getElementById("collectionsBucket90PlusPercent");
+
+  if (openTotalEl) openTotalEl.innerText = "$" + openInvoices.toFixed(2);
+
+  if (b0El) b0El.innerText = "$" + bucket0to30.toFixed(2);
+  if (b31El) b31El.innerText = "$" + bucket31to60.toFixed(2);
+  if (b61El) b61El.innerText = "$" + bucket61to90.toFixed(2);
+  if (b90El) b90El.innerText = "$" + bucket90Plus.toFixed(2);
+
+  if (b0PctEl) b0PctEl.innerText = pct(bucket0to30);
+  if (b31PctEl) b31PctEl.innerText = pct(bucket31to60);
+  if (b61PctEl) b61PctEl.innerText = pct(bucket61to90);
+  if (b90PctEl) b90PctEl.innerText = pct(bucket90Plus);
+}
+
+// ============================
+// THEME-AWARE CHART COLORS
+// ============================
+function getChartThemeColors() {
+  const isDark = document.documentElement.classList.contains("dark-mode");
+
+  const textColor = isDark ? "#ffffff" : "#000000";
+  const gridColor = isDark ? "#333333" : "#dddddd";
+
+  return { textColor, gridColor };
+}
+
+// ============================
+// REVENUE DONUT LOGIC
+// ============================
+
+const revenueData = {
+  week: {
+    open: {{ dashboard.revenue_week_open or 0 }},
+    uninvoiced: {{ dashboard.revenue_week_uninvoiced or 0 }}
+  },
+  month: {
+    open: {{ dashboard.revenue_month_open or 0 }},
+    uninvoiced: {{ dashboard.revenue_month_uninvoiced or 0 }}
+  },
+  quarter: {
+    open: {{ dashboard.revenue_quarter_open or 0 }},
+    uninvoiced: {{ dashboard.revenue_quarter_uninvoiced or 0 }}
+  },
+  six_month: {
+    open: {{ dashboard.revenue_six_month_open or 0 }},
+    uninvoiced: {{ dashboard.revenue_six_month_uninvoiced or 0 }}
+  },
+  rolling_year: {
+    open: {{ dashboard.revenue_rolling_year_open or 0 }},
+    uninvoiced: {{ dashboard.revenue_rolling_year_uninvoiced or 0 }}
+  },
+  year: {
+    open: {{ dashboard.revenue_year_open or 0 }},
+    uninvoiced: {{ dashboard.revenue_year_uninvoiced or 0 }}
+  }
+};
+
+let revenueChart = null;
+
+function renderRevenueDonut(period) {
+  const ctx = document.getElementById("revenueDonut");
+  ctx.classList.add("fade-chart");
+  ctx.classList.add("fading");
+  const accent = getComputedStyle(document.documentElement)
+                   .getPropertyValue('--accent-color')
+                   .trim() || "#d48c2c";
+
+  const open = revenueData[period].open || 0;
+  const uninvoiced = revenueData[period].uninvoiced || 0;
+  const total = open + uninvoiced;
+
+  const openPct = total ? (open / total) * 100 : 0;
+  const uninvPct = total ? (uninvoiced / total) * 100 : 0;
+
+  if (revenueChart) {
+    revenueChart.destroy();
+  }
+
+  revenueChart = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: ["Open Invoices", "Un‑invoiced Billables"],
+      datasets: [{
+        data: [open, uninvoiced],
+        backgroundColor: [
+          accent,
+          "#444444"
+        ],
+        borderWidth: 0,
+        cutout: "70%"
+      }]
+    },
+    options: {
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            color: getChartThemeColors().textColor,
+            font: {
+              weight: "500"
+            }
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label(context) {
+              const value = context.raw || 0;
+              const pct = total ? ((value / total) * 100).toFixed(1) : 0;
+              return `${context.label}: $${value.toFixed(2)} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  document.getElementById("revenueDonutTotal").innerText =
+    `$${total.toFixed(2)} Total`;
+
+  document.getElementById("revenueDonutBreakdown").innerText =
+    `Open: $${open.toFixed(2)} (${openPct.toFixed(1)}%) · ` +
+    `Un‑invoiced: $${uninvoiced.toFixed(2)} (${uninvPct.toFixed(1)}%)`;
+
+  setTimeout(() => {
+    ctx.classList.remove("fading");
+  }, 50);
+}
+
+// ============================
+// BILLING DONUT LOGIC (with fade animation)
+// ============================
+
+const rawBillingData = {
+  week: {{ (dashboard.billing_breakdown_week or []) | tojson | safe }},
+  month: {{ (dashboard.billing_breakdown_month or []) | tojson | safe }},
+  quarter: {{ (dashboard.billing_breakdown_quarter or []) | tojson | safe }},
+  six_month: {{ (dashboard.billing_breakdown_six_month or []) | tojson | safe }},
+  rolling_year: {{ (dashboard.billing_breakdown_rolling_year or []) | tojson | safe }},
+  year: {{ (dashboard.billing_breakdown_year or []) | tojson | safe }}
+};
+
+// Transform backend list into Chart.js-friendly structure
+function transformBillingData(list) {
+  if (!list || !list.length) {
+    return {
+      labels: ["No Data"],
+      values: [1],
+      colors: ["#444444"]
+    };
+  }
+
+  const accent = getComputedStyle(document.documentElement)
+                   .getPropertyValue('--accent-color')
+                   .trim() || "#d48c2c";
+
+  const labels = list.map(item => item.code);
+  const values = list.map(item => item.total);
+
+  // Generate color variations
+  const colors = list.map((_, index) => {
+    const hueShift = (index * 35) % 360;
+    return `hsl(${hueShift}, 60%, 45%)`;
+  });
+
+  return { labels, values, colors };
+}
+
+let billingChart = null;
+
+function renderBillingDonut(period) {
+  console.log("Billing period:", period, rawBillingData[period]);
+  const billingCanvas = document.getElementById("billingDonut");
+  billingCanvas.classList.add("fade-chart");
+  billingCanvas.classList.add("fading");
+
+  const data = transformBillingData(rawBillingData[period] || []);
+
+  if (billingChart) {
+    billingChart.destroy();
+  }
+
+  billingChart = new Chart(billingCanvas, {
+    type: "doughnut",
+    data: {
+      labels: data.labels || [],
+      datasets: [{
+        data: data.values || [],
+        backgroundColor: data.colors || [],
+        borderWidth: 0,
+        cutout: "70%"
+      }]
+    },
+    options: {
+      plugins: {
+        legend: { display: false }
+      }
+    }
+  });
+
+  // Build custom color-coded breakdown below donut
+  const legendContainer = document.getElementById("billingBreakdownLegend");
+  if (legendContainer) {
+    const total = (data.values || []).reduce((sum, v) => sum + (v || 0), 0);
+
+    if (!total || data.labels[0] === "No Data") {
+      legendContainer.innerHTML =
+        `<div class="small text-muted">No billable data for this period.</div>`;
+    } else {
+      let html = `<div class="small">`;
+
+      data.labels.forEach((label, index) => {
+        const value = data.values[index] || 0;
+        const pct = total ? ((value / total) * 100).toFixed(1) : 0;
+        const color = data.colors[index];
+
+        html += `
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <div class="d-flex align-items-center">
+              <span style="
+                display:inline-block;
+                width:12px;
+                height:12px;
+                border-radius:2px;
+                background:${color};
+                margin-right:8px;
+              "></span>
+              <span>${label}</span>
+            </div>
+            <span>${pct}%</span>
+          </div>
+        `;
+      });
+
+      html += `</div>`;
+      legendContainer.innerHTML = html;
+    }
+  }
+
+  setTimeout(() => {
+    billingCanvas.classList.remove("fading");
+  }, 50);
+}
+
+
+// ============================
+// SELECTABLE REVENUE TREND
+// ============================
+
+const revenueTrendData = {
+  week: {{ (dashboard.revenue_trend_week or []) | tojson | safe }},
+  month: {{ (dashboard.revenue_trend_month or []) | tojson | safe }},
+  quarter: {{ (dashboard.revenue_trend_quarter or []) | tojson | safe }},
+  six_month: {{ (dashboard.revenue_trend_six_month or []) | tojson | safe }},
+  year: {{ (dashboard.revenue_trend_year or []) | tojson | safe }},
+  rolling_year: {{ (dashboard.revenue_trend_rolling_year or []) | tojson | safe }}
+};
+
+// ============================
+// ACTIVE CLAIM TREND DATA
+// ============================
+const activeClaimTrendData = {
+  week: {{ (dashboard.active_claim_trend_week or []) | tojson | safe }},
+  month: {{ (dashboard.active_claim_trend_month or []) | tojson | safe }},
+  quarter: {{ (dashboard.active_claim_trend_quarter or []) | tojson | safe }},
+  six_month: {{ (dashboard.active_claim_trend_six_month or []) | tojson | safe }},
+  rolling_year: {{ (dashboard.active_claim_trend_rolling_year or []) | tojson | safe }},
+  year: {{ (dashboard.active_claim_trend_year or []) | tojson | safe }}
+};
+
+let trendChart = null;
+let activeClaimTrendChart = null;
+// ============================
+// RENDER ACTIVE CLAIM TREND
+// ============================
+function renderActiveClaimTrend(period) {
+  const dataSet = activeClaimTrendData[period] || [];
+  if (!dataSet.length) return;
+
+  const labels = dataSet.map(i => i.label);
+  const values = dataSet.map(i => i.count);
+
+  const current = values.length ? values[values.length - 1] : 0;
+  const average = values.length
+    ? values.reduce((s, v) => s + v, 0) / values.length
+    : 0;
+  const netChange = values.length > 1
+    ? values[values.length - 1] - values[0]
+    : 0;
+
+  // Animate KPI values
+  animateNumber("activeCurrent", current, "", 0);
+  animateNumber("activeAverage", average, "", 1);
+
+  const netEl = document.getElementById("activeNetChange");
+  if (netEl) {
+    if (netChange === 0) {
+      netEl.innerHTML = "0";
+    } else {
+      const arrow = netChange > 0 ? "↑" : "↓";
+      const color = netChange > 0 ? "#28a745" : "#dc3545";
+      netEl.innerHTML =
+        `<span style="color:${color}">${arrow} ${Math.abs(netChange)}</span>`;
+    }
+  }
+
+  const ctx = document.getElementById('activeClaimTrendChart');
+  const accent = getComputedStyle(document.documentElement)
+                   .getPropertyValue('--accent-color')
+                   .trim() || '#d48c2c';
+
+  if (activeClaimTrendChart) {
+    activeClaimTrendChart.destroy();
+  }
+
+  activeClaimTrendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Active Claims',
+        data: values,
+        borderColor: accent,
+        backgroundColor: accent + '22',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label(context) {
+              return `Active: ${context.raw}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: getChartThemeColors().textColor },
+          grid: { color: getChartThemeColors().gridColor }
+        },
+        y: {
+          ticks: { color: getChartThemeColors().textColor },
+          grid: { color: getChartThemeColors().gridColor }
+        }
+      }
+    }
+  });
+}
+
+// Smooth number animation for KPI values
+function animateNumber(elementId, endValue, prefix = "$", decimals = 2, duration = 400) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+
+  const start = 0;
+  const startTime = performance.now();
+
+  function update(now) {
+    const progress = Math.min((now - startTime) / duration, 1);
+    const value = start + (endValue - start) * progress;
+    el.innerText = prefix + value.toFixed(decimals);
+
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    }
+  }
+
+  requestAnimationFrame(update);
+}
+
+function renderTrend(period) {
+  const trendData = revenueTrendData[period] || [];
+  if (!trendData.length) return;
+
+  const labels = trendData.map(item => item.label);
+  const values = trendData.map(item => item.total);
+
+  // ===== KPI CALCULATIONS =====
+  const total = values.reduce((sum, v) => sum + (v || 0), 0);
+  const avg = values.length ? total / values.length : 0;
+
+  // Compare to prior logical period (explicit ordering)
+  const periodOrder = [
+    "week",
+    "month",
+    "quarter",
+    "six_month",
+    "rolling_year",
+    "year"
+  ];
+
+  const currentIndex = periodOrder.indexOf(period);
+  let growthText = "—";
+
+  if (currentIndex >= 0 && currentIndex < periodOrder.length - 1) {
+    const priorPeriod = periodOrder[currentIndex + 1];
+    const priorData = revenueTrendData[priorPeriod] || [];
+    const priorTotal = priorData.reduce((sum, v) => sum + (v.total || 0), 0);
+
+    if (priorTotal > 0) {
+      const changePct = ((total - priorTotal) / priorTotal) * 100;
+      const arrow = changePct >= 0 ? "↑" : "↓";
+      const color = changePct >= 0 ? "#28a745" : "#dc3545";
+      growthText = `<span style="color:${color}">${arrow} ${changePct.toFixed(1)}%</span>`;
+    }
+  }
+
+  // Update KPI DOM with animation
+  animateNumber("trendTotal", total);
+  animateNumber("trendAverage", avg);
+  document.getElementById("trendGrowth").innerHTML = growthText;
+
+  const ctx = document.getElementById('revenueTrendChart');
+  ctx.classList.add("fade-chart");
+  ctx.classList.add("fading");
+  const accent = getComputedStyle(document.documentElement)
+                   .getPropertyValue('--accent-color')
+                   .trim() || '#d48c2c';
+
+  if (trendChart) {
+    trendChart.destroy();
+  }
+
+  trendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Revenue',
+        data: values,
+        borderColor: accent,
+        backgroundColor: accent + '22',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+        pointHoverRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label(context) {
+              return `$${context.raw.toFixed(2)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: getChartThemeColors().textColor },
+          grid: { color: getChartThemeColors().gridColor }
+        },
+        y: {
+          ticks: {
+            color: getChartThemeColors().textColor,
+            callback: function(value) {
+              return '$' + value;
+            }
+          },
+          grid: { color: getChartThemeColors().gridColor }
+        }
+      }
+    }
+  });
+  setTimeout(() => {
+    ctx.classList.remove("fading");
+  }, 50);
+}
+
+// ============================
+// PER-MODULE PERIOD CONTROLS
+// ============================
+
+// Utility for period label
+const periodLabels = {
+  week: "Week",
+  month: "Month",
+  quarter: "3 Months",
+  six_month: "6 Months",
+  rolling_year: "12 Months",
+  year: "Year"
+};
+
+// Reports Due Next 7 Days (example implementation)
+let currentReportsPeriod = "week";
+function applyReportsPeriod(period) {
+  currentReportsPeriod = period;
+  // Update UI as needed, e.g., fetch new data or filter visible reports
+  // For demonstration, just log or implement as needed
+  // Optionally: renderReportsDue(period);
+}
+
+// Upcoming Appointments
+let currentAppointmentsPeriod = "week";
+function applyAppointmentsPeriod(period) {
+  currentAppointmentsPeriod = period;
+  // Update UI as needed, e.g., fetch new data or filter visible appointments
+  // Optionally: renderAppointments(period);
+}
+
+// Revenue Overview (Donut)
+let currentRevenueOverviewPeriod = "week";
+function applyRevenueOverviewPeriod(period) {
+  currentRevenueOverviewPeriod = period;
+  renderRevenueDonut(period);
+}
+
+// Billable Breakdown
+let currentBillableBreakdownPeriod = "rolling_year";
+function applyBillableBreakdownPeriod(period) {
+  currentBillableBreakdownPeriod = period;
+  renderBillingDonut(period);
+}
+
+// Productivity Gauge: period controls removed
+
+
+// Revenue Trend
+let currentRevenueTrendPeriod = "week";
+function applyRevenueTrendPeriod(period) {
+  currentRevenueTrendPeriod = period;
+  const label = periodLabels[period] || "";
+  const labelEl = document.getElementById("trendPeriodLabel");
+  if (labelEl) labelEl.innerText = `(${label})`;
+  renderTrend(period);
+}
+
+// Active Claim Trend
+let currentActiveClaimTrendPeriod = "week";
+function applyActiveClaimTrendPeriod(period) {
+  currentActiveClaimTrendPeriod = period;
+  renderActiveClaimTrend(period);
+}
+
+// Initial renders for each module
+window.addEventListener("DOMContentLoaded", function() {
+  renderRollingProductivity();
+  renderClaimEconomics();
+  applyRevenueOverviewPeriod(currentRevenueOverviewPeriod);
+  applyBillableBreakdownPeriod(currentBillableBreakdownPeriod);
+  applyRevenueTrendPeriod(currentRevenueTrendPeriod);
+  applyActiveClaimTrendPeriod(currentActiveClaimTrendPeriod);
+  // Reports/Appointments: implement as needed
+});
+
+// ============================
+// THEME TOGGLE OBSERVER
+// Re-render charts when dark mode class changes
+// ============================
+function rerenderAllChartsForTheme() {
+  renderRevenueDonut(currentRevenueOverviewPeriod);
+  renderBillingDonut(currentBillableBreakdownPeriod);
+  renderTrend(currentRevenueTrendPeriod);
+  renderActiveClaimTrend(currentActiveClaimTrendPeriod);
+}
+
+const themeObserver = new MutationObserver(function(mutations) {
+  mutations.forEach(function(mutation) {
+    if (mutation.attributeName === "class") {
+      rerenderAllChartsForTheme();
+    }
+  });
+});
+
+themeObserver.observe(document.documentElement, {
+  attributes: true
+});
+</script>
+
 {% endblock %}

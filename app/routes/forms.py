@@ -61,8 +61,13 @@ def _settings_tz(settings: Settings) -> ZoneInfo:
         return ZoneInfo("America/Denver")
 
 
+
 def _now_local(settings: Settings) -> datetime:
     return datetime.now(_settings_tz(settings))
+
+def _today_local(settings: Settings) -> date:
+    """Return the current date in the app's local timezone."""
+    return _now_local(settings).date()
 
 
 def _fax_session_key(claim_id: int | None) -> str:
@@ -79,7 +84,10 @@ def _fax_load_from_session(claim_id: int | None) -> dict:
             saved_at = data.get("_saved_at")
             if saved_at:
                 saved_dt = datetime.fromisoformat(str(saved_at))
-                age_seconds = (datetime.utcnow() - saved_dt).total_seconds()
+                # Use app-localized now for expiration
+                settings = _ensure_settings()
+                now_local = _now_local(settings)
+                age_seconds = (now_local - saved_dt).total_seconds()
                 if age_seconds > 12 * 3600:
                     session.pop(_fax_session_key(claim_id), None)
                     return {}
@@ -98,7 +106,8 @@ def _fax_save_to_session(claim_id: int | None, payload: dict) -> None:
 
     # Add a timestamp only for the standalone form so it expires.
     if claim_id is None:
-        data["_saved_at"] = datetime.utcnow().isoformat()
+        settings = _ensure_settings()
+        data["_saved_at"] = _now_local(settings).isoformat()
 
     session[_fax_session_key(claim_id)] = data
     
@@ -333,7 +342,7 @@ def fax_cover_pdf(claim_id: int):
         flash(f"Could not generate PDF: {e}", "error")
         return redirect(url_for("main.fax_cover_edit", claim_id=claim.id))
 
-    filename = f"Fax_Cover_{datetime.now().strftime('%Y-%m-%d')}.pdf"
+    filename = f"Fax_Cover_{_now_local(settings).strftime('%Y-%m-%d')}.pdf"
     resp = make_response(pdf_bytes)
     resp.headers["Content-Type"] = "application/pdf"
     resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
@@ -361,18 +370,150 @@ def forms_index():
       <p class="mb-1">Quick printable fax cover sheet with editable To/From details.</p>
     </a>
 
-    <div class="list-group-item">
+    <a class="list-group-item list-group-item-action" href="{{ url_for('main.forms_face_sheet') }}">
       <div class="d-flex w-100 justify-content-between">
-        <h5 class="mb-1 text-muted">Face Sheet</h5>
-        <small class="text-muted">Coming soon</small>
+        <h5 class="mb-1">Face Sheet</h5>
+        <small class="text-muted">Template</small>
       </div>
-      <p class="mb-0 text-muted">We’ll move Face Sheet generation here once the Forms/Templates workflow is finalized.</p>
-    </div>
+      <p class="mb-1">Claim summary sheet for sending to new clinics to open a patient file.</p>
+    </a>
   </div>
 {% endblock %}
 """
 
     return render_template_string(html, settings=settings, active_page="forms")
+
+
+
+# ============================================================
+#  FACE SHEET (Claim Summary Form)
+# ============================================================
+
+
+# JSON search endpoint for Face Sheet live autocomplete
+@bp.route("/api/face-sheet-search")
+def api_face_sheet_search():
+    """
+    Lightweight JSON search endpoint for Face Sheet live autocomplete.
+    Searches claims by claim number or claimant name.
+    """
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"results": []})
+
+    try:
+        clause = or_(
+            Claim.claim_number.ilike(f"%{q}%"),
+            Claim.claimant_first_name.ilike(f"%{q}%"),
+            Claim.claimant_last_name.ilike(f"%{q}%"),
+        )
+
+        matches = (
+            Claim.query
+            .filter(clause)
+            .order_by(Claim.id.desc())
+            .limit(25)
+            .all()
+        )
+
+        results = []
+        for c in matches:
+            claimant = f"{(c.claimant_last_name or '').strip()}, {(c.claimant_first_name or '').strip()}".strip(", ")
+            results.append({
+                "id": c.id,
+                "claim_number": c.claim_number,
+                "claimant": claimant,
+                "label": f"{claimant} — {c.claim_number}",
+                "pdf_url": url_for("main.face_sheet_pdf", claim_id=c.id),
+                "print_url": url_for("main.face_sheet_print", claim_id=c.id),
+            })
+
+        return jsonify({"results": results})
+
+    except Exception:
+        return jsonify({"results": []})
+
+@bp.route("/forms/face-sheet", methods=["GET"])
+def forms_face_sheet():
+    """
+    Face Sheet search + landing page.
+    Allows user to search for a claim and generate a printable summary.
+    """
+
+    settings = _ensure_settings()
+    q = (request.args.get("q") or "").strip()
+
+    claims = []
+    if len(q) >= 2:
+        try:
+            search_clause = or_(
+                Claim.claim_number.ilike(f"%{q}%"),
+                Claim.claimant_first_name.ilike(f"%{q}%"),
+                Claim.claimant_last_name.ilike(f"%{q}%"),
+            )
+            claims = (
+                Claim.query.filter(search_clause)
+                .order_by(Claim.id.desc())
+                .limit(25)
+                .all()
+            )
+        except Exception:
+            claims = []
+
+    return render_template(
+        "forms/face_sheet.html",
+        active_page="forms",
+        settings=settings,
+        claims=claims,
+        query=q,
+    )
+
+
+@bp.route("/forms/face-sheet/<int:claim_id>/print")
+def face_sheet_print(claim_id: int):
+    """
+    HTML print view for Face Sheet.
+    """
+
+    settings = _ensure_settings()
+    claim = Claim.query.get_or_404(claim_id)
+
+    return render_template(
+        "forms/face_sheet_print.html",
+        active_page="forms",
+        settings=settings,
+        claim=claim,
+        logo_url=_settings_logo_url(settings),
+        now=_now_local(settings).strftime("%m/%d/%Y %I:%M %p"),
+    )
+
+
+@bp.route("/forms/face-sheet/<int:claim_id>/pdf")
+def face_sheet_pdf(claim_id: int):
+    """
+    Generate Face Sheet PDF via Playwright and return inline.
+    """
+
+    settings = _ensure_settings()
+    claim = Claim.query.get_or_404(claim_id)
+
+    print_url = url_for(
+        "main.face_sheet_print",
+        claim_id=claim.id,
+        _external=True,
+    )
+
+    try:
+        pdf_bytes = _playwright_pdf_from_url(print_url)
+    except Exception as e:
+        flash(f"Could not generate PDF: {e}", "error")
+        return redirect(url_for("main.forms_face_sheet"))
+
+    filename = f"Face_Sheet_{claim.claim_number or claim.id}.pdf"
+    resp = make_response(pdf_bytes)
+    resp.headers["Content-Type"] = "application/pdf"
+    resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+    return resp
 
 
 @bp.route("/api/fax-cover-search")
@@ -692,7 +833,7 @@ def fax_cover_pdf_standalone():
         flash(f"Could not generate PDF: {e}", "error")
         return redirect(url_for("main.forms_fax_cover"))
 
-    filename = f"Fax_Cover_{datetime.now().strftime('%Y-%m-%d')}.pdf"
+    filename = f"Fax_Cover_{_now_local(settings).strftime('%Y-%m-%d')}.pdf"
     resp = make_response(pdf_bytes)
     resp.headers["Content-Type"] = "application/pdf"
     resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'

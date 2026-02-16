@@ -318,16 +318,24 @@ def create_app():
         db.create_all()
 
         # Ensure there is at least one Settings row
-        existing = Settings.query.first()
-
+        try:
+            existing = Settings.query.first()
+        except Exception:
+            # During migrations, columns may not exist yet
+            existing = None
 
         if not existing:
-            settings = Settings(
-                business_name="Impact Medical Consulting",
-                # … defaults …
-            )
-            db.session.add(settings)
-            db.session.commit()
+            try:
+                settings = Settings(
+                    business_name="Impact Medical Consulting",
+                    # … defaults …
+                )
+                db.session.add(settings)
+                db.session.commit()
+            except Exception:
+                # If schema is mid-migration, skip seeding
+                db.session.rollback()
+
         _seed_reference_data()
 
     return app

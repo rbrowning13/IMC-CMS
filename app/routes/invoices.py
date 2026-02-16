@@ -17,6 +17,7 @@ import re
 import os
 
 from datetime import date, datetime
+from .forms import _now_local as system_now, _today_local as system_today
 from typing import Optional
 
 from flask import current_app, flash, redirect, render_template, request, send_file, url_for
@@ -100,7 +101,9 @@ def _fallback_generate_invoice_number() -> str:
     If existing invoice numbers don't match the pattern, we safely start at 001.
     """
 
-    yy = datetime.now().strftime("%y")
+    from .helpers import _ensure_settings
+    settings = _ensure_settings()
+    yy = system_now(settings).strftime("%y")
     prefix = f"INV-{yy}-"
 
     # Pull the max invoice_number for the current year prefix.
@@ -792,6 +795,219 @@ def invoice_new_for_claim(claim_id: int):
     return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
 
+# -----------------------------------------------------------------------------
+# Invoice Email Preview + Send
+# -----------------------------------------------------------------------------
+
+@bp.route("/billing/<int:invoice_id>/email", methods=["GET", "POST"], endpoint="invoice_email_preview_invoices")
+def invoice_email_preview(invoice_id: int):
+    """
+    Professional invoice email preview + send screen.
+
+    Behavior:
+    - Shows invoice PDF preview (inline)
+    - If invoice.report_id exists, also shows linked report PDF preview
+    - Regenerate From Template: rebuilds subject/body from Settings templates
+    - Send: emails invoice PDF + optional report PDF
+    """
+
+    from ..models import Settings
+    from ..services.email_service import (
+        build_email_context,
+        render_template_string_safe,
+        send_email_with_attachments,
+    )
+
+    invoice = Invoice.query.get_or_404(invoice_id)
+    claim = invoice.claim
+    report = None
+
+    if getattr(invoice, "report_id", None):
+        report = Report.query.get(invoice.report_id)
+
+    settings = Settings.query.first()
+
+    # Default recipient: carrier adjuster email (if available)
+    default_to_email = ""
+    try:
+        carrier = getattr(claim, "carrier", None)
+        contacts = getattr(carrier, "contacts", []) if carrier else []
+        for c in contacts or []:
+            role = (getattr(c, "role", "") or "").lower()
+            if "adjuster" in role and getattr(c, "email", None):
+                default_to_email = c.email.strip()
+                break
+    except Exception:
+        default_to_email = ""
+
+    # Build filenames
+    invoice_filename = _invoice_pdf_filename(invoice)
+    from .helpers import _ensure_settings
+    settings = _ensure_settings()
+    invoice_pdf_url = url_for(
+        "main.invoice_pdf_invoices",
+        invoice_id=invoice.id,
+        view=1,
+        regen=1,  # always render fresh so status/date reflect current DB state
+        ts=int(system_now(settings).timestamp()),  # cache bust
+    )
+
+    report_pdf_url = None
+    report_filename = None
+
+    if report:
+        report_pdf_url = url_for(
+            "main.report_pdf",
+            claim_id=claim.id,
+            report_id=report.id,
+            view=1,
+            regen=1,
+            ts=int(system_now(settings).timestamp()),  # cache bust
+        )
+        report_filename = f"Report-{report.id}.pdf"
+
+    # Determine scenario
+    if report:
+        scenario = "report_invoice"
+        subject_template = getattr(settings, "report_invoice_email_subject_template", "") or ""
+        body_template = getattr(settings, "report_invoice_email_body_template", "") or ""
+    else:
+        scenario = "invoice_only"
+        subject_template = getattr(settings, "invoice_email_subject_template", "") or ""
+        body_template = getattr(settings, "invoice_email_body_template", "") or ""
+
+    # Build token context (email templates require settings)
+    context = build_email_context(
+        invoice=invoice,
+        report=report,
+        settings=settings,
+    )
+
+    if request.method == "POST":
+        action = request.form.get("action")
+
+        # Regenerate from template
+        if action == "regenerate":
+            subject = render_template_string_safe(subject_template, context)
+            body = render_template_string_safe(body_template, context)
+
+            flash("Email regenerated from template.", "info")
+
+            return render_template(
+                "invoice_email_preview.html",
+                invoice=invoice,
+                claim=claim,
+                report=report,
+                subject=subject,
+                body=body,
+                to_email=request.form.get("to_email") or default_to_email,
+                invoice_pdf_url=invoice_pdf_url,
+                report_pdf_url=report_pdf_url,
+                scenario=scenario,
+            )
+
+        if action == "send":
+            to_email = (request.form.get("to_email") or "").strip()
+            subject = request.form.get("subject") or ""
+            body = request.form.get("body") or ""
+
+            # ------------------------------------------------------------------
+            # FIRST: Mark invoice as Sent and set invoice_date (if not already set)
+            # This must happen BEFORE generating the PDF so the PDF reflects
+            # the correct status/date.
+            # ------------------------------------------------------------------
+            try:
+                if hasattr(invoice, "status"):
+                    invoice.status = "Sent"
+
+                if hasattr(invoice, "invoice_date") and not invoice.invoice_date:
+                    from .helpers import _ensure_settings
+                    settings = _ensure_settings()
+                    invoice.invoice_date = system_today(settings)
+
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                flash("Failed to update invoice status/date before sending email.", "danger")
+                return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
+
+            attachments = []
+
+            # ------------------------------------------------------------------
+            # Generate fresh Invoice PDF (do NOT reuse old artifact)
+            # ------------------------------------------------------------------
+            try:
+                invoice_print_url = url_for(
+                    "main.invoice_print_invoices",
+                    invoice_id=invoice.id,
+                    _external=True,
+                )
+                invoice_bytes = _render_pdf_from_url_playwright(invoice_print_url)
+                attachments.append(
+                    (invoice_filename, invoice_bytes, "application/pdf")
+                )
+            except Exception:
+                current_app.logger.exception("Failed to generate invoice PDF for email")
+                flash("Invoice PDF could not be generated.", "danger")
+                return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
+
+            # ------------------------------------------------------------------
+            # Attach report PDF if exists (render from PRINT view to avoid
+            # stale artifact reuse and ensure fresh generation)
+            # ------------------------------------------------------------------
+            if report:
+                try:
+                    report_print_url = url_for(
+                        "main.report_print",
+                        claim_id=claim.id,
+                        report_id=report.id,
+                        _external=True,
+                    )
+                    report_bytes = _render_pdf_from_url_playwright(report_print_url)
+
+                    attachments.append(
+                        (
+                            report_filename,
+                            report_bytes,
+                            "application/pdf",
+                        )
+                    )
+                except Exception:
+                    current_app.logger.exception("Failed to generate report PDF for email")
+                    flash("Warning: Report PDF could not be attached to email.", "warning")
+
+            # ------------------------------------------------------------------
+            # Send email (single call, single message)
+            # ------------------------------------------------------------------
+            send_email_with_attachments(
+                settings=settings,
+                to_email=to_email,
+                subject=subject,
+                body=body,
+                attachments=attachments,
+            )
+
+            flash("Invoice email sent successfully.", "success")
+            return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
+
+    # Default GET
+    subject = render_template_string_safe(subject_template, context)
+    body = render_template_string_safe(body_template, context)
+
+    return render_template(
+        "invoice_email_preview.html",
+        invoice=invoice,
+        claim=claim,
+        report=report,
+        subject=subject,
+        body=body,
+        to_email=default_to_email,
+        invoice_pdf_url=invoice_pdf_url,
+        report_pdf_url=report_pdf_url,
+        scenario=scenario,
+    )
+
+
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/invoice/new", methods=["GET"])
 def invoice_new_for_report(claim_id: int, report_id: int):
     """Create a new invoice from a report DOS window.
@@ -886,6 +1102,7 @@ def invoice_new_for_report(claim_id: int, report_id: int):
         invoice_date=None,
         dos_start=report.dos_start,
         dos_end=report.dos_end,
+        report_id=report.id,
     )
 
     db.session.add(invoice)
@@ -1147,6 +1364,7 @@ def invoice_pdf_regenerate(invoice_id: int):
             invoice_id=invoice_id,
             regen=1,
             view=1,
+            ts=int(system_now().timestamp()),  # force iframe refresh
         )
     )
 
@@ -1162,6 +1380,11 @@ def invoice_update(invoice_id: int):
     invoice = Invoice.query.get_or_404(invoice_id)
     was_draft = _invoice_is_draft(invoice)
     prior_status = (invoice.status or "Draft")
+
+    # Enforce hard lock if not Draft
+    if not was_draft:
+        flash("This invoice has been sent and is locked. No further edits are allowed.", "warning")
+        return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
     def _first_nonempty(*keys: str) -> str | None:
         """Return the first non-empty form value for any of the keys."""
@@ -1239,7 +1462,9 @@ def invoice_update(invoice_id: int):
         # Auto-fill when the form did not provide a date, provided a blank date,
         # or provided an invalid date.
         if (not present) or not (invoice_date_raw or "").strip() or (parsed_invoice_date is None):
-            invoice.invoice_date = date.today()
+            from .helpers import _ensure_settings
+            settings = _ensure_settings()
+            invoice.invoice_date = system_today(settings)
             changed = True
 
     # DOS range (Draft-only)
@@ -1257,11 +1482,6 @@ def invoice_update(invoice_id: int):
             if invoice.dos_end != parsed:
                 invoice.dos_end = parsed
                 changed = True
-
-    # Allow status transitions (e.g., Sent -> Draft) even after sending.
-    if not was_draft and prior_status != (invoice.status or "Draft"):
-        # Allow status transitions (e.g., Sent -> Draft) even after sending.
-        pass
 
     # Recalc totals regardless (safe + keeps legacy behavior consistent)
     _calculate_invoice_totals(invoice)

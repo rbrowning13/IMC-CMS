@@ -22,7 +22,21 @@ import sys
 import subprocess
 import traceback
 from pathlib import Path
-from datetime import date, datetime, timedelta
+from datetime import timedelta, datetime, date, time
+def to_system_timezone(dt):
+    """Convert a datetime or date to system/local timezone if needed (stub for now)."""
+    # Replace this with actual timezone logic as needed.
+    # For now, just return dt (assume naive datetimes are system-local).
+    return dt
+
+# Centralized now() and today() helpers
+def system_now():
+    """Return the current datetime in system/local timezone."""
+    return to_system_timezone(__import__('datetime').datetime.now())
+
+def system_today():
+    """Return the current date in system/local timezone."""
+    return to_system_timezone(__import__('datetime').date.today())
 from collections import defaultdict
 
 from flask import (
@@ -277,10 +291,11 @@ def _build_report_pdf_filename(claim: Claim, report: Report, display_report_numb
 
     # --- Date (M-D-YY, no leading zeros, not ISO) ---
     d = getattr(report, "dos_end", None) or getattr(report, "created_at", None)
-    if isinstance(d, datetime):
+    if hasattr(d, "date"):
         d = d.date()
-    if not isinstance(d, date):
-        d = date.today()
+    from datetime import date as _date  # for type check only
+    if not isinstance(d, _date):
+        d = system_today()
 
     year_short = str(d.year)[2:]
     date_seg = f"{d.month}-{d.day}-{year_short}"
@@ -521,7 +536,7 @@ def _parse_mmddyyyy(raw: str, field_label: str = "Date"):
         if year < 1900 or year > 2100:
             return None, f"{field_label} year must be between 1900 and 2100."
 
-        return date(year, month, day), None
+        return __import__('datetime').date(year, month, day), None
     except ValueError:
         return None, f"{field_label} must be a valid calendar date."
 
@@ -757,7 +772,7 @@ def report_new(claim_id):
         flash("Report type is required.", "danger")
         return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
-    today = date.today()
+    today = system_today()
 
     # Most recent prior report (any type) for defaults + carry-forward.
     # Use DOS end when available (this matches “last submitted report” behavior better than created_at).
@@ -775,40 +790,45 @@ def report_new(claim_id):
         # Initial report: DOS start should be the date the claim was put in the system.
         # Prefer claim.created_at (date) when present; fall back to referral_date; else today.
         created = getattr(claim, "created_at", None)
-        if isinstance(created, datetime):
-            created = created.date()
-
-        referral = getattr(claim, "referral_date", None)
-        if isinstance(referral, datetime):
-            referral = referral.date()
-
-        if isinstance(created, date):
+        if created is not None:
+            if hasattr(created, "date"):
+                created = created.date()
+            created = to_system_timezone(created)
+        if referral := getattr(claim, "referral_date", None):
+            if hasattr(referral, "date"):
+                referral = referral.date()
+            referral = to_system_timezone(referral)
+        if created is not None:
             dos_start = created
-        elif isinstance(referral, date):
+        elif referral is not None:
             dos_start = referral
         else:
             dos_start = today
-
         dos_end = today
     else:
         # Progress/Closure: DOS start is the day AFTER the last submitted report.
         # Prefer last_report.dos_end; fall back to last_report.created_at; else today.
         last_end = getattr(last_report, "dos_end", None) if last_report else None
-        if isinstance(last_end, datetime):
-            last_end = last_end.date()
-
-        if isinstance(last_end, date):
+        if last_end is not None:
+            if hasattr(last_end, "date"):
+                last_end = last_end.date()
+            last_end = to_system_timezone(last_end)
+        if last_end is not None:
             dos_start = last_end + timedelta(days=1)
         else:
             last_created = getattr(last_report, "created_at", None) if last_report else None
-            if isinstance(last_created, datetime):
-                dos_start = last_created.date() + timedelta(days=1)
-            elif isinstance(last_created, date):
+            if last_created is not None:
+                if hasattr(last_created, "date"):
+                    last_created = last_created.date()
+                last_created = to_system_timezone(last_created)
                 dos_start = last_created + timedelta(days=1)
             else:
                 dos_start = today
-
         dos_end = today
+
+    # Ensure all datetimes are system-local
+    dos_start = to_system_timezone(dos_start)
+    dos_end = to_system_timezone(dos_end)
 
     # Prevent overlapping DOS ranges for reports on the same claim.
     if dos_start and dos_end and dos_start > dos_end:
@@ -923,6 +943,16 @@ def report_detail(claim_id, report_id):
     claim_providers = _claim_load_providers(claim)
     claim_surgeries = _claim_load_surgeries(claim)
 
+    # Standardize time display for key fields
+    if hasattr(report, "initial_next_appt_datetime"):
+        report.initial_next_appt_datetime = to_system_timezone(report.initial_next_appt_datetime)
+    if hasattr(report, "dos_start"):
+        report.dos_start = to_system_timezone(report.dos_start)
+    if hasattr(report, "dos_end"):
+        report.dos_end = to_system_timezone(report.dos_end)
+    if hasattr(report, "next_report_due"):
+        report.next_report_due = to_system_timezone(report.next_report_due)
+
     return render_template(
         "report_detail.html",
         active_page="claims",
@@ -1017,7 +1047,7 @@ def report_document_upload(claim_id, report_id):
         description=description,
         original_filename=file.filename,
         stored_path=stored_name,
-        document_date=document_date or date.today().isoformat(),
+        document_date=document_date or system_today().isoformat(),
     )
     db.session.add(doc)
     db.session.commit()
@@ -1254,10 +1284,23 @@ def report_edit(claim_id, report_id):
         initial_medications = (request.form.get("initial_medications") or "").strip() or None
         initial_diagnostics = (request.form.get("initial_diagnostics") or "").strip() or None
 
-        # Next appointment (initial report)
+        # Next appointment (initial report): split date and time fields
+        initial_next_appt_date_raw = (request.form.get("initial_next_appt_date") or "").strip()
+        initial_next_appt_time_raw = (request.form.get("initial_next_appt_time") or "").strip()
         initial_next_appt_datetime_raw = (request.form.get("initial_next_appt_datetime") or "").strip()
-        initial_next_appt_provider_name = (request.form.get("initial_next_appt_provider_name") or "").strip() or None
+        # Explicitly assign initial_next_appt_provider_id and name from form, parse as int or None
+        raw_initial_next_appt_provider_id = request.form.get("initial_next_appt_provider_id", "").strip()
+        if raw_initial_next_appt_provider_id == "":
+            initial_next_appt_provider_id = None
+        else:
+            try:
+                initial_next_appt_provider_id = int(raw_initial_next_appt_provider_id)
+            except Exception:
+                initial_next_appt_provider_id = None
         initial_next_appt_notes = (request.form.get("initial_next_appt_notes") or "").strip() or None
+        # Optionally, for display purposes, keep the provider name (resolved below)
+        raw_initial_next_appt_provider_name = request.form.get("initial_next_appt_provider_name", "").strip()
+        initial_next_appt_provider_name = raw_initial_next_appt_provider_name or None
 
         # Closure-specific fields
         closure_reason = (request.form.get("closure_reason") or "").strip() or None
@@ -1282,16 +1325,19 @@ def report_edit(claim_id, report_id):
             dos_start, err = _parse_mmddyyyy(dos_start_raw, "DOS Start")
             if err and not error:
                 error = err
+            dos_start = to_system_timezone(dos_start)
 
         if dos_end_raw:
             dos_end, err = _parse_mmddyyyy(dos_end_raw, "DOS End")
             if err and not error:
                 error = err
+            dos_end = to_system_timezone(dos_end)
 
         if next_report_due_raw:
             next_report_due, err = _parse_mmddyyyy(next_report_due_raw, "Next Report Due")
             if err and not error:
                 error = err
+            next_report_due = to_system_timezone(next_report_due)
 
         valid_types = {"initial", "progress", "closure"}
         if not report_type or report_type not in valid_types:
@@ -1322,11 +1368,8 @@ def report_edit(claim_id, report_id):
             report.case_management_plan = case_management_plan
             report.next_report_due = next_report_due
 
-            # Back-compat: if legacy single provider is empty, align it to the first claim provider.
-            if getattr(report, "treating_provider_id", None) is None:
-                claim_provider_ids = _claim_load_provider_ids(claim.id)
-                if claim_provider_ids:
-                    report.treating_provider_id = claim_provider_ids[0]
+            # Remove fallback that sets treating_provider_id to avoid overwriting
+            # report.treating_provider_id assignment is not performed here
 
             report.status_treatment_plan = status_treatment_plan
             report.employment_status = employment_status
@@ -1339,36 +1382,58 @@ def report_edit(claim_id, report_id):
             report.initial_medications = initial_medications
             report.initial_diagnostics = initial_diagnostics
 
-            # Persist next appointment fields independently (notes always persist)
-            if initial_next_appt_datetime_raw:
-                try:
-                    report.initial_next_appt_datetime = datetime.strptime(
-                        initial_next_appt_datetime_raw, "%Y-%m-%dT%H:%M"
-                    )
-                except ValueError:
-                    report.initial_next_appt_datetime = None
+            # --- Next appointment: parse separate date (MM/DD/YYYY) and time (h:mm AM/PM) ---
+            dt_val = None
+
+            if initial_next_appt_date_raw or initial_next_appt_time_raw:
+                appt_date = None
+                appt_time = None
+
+                # Parse MM/DD/YYYY
+                if initial_next_appt_date_raw:
+                    try:
+                        appt_date = datetime.strptime(
+                            initial_next_appt_date_raw, "%m/%d/%Y"
+                        ).date()
+                    except Exception:
+                        appt_date = None
+
+                # Parse 12-hour time with AM/PM (e.g., 3:45 PM)
+                if initial_next_appt_time_raw:
+                    try:
+                        appt_time = datetime.strptime(
+                            initial_next_appt_time_raw, "%I:%M %p"
+                        ).time()
+                    except Exception:
+                        appt_time = None
+
+                if appt_date and appt_time:
+                    dt_val = datetime.combine(appt_date, appt_time)
+                elif appt_date:
+                    dt_val = datetime.combine(appt_date, time(0, 0))
+                elif appt_time:
+                    dt_val = datetime.combine(system_today(), appt_time)
+
+                report.initial_next_appt_datetime = (
+                    to_system_timezone(dt_val) if dt_val else None
+                )
+
             else:
                 report.initial_next_appt_datetime = None
-            report.initial_next_appt_provider_name = initial_next_appt_provider_name
+            # Persist notes as before
             report.initial_next_appt_notes = initial_next_appt_notes
 
-            # Keep legacy single provider pointer aligned to the selected next-appointment provider
-            # when possible so downstream outputs (ICS/location) can still resolve address.
-            # Providers are claim-owned; only set if the selected provider is one of the claim providers.
-            if initial_next_appt_provider_name:
-                try:
-                    _cp_ids = _claim_load_provider_ids(claim.id)
-                    if _cp_ids:
-                        _cp_rows = Provider.query.filter(Provider.id.in_(_cp_ids)).all()
-                        _by_name = {((p.name or "").strip()): p for p in _cp_rows if getattr(p, "name", None)}
-                        _p = _by_name.get(initial_next_appt_provider_name.strip())
-                        if _p is not None:
-                            report.treating_provider_id = _p.id
-                except Exception:
-                    try:
-                        db.session.rollback()
-                    except Exception:
-                        pass
+            # Explicitly assign initial_next_appt_provider_id and name from form to model
+            report.initial_next_appt_provider_id = initial_next_appt_provider_id
+            report.initial_next_appt_provider_name = initial_next_appt_provider_name
+
+            # If provider_id is set, optionally resolve and update provider name (overriding if necessary)
+            if initial_next_appt_provider_id is not None:
+                provider_row = Provider.query.get(initial_next_appt_provider_id)
+                if provider_row and getattr(provider_row, "name", None):
+                    report.initial_next_appt_provider_name = (provider_row.name or "").strip()
+            elif initial_next_appt_provider_name == "":
+                report.initial_next_appt_provider_name = None
 
             report.closure_reason = closure_reason
             report.closure_details = closure_details
@@ -1411,6 +1476,15 @@ def report_edit(claim_id, report_id):
             selected_barrier_ids = set()
 
     claim_providers = _claim_load_providers(claim)
+    # Standardize time display for key fields
+    if hasattr(report, "initial_next_appt_datetime"):
+        report.initial_next_appt_datetime = to_system_timezone(report.initial_next_appt_datetime)
+    if hasattr(report, "dos_start"):
+        report.dos_start = to_system_timezone(report.dos_start)
+    if hasattr(report, "dos_end"):
+        report.dos_end = to_system_timezone(report.dos_end)
+    if hasattr(report, "next_report_due"):
+        report.next_report_due = to_system_timezone(report.next_report_due)
     return render_template(
         "report_edit.html",
         active_page="claims",
@@ -1516,6 +1590,19 @@ def report_document_open_location(report_document_id):
     return redirect(url_for("main.report_edit", claim_id=report.claim.id, report_id=report.id))
 
 
+@bp.route("/reports/<int:report_id>/appointment.ics")
+def report_appointment_ics_short(report_id):
+    """Short ICS route used by dashboard (no claim_id in URL)."""
+    report = Report.query.get_or_404(report_id)
+    return redirect(
+        url_for(
+            "main.report_next_appointment_ics",
+            claim_id=report.claim_id,
+            report_id=report.id,
+        )
+    )
+
+
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/next-appointment.ics")
 def report_next_appointment_ics(claim_id, report_id):
     """Generate a simple ICS calendar event for the report's next appointment."""
@@ -1526,7 +1613,7 @@ def report_next_appointment_ics(claim_id, report_id):
         flash("This report does not have a next appointment date/time set.", "warning")
         return redirect(url_for("main.report_edit", claim_id=claim.id, report_id=report.id))
 
-    dt = report.initial_next_appt_datetime
+    dt = to_system_timezone(report.initial_next_appt_datetime)
 
     # Resolve provider for location/address.
     # Prefer the explicitly selected next-appointment provider (claim-owned) when present.
@@ -1548,27 +1635,31 @@ def report_next_appointment_ics(claim_id, report_id):
     if provider_for_location is None and getattr(report, "treating_provider", None):
         provider_for_location = report.treating_provider
 
-    location_parts: list[str] = []
+    # Build a maps-friendly LOCATION (street address only)
+    address_parts: list[str] = []
+    display_name_parts: list[str] = []
+
     if provider_for_location is not None:
         p = provider_for_location
 
-        # Display "Organization — Name" when organization exists.
+        # Provider display name (goes in DESCRIPTION, not LOCATION)
         org = (getattr(p, "organization", None) or "").strip()
         nm = (getattr(p, "name", None) or "").strip()
         if org and nm:
-            location_parts.append(f"{org} — {nm}")
+            display_name_parts.append(f"{org} — {nm}")
         elif nm:
-            location_parts.append(nm)
+            display_name_parts.append(nm)
         elif org:
-            location_parts.append(org)
+            display_name_parts.append(org)
 
+        # Street address for maps
         addr1 = getattr(p, "address1", None) or getattr(p, "address", None)
         addr2 = getattr(p, "address2", None)
 
         if addr1:
-            location_parts.append(addr1)
+            address_parts.append(addr1.strip())
         if addr2:
-            location_parts.append(addr2)
+            address_parts.append(addr2.strip())
 
         city = getattr(p, "city", None)
         state = getattr(p, "state", None)
@@ -1576,20 +1667,23 @@ def report_next_appointment_ics(claim_id, report_id):
 
         city_state_zip = ", ".join(part for part in [city, state, postal] if part)
         if city_state_zip:
-            location_parts.append(city_state_zip)
+            address_parts.append(city_state_zip.strip())
 
-    location = ", ".join(location_parts) if location_parts else "TBD"
+    location = ", ".join(address_parts) if address_parts else "TBD"
 
     summary = f"Next appointment – {claim.claimant_name or 'Claimant'}"
     description_lines = [
         f"Claim: {claim.claim_number or ''}",
         f"Claimant: {claim.claimant_name or ''}",
     ]
-    if report.initial_next_appt_provider_name:
-        description_lines.append(f"Provider: {report.initial_next_appt_provider_name}")
+
+    if display_name_parts:
+        description_lines.append(f"Provider: {display_name_parts[0]}")
     description = "\\n".join(description_lines)
 
-    dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    # Use system_now() for dtstamp in system-local timezone, then convert to UTC for ICS.
+    now_dt = system_now()
+    dtstamp = now_dt.astimezone(__import__('datetime').timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     dtstart = dt.strftime("%Y%m%dT%H%M%S")
     uid = f"{report.id}-{claim.id}@impact-medical-local"
 
@@ -1641,7 +1735,7 @@ def report_print(claim_id, report_id):
         pass
 
 
-    generated_at = datetime.now()
+    generated_at = system_now()
 
     page_title = _build_report_page_title(claim, report, display_report_number)
 
@@ -1649,12 +1743,15 @@ def report_print(claim_id, report_id):
     claim_surgeries = _claim_load_surgeries(claim)
 
     cm_activities: list[dict] = []
-    if report.dos_start and report.dos_end:
+    # Standardize time display for dos_start/dos_end
+    dos_start = to_system_timezone(report.dos_start)
+    dos_end = to_system_timezone(report.dos_end)
+    if dos_start and dos_end:
         q = (
             BillableItem.query.filter_by(claim_id=claim.id)
             .filter(BillableItem.date_of_service.isnot(None))
-            .filter(BillableItem.date_of_service >= report.dos_start)
-            .filter(BillableItem.date_of_service <= report.dos_end)
+            .filter(BillableItem.date_of_service >= dos_start)
+            .filter(BillableItem.date_of_service <= dos_end)
         )
         q = q.filter(BillableItem.activity_code != "EXP")
 
@@ -1676,6 +1773,16 @@ def report_print(claim_id, report_id):
             )
 
     cm_items = cm_activities  # back-compat
+
+    # Standardize time display for key fields
+    if hasattr(report, "initial_next_appt_datetime"):
+        report.initial_next_appt_datetime = to_system_timezone(report.initial_next_appt_datetime)
+    if hasattr(report, "dos_start"):
+        report.dos_start = to_system_timezone(report.dos_start)
+    if hasattr(report, "dos_end"):
+        report.dos_end = to_system_timezone(report.dos_end)
+    if hasattr(report, "next_report_due"):
+        report.next_report_due = to_system_timezone(report.next_report_due)
 
     return render_template(
         "report_print.html",
@@ -1725,6 +1832,8 @@ def report_pdf(claim_id, report_id):
 
     # Determine last-modified time of source data
     report_updated = getattr(report, "updated_at", None) or getattr(report, "created_at", None)
+    # Ensure any datetime is system-local for consistency (for mtime comparison)
+    report_updated = to_system_timezone(report_updated)
 
     provider_updated = None
     try:
@@ -1734,6 +1843,7 @@ def report_pdf(claim_id, report_id):
             prov_times = []
             for p in prov_rows:
                 t = getattr(p, "updated_at", None) or getattr(p, "created_at", None)
+                t = to_system_timezone(t)
                 if t is not None:
                     prov_times.append(t)
             if prov_times:
@@ -1769,7 +1879,7 @@ def report_pdf(claim_id, report_id):
         is_fresh = True
         if effective_updated is not None:
             try:
-                mtime = datetime.fromtimestamp(pdf_path.stat().st_mtime)
+                mtime = to_system_timezone(__import__('datetime').datetime.fromtimestamp(pdf_path.stat().st_mtime))
                 is_fresh = mtime >= effective_updated
             except Exception:
                 is_fresh = True
@@ -1822,7 +1932,7 @@ def report_pdf(claim_id, report_id):
             download_filename=filename,
             file_size_bytes=int(pdf_path.stat().st_size),
             storage_backend="fs",
-            created_at=datetime.utcnow(),
+            created_at=system_now(),
         )
         if hasattr(art, "stored_path"):
             art.stored_path = str(pdf_path)
@@ -1842,6 +1952,32 @@ def report_pdf(claim_id, report_id):
     return _send_pdf_from_disk(pdf_path)
 
 
+
+# ---- PDF Preview Route ----
+@bp.route("/claims/<int:claim_id>/reports/<int:report_id>/pdf/preview")
+def report_pdf_preview(claim_id, report_id):
+    """
+    Inline PDF preview endpoint for iframe rendering.
+
+    This wraps the canonical report_pdf route but forces:
+      - view=1 (inline display)
+      - no forced download
+      - optional regen support via ?regen=1
+    """
+    regen_raw = (request.args.get("regen") or "").strip().lower()
+    regen = regen_raw in {"1", "true", "yes"}
+
+    return redirect(
+        url_for(
+            "main.report_pdf",
+            claim_id=claim_id,
+            report_id=report_id,
+            regen=1 if regen else None,
+            view=1,
+        )
+    )
+
+
 @bp.route("/claims/<int:claim_id>/reports/<int:report_id>/pdf/regenerate", methods=["POST"])
 def report_pdf_regenerate(claim_id, report_id):
     """Force regeneration of the report PDF artifact, then open the PDF inline."""
@@ -1854,6 +1990,165 @@ def report_pdf_regenerate(claim_id, report_id):
             regen=1,
             view=1,
         )
+    )
+
+
+# ------------------------
+# Report Email Preview / Send
+# ------------------------
+
+@bp.route("/claims/<int:claim_id>/reports/<int:report_id>/email", methods=["GET", "POST"])
+def report_email(claim_id, report_id):
+    """Preview and send report email using stored SMTP + templates."""
+    from ..services.email_service import (
+        build_email_context,
+        render_email_template,
+        send_smtp_email,
+    )
+
+    claim = Claim.query.get_or_404(claim_id)
+    report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
+    settings = _ensure_settings()
+
+    # Always regenerate PDF filename for tokens
+    display_report_number = _compute_claim_report_number(claim.id, report.id)
+    pdf_filename = _build_report_pdf_filename(claim, report, display_report_number)
+
+    # Build token context (resilient to signature changes)
+    try:
+        import inspect
+
+        fn = build_email_context
+        sig = inspect.signature(fn)
+        allowed = set(sig.parameters.keys())
+
+        kwargs = {
+            "settings": settings,
+            "report": report,
+            "pdf_filename": pdf_filename,
+            "report_number": display_report_number,
+        }
+
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in allowed}
+        context = fn(**filtered_kwargs)
+
+    except Exception:
+        current_app.logger.exception("Failed to build email context")
+        context = {}
+
+    # Default template fields from Settings (canonical fields)
+    subject_template = (
+        getattr(settings, "report_email_subject_template", None)
+        or "Report for {{ claimant_last_name }}, {{ claimant_first_name }}"
+    )
+    body_template = (
+        getattr(settings, "report_email_body_template", None)
+        or "Attached please find the requested report."
+    )
+
+    # Allow editing in preview
+    subject = render_email_template(subject_template, context)
+    body = render_email_template(body_template, context)
+
+    # Default recipient (GET): auto-fill from claim.carrier_contact (adjuster)
+    default_to_email = ""
+    try:
+        adjuster = getattr(claim, "carrier_contact", None)
+        if adjuster and getattr(adjuster, "email", None):
+            default_to_email = (adjuster.email or "").strip()
+    except Exception:
+        default_to_email = ""
+
+    to_email = request.form.get("to_email") if request.method == "POST" else default_to_email
+
+    if request.method == "POST":
+        action = request.form.get("action")
+
+        # Regenerate preview from current Settings templates (ignore posted edits)
+        if action == "regenerate":
+            subject_template = (
+                getattr(settings, "report_email_subject_template", None)
+                or subject_template
+            )
+            body_template = (
+                getattr(settings, "report_email_body_template", None)
+                or body_template
+            )
+
+            subject = render_email_template(subject_template, context)
+            body = render_email_template(body_template, context)
+
+        # Send email
+        if action == "send":
+            subject = request.form.get("subject") or subject
+            body = request.form.get("body") or body
+            to_email = request.form.get("to_email") or ""
+
+            if not to_email:
+                flash("Recipient email is required.", "danger")
+            else:
+                try:
+                    # Ensure PDF exists on disk (regenerate if necessary)
+                    pdf_response = report_pdf(claim.id, report.id)
+                    # We do not use the response object; calling ensures file is generated if missing.
+
+                    # Resolve filesystem path to PDF
+                    report_folder = _get_report_folder(report)
+                    pdf_path = report_folder / pdf_filename
+
+                    if not pdf_path.exists():
+                        raise RuntimeError("Report PDF file not found on disk.")
+
+                    # Read PDF bytes for attachment
+                    with open(pdf_path, "rb") as f:
+                        pdf_bytes = f.read()
+
+                    send_smtp_email(
+                        to_email=to_email,
+                        subject=subject,
+                        body=body,
+                        settings=settings,
+                        attachments=[
+                            (
+                                pdf_filename,
+                                pdf_bytes,
+                                "application/pdf",
+                            )
+                        ],
+                    )
+
+                    flash("Email sent successfully.", "success")
+                    return redirect(
+                        url_for(
+                            "main.report_edit",
+                            claim_id=claim.id,
+                            report_id=report.id,
+                        )
+                    )
+
+                except Exception as e:
+                    current_app.logger.exception("Email send failed")
+                    flash(f"Email failed: {e}", "danger")
+
+    # Standardize time display for key fields
+    if hasattr(report, "initial_next_appt_datetime"):
+        report.initial_next_appt_datetime = to_system_timezone(report.initial_next_appt_datetime)
+    if hasattr(report, "dos_start"):
+        report.dos_start = to_system_timezone(report.dos_start)
+    if hasattr(report, "dos_end"):
+        report.dos_end = to_system_timezone(report.dos_end)
+    if hasattr(report, "next_report_due"):
+        report.next_report_due = to_system_timezone(report.next_report_due)
+    return render_template(
+        "report_email_preview.html",
+        claim=claim,
+        report=report,
+        subject=subject,
+        body=body,
+        to_email=to_email,
+        subject_template=subject_template,
+        body_template=body_template,
+        display_report_number=display_report_number,
     )
 
 
