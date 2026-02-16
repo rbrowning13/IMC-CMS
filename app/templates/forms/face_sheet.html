@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header">
+    <h1>Face Sheet</h1>
+    <p class="text-muted">
+        Claim summary form for new clinics. Search for a claim to generate a printable face sheet.
+    </p>
+</div>
+
+<hr>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" action="{{ url_for('main.forms_face_sheet') }}">
+            <div class="form-group">
+                <label for="claim_search"><strong>Search Claim</strong></label>
+                <input
+                    type="text"
+                    name="q"
+                    id="claim_search"
+                    class="form-control"
+                    placeholder="Search by claimant name or claim number..."
+                    value="{{ request.args.get('q', '') }}"
+                >
+                <small class="form-text text-muted">
+                    Enter first name, last name, or claim number.
+                </small>
+            </div>
+
+            <div class="mt-3 text-right">
+                <button type="submit" class="btn btn-primary">
+                    Search
+                </button>
+            </div>
+        </form>
+        <div id="live-results" class="list-group mt-2" style="display:none;"></div>
+    </div>
+</div>
+
+{% if results %}
+<div class="card">
+    <div class="card-body">
+
+        <h3 class="mb-3">Search Results</h3>
+
+        <table class="table table-sm table-hover">
+            <thead>
+                <tr>
+                    <th>Claimant</th>
+                    <th>Claim #</th>
+                    <th>Date of Injury</th>
+                    <th>Carrier</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for claim in results %}
+                <tr>
+                    <td>
+                        {{ claim.claimant_last_name }}, {{ claim.claimant_first_name }}
+                    </td>
+                    <td>{{ claim.claim_number or '' }}</td>
+                    <td>{{ claim.doi or '' }}</td>
+                    <td>{{ claim.carrier.name if claim.carrier else '' }}</td>
+                    <td class="text-right">
+                        <a href="{{ url_for('main.forms_face_sheet_pdf', claim_id=claim.id) }}"
+                           class="btn btn-sm btn-success"
+                           target="_blank">
+                            Generate Face Sheet
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+    </div>
+</div>
+{% elif request.args.get('q') %}
+<div class="alert alert-warning">
+    No matching claims found.
+</div>
+{% endif %}
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const input = document.getElementById("claim_search");
+    const resultsBox = document.getElementById("live-results");
+
+    let controller = null;
+
+    input.addEventListener("input", function () {
+        const query = input.value.trim();
+
+        if (query.length < 2) {
+            resultsBox.style.display = "none";
+            resultsBox.innerHTML = "";
+            return;
+        }
+
+        // Cancel previous request if still running
+        if (controller) {
+            controller.abort();
+        }
+
+        controller = new AbortController();
+
+        fetch(`/api/face-sheet-search?q=${encodeURIComponent(query)}`, {
+            signal: controller.signal
+        })
+        .then(response => response.json())
+        .then(data => {
+            resultsBox.innerHTML = "";
+
+            if (!data.results || data.results.length === 0) {
+                resultsBox.style.display = "none";
+                return;
+            }
+
+            data.results.forEach(claim => {
+                const item = document.createElement("a");
+                item.className = "list-group-item list-group-item-action";
+                item.href = claim.pdf_url;
+                item.target = "_blank";
+
+                item.innerHTML = `
+                    <strong>${claim.claimant}</strong>
+                    <br>
+                    <small>
+                        Claim #: ${claim.claim_number || ""} 
+                    </small>
+                `;
+
+                resultsBox.appendChild(item);
+            });
+
+            resultsBox.style.display = "block";
+        })
+        .catch(err => {
+            if (err.name !== "AbortError") {
+                console.error(err);
+            }
+        });
+    });
+
+    // Hide dropdown if clicking elsewhere
+    document.addEventListener("click", function (e) {
+        if (!resultsBox.contains(e.target) && e.target !== input) {
+            resultsBox.style.display = "none";
+        }
+    });
+});
+</script>
+{% endblock %}

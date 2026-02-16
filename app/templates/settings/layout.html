@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Settings - Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row">
+
+    <!-- Sidebar -->
+    <div class="col-md-3 col-lg-2 border-end bg-light min-vh-100 pt-3">
+      <h6 class="text-muted px-2 mb-3">Settings</h6>
+      <ul class="nav flex-column nav-pills">
+
+        <li class="nav-item">
+          <a class="nav-link {% if active_section == 'general' %}active{% endif %}"
+             href="{{ url_for('main.settings_general') }}">
+            General
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a class="nav-link {% if active_section == 'rates' %}active{% endif %}"
+             href="{{ url_for('main.settings_rates') }}">
+            Rates
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a class="nav-link {% if active_section == 'ui' %}active{% endif %}"
+             href="{{ url_for('main.settings_ui') }}">
+            UI & Documents
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a class="nav-link {% if active_section == 'email' %}active{% endif %}"
+             href="{{ url_for('main.settings_email') }}">
+            Email
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a class="nav-link {% if active_section == 'ai' %}active{% endif %}"
+             href="{{ url_for('main.settings_ai') }}">
+            AI
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a class="nav-link {% if active_section == 'storage' %}active{% endif %}"
+             href="{{ url_for('main.settings_storage') }}">
+            File Storage
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a class="nav-link {% if active_section == 'lists' %}active{% endif %}"
+             href="{{ url_for('main.settings_lists') }}">
+            Lists & Code Tables
+          </a>
+        </li>
+
+        <li class="nav-item mt-3">
+          <a class="nav-link text-muted {% if active_section == 'advanced' %}active{% endif %}"
+             href="{{ url_for('main.settings_advanced') }}">
+            Advanced
+          </a>
+        </li>
+
+      </ul>
+    </div>
+
+    <!-- Content Panel -->
+    <div class="col-md-9 col-lg-10 pt-4 px-4">
+      {% if message %}
+        <div class="alert alert-success py-1">
+          {{ message }}
+        </div>
+      {% endif %}
+
+      {% block settings_content %}{% endblock %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}

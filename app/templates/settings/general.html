@@ -1,0 +1,119 @@
+
+
+{% extends "settings/layout.html" %}
+{% set active_section = "general" %}
+
+{% block settings_content %}
+
+<h2 class="h4 mb-4">General Settings</h2>
+
+<form method="post">
+
+  <!-- Business Information -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+
+      <h6 class="text-muted mb-3">Business Information</h6>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Business Name</label>
+        <input type="text"
+               name="business_name"
+               class="form-control form-control-sm"
+               value="{{ settings.business_name or '' }}">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Address 1</label>
+        <input type="text"
+               name="address1"
+               class="form-control form-control-sm"
+               value="{{ settings.address1 or '' }}">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Address 2</label>
+        <input type="text"
+               name="address2"
+               class="form-control form-control-sm"
+               value="{{ settings.address2 or '' }}">
+      </div>
+
+      <div class="row">
+        <div class="col-md-4 mb-3">
+          <label class="form-label form-label-sm">City</label>
+          <input type="text"
+                 name="city"
+                 class="form-control form-control-sm"
+                 value="{{ settings.city or '' }}">
+        </div>
+
+        <div class="col-md-4 mb-3">
+          <label class="form-label form-label-sm">State</label>
+          <select name="state" class="form-select form-select-sm">
+            {{ state_options(settings.state or 'ID') }}
+          </select>
+        </div>
+
+        <div class="col-md-4 mb-3">
+          <label class="form-label form-label-sm">ZIP</label>
+          <input type="text"
+                 name="postal_code"
+                 class="form-control form-control-sm"
+                 value="{{ settings.postal_code or '' }}">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Phone</label>
+        <input type="text"
+               name="phone"
+               class="form-control form-control-sm"
+               value="{{ settings.phone or '' }}">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Fax</label>
+        <input type="text"
+               name="fax"
+               class="form-control form-control-sm"
+               value="{{ settings.fax or '' }}">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Email</label>
+        <input type="email"
+               name="email"
+               class="form-control form-control-sm"
+               value="{{ settings.email or '' }}">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Responsible Case Manager</label>
+        <input type="text"
+               name="responsible_case_manager"
+               class="form-control form-control-sm"
+               value="{{ settings.responsible_case_manager or '' }}">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">EIN / Tax ID</label>
+        <input type="text"
+               name="ein"
+               class="form-control form-control-sm"
+               value="{{ settings.ein or '' }}">
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Save Bar -->
+  <div class="position-sticky bottom-0 bg-white border-top py-3 d-flex justify-content-end">
+    <button type="submit" class="btn btn-primary btn-sm">
+      Save Changes
+    </button>
+  </div>
+
+</form>
+
+{% endblock %}

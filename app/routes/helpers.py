@@ -14,7 +14,27 @@ import os
 import re
 import subprocess
 import random
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+
+# -----------------------------------------------------------------------------
+# Centralized local datetime helpers
+# -----------------------------------------------------------------------------
+import time
+import tzlocal
+
+def _now_local(settings=None):
+    """Return a timezone-aware datetime in the server's local timezone."""
+    # settings param is for future extension
+    try:
+        local_tz = tzlocal.get_localzone()
+        return datetime.now(local_tz)
+    except Exception:
+        # Fallback to naive local time if tzlocal fails
+        return datetime.now()
+
+def _today_local(settings=None):
+    """Return the current date in the server's local timezone."""
+    return _now_local(settings).date()
 from pathlib import Path
 from typing import Any, Iterable, Optional, Tuple
 
@@ -412,7 +432,7 @@ def _generate_invoice_number(prefix: str = "INV") -> str:
     from app.extensions import db
     from app.models import Invoice
 
-    today = date.today()
+    today = _today_local()
     year_short = today.strftime("%y")
     year_prefix = f"{prefix}-{year_short}-"
 
@@ -903,7 +923,8 @@ def build_basic_ics(
         # floating local time (no TZ) keeps it simple for single-user local installs
         return dt.strftime("%Y%m%dT%H%M%S")
 
-    uid_val = uid or f"{_fmt(datetime.utcnow())}-{os.getpid()}@impact-cms"
+    now_local = _now_local()
+    uid_val = uid or f"{_fmt(now_local)}-{os.getpid()}@impact-cms"
 
     # Escape commas/semicolons/newlines per spec-ish rules
     def _esc(s: str) -> str:
@@ -922,7 +943,7 @@ def build_basic_ics(
         "METHOD:PUBLISH",
         "BEGIN:VEVENT",
         f"UID:{_esc(uid_val)}",
-        f"DTSTAMP:{_fmt(datetime.utcnow())}",
+        f"DTSTAMP:{_fmt(now_local)}",
         f"DTSTART:{_fmt(start_dt)}",
         f"DTEND:{_fmt(end_dt)}",
         f"SUMMARY:{_esc(title)}",

@@ -12,6 +12,7 @@ import os
 import sys
 import subprocess
 from datetime import datetime
+from app.models import now, today
 from pathlib import Path
 
 from flask import current_app, flash, redirect, request, send_file, url_for
@@ -138,7 +139,7 @@ def claim_document_upload(claim_id: int):
     saved_paths: list[Path] = []
 
     # Use a stable base timestamp for this batch; add a per-file suffix to avoid collisions.
-    batch_ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    batch_ts = now().strftime("%Y%m%d_%H%M%S")
 
     for idx, uploaded in enumerate(uploads, start=1):
         original_name = uploaded.filename
@@ -184,7 +185,7 @@ def claim_document_upload(claim_id: int):
             setattr(doc, "original_filename", original_name)
 
         if hasattr(doc, "uploaded_at") and getattr(doc, "uploaded_at", None) is None:
-            setattr(doc, "uploaded_at", datetime.utcnow())
+            setattr(doc, "uploaded_at", now())
 
         db.session.add(doc)
         created_count += 1

@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container-fluid" style="max-width: 1500px;">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Email Invoice</h2>
+    <div>
+      <a href="{{ url_for('main.invoice_detail_invoices', invoice_id=invoice.id) }}"
+         class="btn btn-sm btn-outline-secondary">
+        Back to Invoice
+      </a>
+    </div>
+  </div>
+
+  <form method="POST">
+
+    <div class="row">
+
+      <!-- ================= LEFT SIDE: PDF PREVIEW ================= -->
+      <div class="col-lg-7">
+
+        <div class="card mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Invoice PDF Preview</span>
+            <div>
+              <a href="{{ url_for('main.invoice_pdf_invoices', invoice_id=invoice.id, view=1) }}"
+                 target="_blank"
+                 class="btn btn-sm btn-outline-secondary">
+                Open in New Tab
+              </a>
+
+              <button type="button"
+                      class="btn btn-sm btn-outline-primary ms-2"
+                      onclick="reloadInvoicePreview()">
+                Regenerate Invoice PDF
+              </button>
+            </div>
+          </div>
+          <div class="card-body p-0">
+            <iframe
+              id="invoicePreviewFrame"
+              src="{{ url_for('main.invoice_pdf_invoices', invoice_id=invoice.id, view=1, regen=1) }}"
+              style="width: 100%; height: 700px; border: none;">
+            </iframe>
+          </div>
+        </div>
+
+        {% if invoice.report_id %}
+        <div class="card mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Related Report PDF Preview</span>
+            <div>
+              <a href="{{ url_for('main.report_pdf', claim_id=invoice.claim_id, report_id=invoice.report_id, view=1) }}"
+                 target="_blank"
+                 class="btn btn-sm btn-outline-secondary">
+                Open in New Tab
+              </a>
+
+              <button type="button"
+                      class="btn btn-sm btn-outline-primary ms-2"
+                      onclick="reloadReportPreview()">
+                Regenerate Report PDF
+              </button>
+            </div>
+          </div>
+          <div class="card-body p-0">
+            <iframe
+              id="reportPreviewFrame"
+              src="{{ url_for('main.report_pdf', claim_id=invoice.claim_id, report_id=invoice.report_id, view=1, regen=1) }}"
+              style="width: 100%; height: 700px; border: none;">
+            </iframe>
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+
+      <!-- ================= RIGHT SIDE: EMAIL PANEL ================= -->
+      <div class="col-lg-5">
+
+        <div class="card mb-4">
+          <div class="card-header">
+            Email Details
+          </div>
+          <div class="card-body">
+
+            <div class="mb-3">
+              <label class="form-label">To</label>
+              <input type="email"
+                     name="to_email"
+                     class="form-control"
+                     value="{{ to_email or '' }}"
+                     required>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Subject</label>
+              <input type="text"
+                     name="subject"
+                     class="form-control"
+                     value="{{ subject or '' }}"
+                     required>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Body</label>
+              <textarea name="body"
+                        rows="14"
+                        class="form-control"
+                        style="white-space: pre-wrap;">{{ body or '' }}</textarea>
+            </div>
+
+            {% if signature_html %}
+            <div class="mt-4 p-3 border rounded bg-light">
+              <div class="small text-muted mb-2">Signature Preview:</div>
+              {{ signature_html|safe }}
+            </div>
+            {% endif %}
+
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-between">
+
+          <button type="submit"
+                  name="action"
+                  value="regenerate"
+                  class="btn btn-outline-primary">
+            Regenerate From Template
+          </button>
+
+          <button type="submit"
+                  name="action"
+                  value="send"
+                  class="btn btn-primary">
+            Send Email
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </form>
+
+</div>
+
+<script>
+  function reloadInvoicePreview() {
+    const frame = document.getElementById("invoicePreviewFrame");
+    if (!frame) return;
+    const baseUrl = "{{ url_for('main.invoice_pdf_invoices', invoice_id=invoice.id, view=1) }}";
+    frame.src = baseUrl + "&regen=1&ts=" + new Date().getTime();
+  }
+
+  function reloadReportPreview() {
+    const frame = document.getElementById("reportPreviewFrame");
+    if (!frame) return;
+    {% if invoice.report_id %}
+    const baseUrl = "{{ url_for('main.report_pdf', claim_id=invoice.claim_id, report_id=invoice.report_id, view=1) }}";
+    {% else %}
+    const baseUrl = "";
+    {% endif %}
+    if (baseUrl) {
+      frame.src = baseUrl + "&regen=1&ts=" + new Date().getTime();
+    }
+  }
+</script>
+
+{% endblock %}

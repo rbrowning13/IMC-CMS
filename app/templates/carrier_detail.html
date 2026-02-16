@@ -95,8 +95,8 @@
 
                 <dt class="col-sm-5">Hourly Rate</dt>
                 <dd class="col-sm-7">
-                  {% if carrier_hourly_rate is not none and carrier_hourly_rate != '' %}
-                    ${{ '%.2f'|format(carrier_hourly_rate|float) }}
+                  {% if carrier.hourly_rate is not none %}
+                    ${{ '%.2f'|format(carrier.hourly_rate|float) }}
                   {% else %}
                     <span class="text-muted">Default:</span> ${{ '%.2f'|format(effective_hourly_rate|float) }}
                   {% endif %}
@@ -104,8 +104,8 @@
 
                 <dt class="col-sm-5">Telephonic Rate</dt>
                 <dd class="col-sm-7">
-                  {% if carrier_telephonic_rate is not none and carrier_telephonic_rate != '' %}
-                    ${{ '%.2f'|format(carrier_telephonic_rate|float) }}
+                  {% if carrier.telephonic_rate is not none %}
+                    ${{ '%.2f'|format(carrier.telephonic_rate|float) }}
                   {% else %}
                     <span class="text-muted">Default:</span> ${{ '%.2f'|format(effective_telephonic_rate|float) }}
                   {% endif %}
@@ -113,8 +113,8 @@
 
                 <dt class="col-sm-5">Mileage Rate</dt>
                 <dd class="col-sm-7">
-                  {% if carrier_mileage_rate is not none and carrier_mileage_rate != '' %}
-                    ${{ '%.4f'|format(carrier_mileage_rate|float) }}/mi
+                  {% if carrier.mileage_rate is not none %}
+                    ${{ '%.4f'|format(carrier.mileage_rate|float) }}/mi
                   {% else %}
                     <span class="text-muted">Default:</span> ${{ '%.4f'|format(effective_mileage_rate|float) }}/mi
                   {% endif %}

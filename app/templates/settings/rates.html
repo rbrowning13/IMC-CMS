@@ -1,0 +1,88 @@
+{% extends "settings/layout.html" %}
+{% set active_section = "rates" %}
+{% block title %}Rates – Impact CMS{% endblock %}
+
+{% block settings_content %}
+
+<h2 class="h4 mb-4">Rates</h2>
+
+<form method="post">
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+
+      <h6 class="text-muted mb-3">Billing Rates</h6>
+
+      <div class="row">
+        <div class="col-md-4 mb-3">
+          <label class="form-label form-label-sm">Hourly Rate (Standard)</label>
+          <input type="text"
+                 name="hourly_rate"
+                 class="form-control form-control-sm"
+                 value="{{ settings.hourly_rate or '' }}">
+        </div>
+
+        <div class="col-md-4 mb-3">
+          <label class="form-label form-label-sm">Telephonic Rate</label>
+          <input type="text"
+                 name="telephonic_rate"
+                 class="form-control form-control-sm"
+                 value="{{ settings.telephonic_rate or '' }}">
+        </div>
+
+        <div class="col-md-4 mb-3">
+          <label class="form-label form-label-sm">Mileage Rate (per mile)</label>
+          <input type="text"
+                 name="mileage_rate"
+                 class="form-control form-control-sm"
+                 value="{{ settings.mileage_rate or '' }}">
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+
+      <h6 class="text-muted mb-3">Report Writing Defaults</h6>
+
+      <div class="row">
+        <div class="col-md-4 mb-3">
+          <label class="form-label form-label-sm">Initial Report Hours</label>
+          <input type="text"
+                 name="initial_report_hours"
+                 class="form-control form-control-sm"
+                 value="{{ settings.initial_report_hours or '' }}">
+        </div>
+
+        <div class="col-md-4 mb-3">
+          <label class="form-label form-label-sm">Progress Report Hours</label>
+          <input type="text"
+                 name="progress_report_hours"
+                 class="form-control form-control-sm"
+                 value="{{ settings.progress_report_hours or '' }}">
+        </div>
+
+        <div class="col-md-4 mb-3">
+          <label class="form-label form-label-sm">Closure Report Hours</label>
+          <input type="text"
+                 name="closure_report_hours"
+                 class="form-control form-control-sm"
+                 value="{{ settings.closure_report_hours or '' }}">
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Sticky Save Bar -->
+  <div class="position-sticky bottom-0 bg-white border-top py-3 d-flex justify-content-end">
+    <button type="submit" class="btn btn-primary btn-sm">
+      Save Changes
+    </button>
+  </div>
+
+</form>
+
+{% endblock %}

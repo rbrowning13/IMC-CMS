@@ -1,0 +1,220 @@
+
+{% extends "settings/layout.html" %}
+{% set active_section = "lists" %}
+{% block title %}Lists & Code Tables – Impact CMS{% endblock %}
+
+{% block settings_content %}
+
+<h2 class="h4 mb-4">Lists & Code Tables</h2>
+
+<!-- ===================== CONTACT ROLES ===================== -->
+<div class="card shadow-sm mb-4">
+  <div class="card-header"><strong>Contact Roles</strong></div>
+  <div class="card-body">
+
+    <!-- Add Role -->
+    <form method="post" class="row g-2 mb-3">
+      <input type="hidden" name="list_type" value="roles">
+      <input type="hidden" name="action" value="add">
+
+      <div class="col-md-6">
+        <input type="text" name="name" class="form-control form-control-sm" placeholder="Role name" required>
+      </div>
+      <div class="col-md-2">
+        <input type="number" name="sort_order" class="form-control form-control-sm" placeholder="Sort">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100">Add</button>
+      </div>
+    </form>
+
+    <!-- Roles Table -->
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Name</th>
+            <th>Sort</th>
+            <th>Status</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in roles %}
+          <tr class="{% if not r.is_active %}table-secondary{% endif %}">
+            <td>{{ r.name }}</td>
+            <td>{{ r.sort_order }}</td>
+            <td>
+              {% if r.is_active %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <form method="post" class="d-inline">
+                <input type="hidden" name="list_type" value="roles">
+                <input type="hidden" name="action" value="toggle">
+                <input type="hidden" name="id" value="{{ r.id }}">
+                <button type="submit" class="btn btn-outline-primary btn-sm">
+                  Toggle
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="text-center text-muted">No roles defined.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== BARRIER OPTIONS ===================== -->
+<div class="card shadow-sm mb-4">
+  <div class="card-header"><strong>Barrier Options</strong></div>
+  <div class="card-body">
+
+    <!-- Add Barrier -->
+    <form method="post" class="row g-2 mb-3">
+      <input type="hidden" name="list_type" value="barriers">
+      <input type="hidden" name="action" value="add">
+
+      <div class="col-md-4">
+        <input type="text" name="label" class="form-control form-control-sm" placeholder="Label" required>
+      </div>
+      <div class="col-md-3">
+        <input type="text" name="category" class="form-control form-control-sm" placeholder="Category">
+      </div>
+      <div class="col-md-2">
+        <input type="number" name="sort_order" class="form-control form-control-sm" placeholder="Sort">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100">Add</button>
+      </div>
+    </form>
+
+    <!-- Barriers Table -->
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Label</th>
+            <th>Category</th>
+            <th>Sort</th>
+            <th>Status</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in barriers %}
+          <tr class="{% if not b.is_active %}table-secondary{% endif %}">
+            <td>{{ b.label }}</td>
+            <td>{{ b.category or "—" }}</td>
+            <td>{{ b.sort_order }}</td>
+            <td>
+              {% if b.is_active %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <form method="post" class="d-inline">
+                <input type="hidden" name="list_type" value="barriers">
+                <input type="hidden" name="action" value="toggle">
+                <input type="hidden" name="id" value="{{ b.id }}">
+                <button type="submit" class="btn btn-outline-primary btn-sm">
+                  Toggle
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="text-center text-muted">No barrier options defined.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== BILLABLE ACTIVITY CODES ===================== -->
+<div class="card shadow-sm mb-4">
+  <div class="card-header"><strong>Billable Activity Codes</strong></div>
+  <div class="card-body">
+
+    <!-- Add Code -->
+    <form method="post" class="row g-2 mb-3">
+      <input type="hidden" name="list_type" value="billables">
+      <input type="hidden" name="action" value="add">
+
+      <div class="col-md-2">
+        <input type="text" name="code" class="form-control form-control-sm" placeholder="Code" required>
+      </div>
+      <div class="col-md-4">
+        <input type="text" name="label" class="form-control form-control-sm" placeholder="Label" required>
+      </div>
+      <div class="col-md-2">
+        <input type="number" name="sort_order" class="form-control form-control-sm" placeholder="Sort">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100">Add</button>
+      </div>
+    </form>
+
+    <!-- Codes Table -->
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Code</th>
+            <th>Label</th>
+            <th>Sort</th>
+            <th>Status</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in billables %}
+          <tr class="{% if not c.is_active %}table-secondary{% endif %}">
+            <td>{{ c.code }}</td>
+            <td>{{ c.label }}</td>
+            <td>{{ c.sort_order }}</td>
+            <td>
+              {% if c.is_active %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <form method="post" class="d-inline">
+                <input type="hidden" name="list_type" value="billables">
+                <input type="hidden" name="action" value="toggle">
+                <input type="hidden" name="id" value="{{ c.id }}">
+                <button type="submit" class="btn btn-outline-primary btn-sm">
+                  Toggle
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="text-center text-muted">No activity codes defined.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

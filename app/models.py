@@ -1,4 +1,21 @@
+
 from datetime import datetime, date
+import pytz
+from zoneinfo import ZoneInfo
+
+# ============================================================
+#  SYSTEM "NOW" AND "TODAY" EXPORTS (server-local, naive)
+# ============================================================
+def system_now() -> datetime:
+    """Return current server-local datetime (naive)."""
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("America/Denver")  # adjust if your server timezone is different
+    return datetime.now(tz)
+
+def system_today() -> date:
+    """Return current server-local date."""
+    return system_now().date()
+
 
 
 import sqlalchemy as sa
@@ -8,6 +25,17 @@ from sqlalchemy import Numeric
 
 from .extensions import db
 
+from datetime import datetime, date
+from zoneinfo import ZoneInfo
+
+def now() -> datetime:
+    """Return the current datetime in the system timezone."""
+    from .models import get_system_timezone
+    return datetime.now(get_system_timezone())
+
+def today() -> date:
+    """Return the current date according to system timezone."""
+    return now().date()
 
 # ============================================================
 #  HELPER: Phone number formatting with extension
@@ -311,6 +339,16 @@ class Claim(db.Model):
     is_closed = db.Column(db.Boolean, default=False)
     status = db.Column(db.String(50), default="open")
 
+    # ========================================================
+    # Lifecycle Tracking (for historical active claim metrics)
+    # ========================================================
+
+    # Date the claim was opened (used for historical active trend)
+    opened_at = db.Column(db.Date, nullable=False, default=today)
+
+    # Date the claim was closed (NULL if still active)
+    closed_at = db.Column(db.Date, nullable=True)
+
     carrier = db.relationship("Carrier", back_populates="claims")
     employer = db.relationship("Employer", back_populates="claims")
     carrier_contact = db.relationship(
@@ -369,7 +407,7 @@ class ClaimDocument(db.Model):
     description = db.Column(db.String(255))
     document_date = db.Column(db.String(50))  # YYYY-MM-DD string is fine for now
 
-    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    uploaded_at = db.Column(db.DateTime, default=now)
 
     def __repr__(self):
         return f"<ClaimDocument {self.original_filename}>"
@@ -394,7 +432,7 @@ class ReportDocument(db.Model):
     description = db.Column(db.String(255))
     document_date = db.Column(db.String(50))
 
-    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    uploaded_at = db.Column(db.DateTime, default=now)
 
     def __repr__(self):
         return f"<ReportDocument {self.original_filename}>"
@@ -442,7 +480,7 @@ class DocumentArtifact(db.Model):
     file_size_bytes = db.Column(db.Integer)
     sha256 = db.Column(db.String(64))
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=now, nullable=False)
 
     def __repr__(self):
         return f"<DocumentArtifact {self.artifact_type} claim={self.claim_id} id={self.id}>"
@@ -515,8 +553,8 @@ class Report(db.Model):
 
     report_type = db.Column(db.String(50), nullable=False)  # initial/progress/closure
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=now, onupdate=now)
 
     # Shared dates/meta
     referral_date = db.Column(db.Date)
@@ -526,7 +564,12 @@ class Report(db.Model):
 
     # Treating provider per report
     treating_provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"))
-    treating_provider = db.relationship("Provider", back_populates="reports")
+    # Legacy single-provider pointer
+    treating_provider = db.relationship(
+        "Provider",
+        back_populates="reports",
+        foreign_keys=[treating_provider_id]
+    )
 
     # LEGACY: Approved Treating Provider(s) (supports multiple providers per report)
     # Providers are now claim-owned; keep this relationship for older records only.
@@ -565,9 +608,18 @@ class Report(db.Model):
     initial_medications = db.Column(db.Text)
     initial_diagnostics = db.Column(db.Text)
 
-    initial_next_appt_datetime = db.Column(db.DateTime)
+    initial_next_appt_datetime = db.Column(db.DateTime, default=now)
+    # New: allow storing appointment time separately for new forms
+    initial_next_appt_time = db.Column(db.Time, nullable=True)
+    initial_next_appt_provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"), nullable=True)
     initial_next_appt_provider_name = db.Column(db.String(255))
     initial_next_appt_notes = db.Column(db.String(255))
+
+    # Next Appointment provider
+    initial_next_appt_provider = db.relationship(
+        "Provider",
+        foreign_keys=[initial_next_appt_provider_id]
+    )
 
     # CLOSURE-specific fields
     closure_reason = db.Column(db.String(120))
@@ -639,7 +691,7 @@ class BillableItem(db.Model):
     # Completion flag (used by invoice logic)
     is_complete = db.Column(db.Boolean, default=False)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now)
 
     def __repr__(self):
         return f"<BillableItem {self.description}>"
@@ -661,11 +713,15 @@ class Invoice(db.Model):
     carrier_id = db.Column(db.Integer, db.ForeignKey("carrier.id"))
     employer_id = db.Column(db.Integer, db.ForeignKey("employer.id"))
 
+    # If this invoice was generated from a report
+    report_id = db.Column(db.Integer, db.ForeignKey("report.id"), nullable=True)
+    report = db.relationship("Report")
+
     invoice_number = db.Column(db.String(50))
     status = db.Column(db.String(50), default="Draft")  # Draft/Sent/Paid/Void
     invoice_date = db.Column(db.Date)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=now, nullable=False)
 
     # DOS range
     dos_start = db.Column(db.Date)
@@ -722,7 +778,7 @@ class Payment(db.Model):
     invoice_id = db.Column(db.Integer, db.ForeignKey("invoice.id"), nullable=False)
     invoice = db.relationship("Invoice", back_populates="payments")
 
-    payment_date = db.Column(db.Date, nullable=False, default=date.today)
+    payment_date = db.Column(db.Date, nullable=False, default=today)
 
     # Use Numeric for currency to avoid float rounding issues
     amount = db.Column(Numeric(12, 2), nullable=False)
@@ -732,7 +788,7 @@ class Payment(db.Model):
     reference = db.Column(db.String(120))     # check number / transaction id
     notes = db.Column(db.Text)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=now, nullable=False)
 
     def __repr__(self):
         return f"<Payment {self.amount} on {self.payment_date} for Invoice {self.invoice_id}>"
@@ -811,6 +867,25 @@ class Settings(db.Model):
     # Filesystem root for documents
     documents_root = db.Column(db.String(255))
 
+    # ========================================================
+    # Email (SMTP Configuration)
+    # ========================================================
+    smtp_host = db.Column(db.String(255))
+    smtp_port = db.Column(db.Integer)
+    smtp_encryption = db.Column(db.String(10))  # "tls", "ssl", or None
+    smtp_username = db.Column(db.String(255))
+    smtp_password = db.Column(db.String(255))
+    email_from = db.Column(db.String(255))
+
+    # ========================================================
+    # Clarity AI Configuration
+    # ========================================================
+    clarity_enabled = db.Column(db.Boolean, default=False)
+    clarity_model = db.Column(db.String(255))
+    clarity_temperature = db.Column(db.Float)
+    clarity_summary_prompt = db.Column(db.Text)
+    clarity_plan_prompt = db.Column(db.Text)
+
     # Report billing defaults (for auto billable items)
     initial_report_hours = db.Column(db.Float, default=1.0)
     progress_report_hours = db.Column(db.Float, default=0.5)
@@ -818,8 +893,57 @@ class Settings(db.Model):
 
     contact_roles_json = db.Column(db.Text)
 
+    # ========================================================
+    # Email Templates (Token-Based)
+    # ========================================================
+
+    # Report Only
+    report_email_subject_template = db.Column(db.Text)
+    report_email_body_template = db.Column(db.Text)
+
+    # Invoice Only
+    invoice_email_subject_template = db.Column(db.Text)
+    invoice_email_body_template = db.Column(db.Text)
+
+    # Report + Invoice Combined
+    report_invoice_email_subject_template = db.Column(db.Text)
+    report_invoice_email_body_template = db.Column(db.Text)
+
+    # Email Signature (appended to all outgoing emails)
+    email_signature = db.Column(db.Text)
+
     def __repr__(self):
         return "<Settings>"
+
+
+# ============================================================
+#  SYSTEM TIMEZONE HELPERS
+# ============================================================
+
+def get_system_timezone() -> ZoneInfo:
+    """Return the system timezone for the business, defaulting to UTC."""
+    settings = Settings.query.first()
+    if settings and settings.postal_code:
+        # Simple ZIP-to-timezone mapping; replace with proper lookup in production
+        zip_to_tz = {
+            "83616": "America/Boise",
+            "83702": "America/Boise",
+            # Add more ZIPs as needed
+        }
+        tz_name = zip_to_tz.get(settings.postal_code, "UTC")
+        return ZoneInfo(tz_name)
+    return ZoneInfo("UTC")
+
+
+def to_system_timezone(dt: datetime | None) -> datetime | None:
+    """Convert a naive or aware datetime to the system timezone."""
+    if not dt:
+        return None
+    tz = get_system_timezone()
+    if dt.tzinfo is None:
+        # assume naive datetimes are in UTC
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+    return dt.astimezone(tz)
 
 
 # ============================================================

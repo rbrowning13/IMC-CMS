@@ -1,0 +1,99 @@
+
+
+{% extends "base.html" %}
+
+{% block title %}Email Report – Impact CMS{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 900px;">
+
+  <h4 class="mb-4">
+    Email {{ report.report_type|capitalize }} Report {{ display_report_number }}
+  </h4>
+
+  <!-- PDF Preview -->
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>PDF Preview</span>
+      <a href="{{ url_for('main.report_pdf_preview', claim_id=claim.id, report_id=report.id) }}"
+         target="_blank"
+         class="btn btn-sm btn-outline-secondary">
+        Open in New Tab
+      </a>
+      <button type="button"
+              class="btn btn-sm btn-outline-warning ms-2"
+              onclick="document.getElementById('pdfPreviewFrame').src='{{ url_for('main.report_pdf_preview', claim_id=claim.id, report_id=report.id, regen=1) }}'">
+        Regenerate PDF
+      </button>
+    </div>
+    <div class="card-body p-0">
+      <iframe
+        id="pdfPreviewFrame"
+        src="{{ url_for('main.report_pdf_preview', claim_id=claim.id, report_id=report.id) }}"
+        style="width: 100%; height: 600px; border: none;">
+      </iframe>
+    </div>
+  </div>
+
+  <form method="POST">
+
+    <!-- Recipient -->
+    <div class="mb-3">
+      <label class="form-label">To</label>
+      <input type="email"
+             name="to_email"
+             class="form-control"
+             value="{{ to_email or '' }}"
+             required>
+    </div>
+
+    <!-- Subject -->
+    <div class="mb-3">
+      <label class="form-label">Subject</label>
+      <input type="text"
+             name="subject"
+             class="form-control"
+             value="{{ subject }}">
+    </div>
+
+    <!-- Body -->
+    <div class="mb-4">
+      <label class="form-label">Body</label>
+      <textarea name="body"
+                class="form-control"
+                rows="12">{{ body }}</textarea>
+    </div>
+
+    <!-- Hidden template fields (for regenerate) -->
+    <input type="hidden" name="subject_template" value="{{ subject_template }}">
+    <input type="hidden" name="body_template" value="{{ body_template }}">
+
+    <div class="d-flex justify-content-between">
+      <div>
+        <button type="submit"
+                name="action"
+                value="regenerate"
+                class="btn btn-outline-secondary">
+          Regenerate from Template
+        </button>
+      </div>
+
+      <div class="d-flex gap-2">
+        <a href="{{ url_for('main.report_detail', claim_id=claim.id, report_id=report.id) }}"
+           class="btn btn-outline-dark">
+          Cancel
+        </a>
+
+        <button type="submit"
+                name="action"
+                value="send"
+                class="btn btn-primary">
+          Send Email
+        </button>
+      </div>
+    </div>
+
+  </form>
+
+</div>
+{% endblock %}

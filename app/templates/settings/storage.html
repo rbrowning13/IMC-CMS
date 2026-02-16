@@ -1,0 +1,59 @@
+
+
+{% extends "settings/layout.html" %}
+{% set active_section = "storage" %}
+{% block title %}File Storage – Impact CMS{% endblock %}
+
+{% block settings_content %}
+
+<h2 class="h4 mb-4">File Storage</h2>
+
+<form method="post">
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h6 class="text-muted mb-3">Document Storage Location</h6>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Documents Root Folder</label>
+        <input type="text"
+               name="documents_root"
+               class="form-control form-control-sm"
+               value="{{ settings.documents_root or '' }}"
+               placeholder="/mnt/raid/documents_human">
+      </div>
+
+      <div class="alert alert-warning small mb-0">
+        <strong>Important:</strong> Use a local, non-synced folder only. Do not use Dropbox, iCloud, Google Drive, or other cloud-synced directories for PHI.
+      </div>
+
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h6 class="text-muted mb-3">Storage Status</h6>
+
+      <p class="mb-1"><strong>Current Root:</strong>
+        {{ settings.documents_root or "Not configured" }}
+      </p>
+
+      {% if settings.documents_root %}
+        <p class="mb-0 text-muted small">
+          Ensure this directory exists and is backed up regularly.
+        </p>
+      {% endif %}
+
+    </div>
+  </div>
+
+  <!-- Sticky Save Bar -->
+  <div class="position-sticky bottom-0 bg-white border-top py-3 d-flex justify-content-end">
+    <button type="submit" class="btn btn-primary btn-sm">
+      Save Changes
+    </button>
+  </div>
+
+</form>
+
+{% endblock %}

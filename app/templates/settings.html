@@ -13,283 +13,283 @@
   {% endif %}
 
   <form method="post" enctype="multipart/form-data" class="mb-4">
-    <!-- Business identity -->
+
+    <!-- Business Information -->
     <div class="card shadow-sm mb-3">
-      <div class="card-header">
+      <div class="card-header" data-bs-toggle="collapse" data-bs-target="#businessInfoSection" style="cursor:pointer;">
         <h2 class="h6 mb-0">Business Information</h2>
       </div>
-      <div class="card-body">
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Business Name</label>
-          <input type="text" name="business_name" class="form-control form-control-sm"
-                 value="{{ settings.business_name or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Address 1</label>
-          <input type="text" name="address1" class="form-control form-control-sm"
-                 value="{{ settings.address1 or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Address 2</label>
-          <input type="text" name="address2" class="form-control form-control-sm"
-                 value="{{ settings.address2 or '' }}">
-        </div>
-        <div class="row">
-          <div class="col-4 mb-2">
-            <label class="form-label form-label-sm">City</label>
-            <input type="text" name="city" class="form-control form-control-sm"
-                   value="{{ settings.city or '' }}">
+      <div id="businessInfoSection" class="collapse show">
+        <div class="card-body">
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Business Name</label>
+            <input type="text" name="business_name" class="form-control form-control-sm"
+                   value="{{ settings.business_name or '' }}">
           </div>
-          <div class="col-4 mb-2">
-            <label class="form-label form-label-sm">State</label>
-            <select name="state" class="form-select form-select-sm">
-              {{ state_options(settings.state or 'ID') }}
-            </select>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Address 1</label>
+            <input type="text" name="address1" class="form-control form-control-sm"
+                   value="{{ settings.address1 or '' }}">
           </div>
-          <div class="col-4 mb-2">
-            <label class="form-label form-label-sm">ZIP</label>
-            <input type="text" name="postal_code" class="form-control form-control-sm"
-                   value="{{ settings.postal_code or '' }}">
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Address 2</label>
+            <input type="text" name="address2" class="form-control form-control-sm"
+                   value="{{ settings.address2 or '' }}">
           </div>
-        </div>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Phone</label>
-          <input type="text" name="phone" class="form-control form-control-sm"
-                 value="{{ settings.phone or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Fax</label>
-          <input type="text" name="fax" class="form-control form-control-sm"
-                 value="{{ settings.fax or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Email</label>
-          <input type="email" name="email" class="form-control form-control-sm"
-                 value="{{ settings.email or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Case Manager</label>
-          <input type="text" name="responsible_case_manager" class="form-control form-control-sm"
-                 value="{{ settings.responsible_case_manager or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">EIN / Tax ID</label>
-          <input type="text" name="ein" class="form-control form-control-sm"
-                 value="{{ settings.ein or '' }}">
+
+          <div class="row">
+            <div class="col-4 mb-2">
+              <label class="form-label form-label-sm">City</label>
+              <input type="text" name="city" class="form-control form-control-sm"
+                     value="{{ settings.city or '' }}">
+            </div>
+            <div class="col-4 mb-2">
+              <label class="form-label form-label-sm">State</label>
+              <select name="state" class="form-select form-select-sm">
+                {{ state_options(settings.state or 'ID') }}
+              </select>
+            </div>
+            <div class="col-4 mb-2">
+              <label class="form-label form-label-sm">ZIP</label>
+              <input type="text" name="postal_code" class="form-control form-control-sm"
+                     value="{{ settings.postal_code or '' }}">
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Phone</label>
+            <input type="text" name="phone" class="form-control form-control-sm"
+                   value="{{ settings.phone or '' }}">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Fax</label>
+            <input type="text" name="fax" class="form-control form-control-sm"
+                   value="{{ settings.fax or '' }}">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Email</label>
+            <input type="email" name="email" class="form-control form-control-sm"
+                   value="{{ settings.email or '' }}">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Case Manager</label>
+            <input type="text" name="responsible_case_manager" class="form-control form-control-sm"
+                   value="{{ settings.responsible_case_manager or '' }}">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">EIN / Tax ID</label>
+            <input type="text" name="ein" class="form-control form-control-sm"
+                   value="{{ settings.ein or '' }}">
+          </div>
+
         </div>
       </div>
     </div>
 
     <!-- Rates -->
     <div class="card shadow-sm mb-3">
-      <div class="card-header">
+      <div class="card-header" data-bs-toggle="collapse" data-bs-target="#ratesSection" style="cursor:pointer;">
         <h2 class="h6 mb-0">Rates</h2>
       </div>
-      <div class="card-body">
-        <div class="row">
-          <div class="col-md-4 mb-2">
-            <label class="form-label form-label-sm">Hourly Rate (standard)</label>
-            <input type="text" name="hourly_rate" class="form-control form-control-sm"
-                   value="{{ settings.hourly_rate or '' }}">
-          </div>
-          <div class="col-md-4 mb-2">
-            <label class="form-label form-label-sm">Telephonic Rate</label>
-            <input type="text" name="telephonic_rate" class="form-control form-control-sm"
-                   value="{{ settings.telephonic_rate or '' }}">
-          </div>
-          <div class="col-md-4 mb-2">
-            <label class="form-label form-label-sm">Mileage Rate (per mile)</label>
-            <input type="text" name="mileage_rate" class="form-control form-control-sm"
-                   value="{{ settings.mileage_rate or '' }}">
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Billing / workload -->
-    <div class="card shadow-sm mb-3">
-      <div class="card-header">
-        <h2 class="h6 mb-0">Billing & Workload</h2>
-      </div>
-      <div class="card-body">
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Default Payment Terms (days)</label>
-          <input type="number"
-                 name="payment_terms_default"
-                 class="form-control form-control-sm"
-                 min="0"
-                 step="1"
-                 inputmode="numeric"
-                 placeholder="e.g. 30"
-                 value="{{ settings.payment_terms_default or '' }}">
-          <div class="form-text small mt-1">
-            Used to calculate due dates and past-due status (example: 30 = Net 30).
-          </div>
-        </div>
-        <div class="row">
-          <div class="col-md-4 mb-2">
-            <label class="form-label form-label-sm">Dormant Claim (days without activity)</label>
-            <input type="text" name="dormant_claim_days" class="form-control form-control-sm"
-                   value="{{ settings.dormant_claim_days or '' }}">
-          </div>
-          <div class="col-md-4 mb-2">
-            <label class="form-label form-label-sm">Target Min Hours/Week</label>
-            <input type="text" name="target_min_hours_per_week" class="form-control form-control-sm"
-                   value="{{ settings.target_min_hours_per_week or '' }}">
-          </div>
-          <div class="col-md-4 mb-2">
-            <label class="form-label form-label-sm">Target Max Hours/Week</label>
-            <input type="text" name="target_max_hours_per_week" class="form-control form-control-sm"
-                   value="{{ settings.target_max_hours_per_week or '' }}">
+      <div id="ratesSection" class="collapse show">
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-4 mb-2">
+              <label class="form-label form-label-sm">Hourly Rate (standard)</label>
+              <input type="text" name="hourly_rate" class="form-control form-control-sm"
+                     value="{{ settings.hourly_rate or '' }}">
+            </div>
+            <div class="col-md-4 mb-2">
+              <label class="form-label form-label-sm">Telephonic Rate</label>
+              <input type="text" name="telephonic_rate" class="form-control form-control-sm"
+                     value="{{ settings.telephonic_rate or '' }}">
+            </div>
+            <div class="col-md-4 mb-2">
+              <label class="form-label form-label-sm">Mileage Rate (per mile)</label>
+              <input type="text" name="mileage_rate" class="form-control form-control-sm"
+                     value="{{ settings.mileage_rate or '' }}">
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- UI / Documents -->
+    <!-- UI & Documents -->
     <div class="card shadow-sm mb-3">
-      <div class="card-header">
+      <div class="card-header" data-bs-toggle="collapse" data-bs-target="#uiSection" style="cursor:pointer;">
         <h2 class="h6 mb-0">UI & Documents</h2>
       </div>
-      <div class="card-body">
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Accent Color (hex)</label>
-          <input type="text" name="accent_color" class="form-control form-control-sm"
-                 placeholder="#0055ff"
-                 value="{{ settings.accent_color or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Report Footer Text</label>
-          <textarea name="report_footer_text" rows="2" class="form-control form-control-sm">{{ settings.report_footer_text or '' }}</textarea>
-        </div>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Invoice Footer Text</label>
-          <textarea name="invoice_footer_text" rows="2" class="form-control form-control-sm">{{ settings.invoice_footer_text or '' }}</textarea>
-        </div>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Business Logo (PNG/JPG)</label>
-          <input type="file" name="logo_file" class="form-control form-control-sm">
-          {% if settings.logo_path %}
-            <div class="mt-2">
-              <img src="{{ url_for('static', filename=settings.logo_path) }}" alt="Business Logo" style="max-height: 60px;">
-            </div>
-          {% endif %}
-        </div>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Signature (PNG/JPG)</label>
-          <input type="file" name="signature_file" class="form-control form-control-sm">
+      <div id="uiSection" class="collapse show">
+        <div class="card-body">
 
-          {#
-            Browser file inputs will always clear after submit/redirect.
-            So we show a preview of the *saved* signature if one exists on disk.
-          #}
-          {% if settings.signature_path %}
-            <div class="mt-2">
-              <img src="{{ url_for('static', filename=settings.signature_path) }}" alt="Signature" style="max-height: 80px;">
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Accent Color (hex)</label>
+            <input type="text" name="accent_color" class="form-control form-control-sm"
+                   value="{{ settings.accent_color or '' }}">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Report Footer Text</label>
+            <textarea name="report_footer_text" rows="3" class="form-control form-control-sm">{{ settings.report_footer_text or '' }}</textarea>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Invoice Footer Text</label>
+            <textarea name="invoice_footer_text" rows="3" class="form-control form-control-sm">{{ settings.invoice_footer_text or '' }}</textarea>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Business Logo (PNG/JPG)</label>
+            <input type="file" name="logo_file" class="form-control form-control-sm">
+            {% if settings.logo_path %}
+              <div class="mt-2">
+                <img src="{{ url_for('static', filename=settings.logo_path) }}" style="max-height:60px;">
+              </div>
+            {% endif %}
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Signature (PNG/JPG)</label>
+            <input type="file" name="signature_file" class="form-control form-control-sm">
+            {% if settings.signature_path %}
+              <div class="mt-2">
+                <img src="{{ url_for('static', filename=settings.signature_path) }}" style="max-height:80px;">
+              </div>
+            {% endif %}
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Email Configuration -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header" data-bs-toggle="collapse" data-bs-target="#emailSection" style="cursor:pointer;">
+        <h2 class="h6 mb-0">Email Configuration</h2>
+      </div>
+      <div id="emailSection" class="collapse">
+        <div class="card-body">
+
+          <div class="row">
+            <div class="col-md-4 mb-2">
+              <label class="form-label form-label-sm">SMTP Server</label>
+              <input type="text" name="smtp_server" class="form-control form-control-sm"
+                     value="{{ settings.smtp_server or 'smtp.office365.com' }}">
             </div>
-          {% endif %}
+            <div class="col-md-2 mb-2">
+              <label class="form-label form-label-sm">Port</label>
+              <input type="number" name="smtp_port" class="form-control form-control-sm"
+                     value="{{ settings.smtp_port or 587 }}">
+            </div>
+            <div class="col-md-6 mb-2">
+              <label class="form-label form-label-sm">Email Address</label>
+              <input type="email" name="smtp_email" class="form-control form-control-sm"
+                     value="{{ settings.smtp_email or '' }}">
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">App Password</label>
+            <input type="password" name="smtp_password"
+                   class="form-control form-control-sm"
+                   placeholder="Stored securely">
+          </div>
+
+          <button type="submit" name="send_test_email" value="1"
+                  class="btn btn-outline-secondary btn-sm">
+            Send Test Email
+          </button>
+
         </div>
       </div>
     </div>
 
     <!-- AI Assistant -->
     <div class="card shadow-sm mb-3">
-      <div class="card-header">
+      <div class="card-header" data-bs-toggle="collapse" data-bs-target="#aiSection" style="cursor:pointer;">
         <h2 class="h6 mb-0">AI Assistant</h2>
       </div>
-      <div class="card-body">
-        <div class="form-check mb-2">
-          <input class="form-check-input" type="checkbox" id="ai_enabled" name="ai_enabled" value="1"
-                 {% if settings.ai_enabled %}checked{% endif %}>
-          <label class="form-check-label" for="ai_enabled">
-            Enable AI assistance (optional)
-          </label>
-          <div class="form-text small">
-            When enabled, AI features can help draft multi-line report fields using prior reports and billables.
-          </div>
-        </div>
+      <div id="aiSection" class="collapse show">
+        <div class="card-body">
 
-        <div class="form-check mb-2">
-          <input class="form-check-input" type="checkbox" id="ai_allow_provider_names" name="ai_allow_provider_names" value="1"
-                 {% if settings.ai_allow_provider_names %}checked{% endif %}
-                 {% if not settings.ai_enabled %}disabled{% endif %}>
-          <label class="form-check-label" for="ai_allow_provider_names">
-            Allow provider names in AI context
-          </label>
-          <div class="form-text small">
-            Leave off to redact provider names before sending context to the AI.
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="ai_enabled" value="1"
+                   {% if settings.ai_enabled %}checked{% endif %}>
+            <label class="form-check-label">
+              Enable AI assistance (optional)
+            </label>
           </div>
-        </div>
 
-        <div class="alert alert-warning mt-2 mb-0 py-2 px-3 small">
-          <strong>Privacy note:</strong> AI should never receive claimant identifiers (name, DOB, phone, email, address) or other sensitive details.
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="ai_allow_provider_names" value="1"
+                   {% if settings.ai_allow_provider_names %}checked{% endif %}>
+            <label class="form-check-label">
+              Allow provider names in AI context
+            </label>
+          </div>
+
+          <div class="alert alert-warning small mt-2 mb-0">
+            <strong>Privacy note:</strong> AI should never receive claimant identifiers (name, DOB, phone, email, address) or other sensitive details.
+          </div>
+
         </div>
       </div>
     </div>
 
     <!-- Contact Roles -->
     <div class="card shadow-sm mb-3">
-      <div class="card-header">
+      <div class="card-header" data-bs-toggle="collapse" data-bs-target="#rolesSection" style="cursor:pointer;">
         <h2 class="h6 mb-0">Contact Roles</h2>
       </div>
-      <div class="card-body">
-        <p class="text-muted small mb-2">
-          Enter one role per line. These roles populate the dropdown menus when adding or editing contacts for Carriers, Employers, and Providers.
-        </p>
-        <textarea name="contact_roles" rows="6" class="form-control form-control-sm">{{ contact_roles_text }}</textarea>
-      </div>
-    </div>
-
-    <!-- File locations -->
-    <div class="card shadow-sm mb-3">
-      <div class="card-header">
-        <h2 class="h6 mb-0">File Storage</h2>
-      </div>
-      <div class="card-body">
-        <div class="mb-2">
-          <label class="form-label form-label-sm" for="documents_root">
-            Documents Root Folder (local storage only)
-          </label>
-          <input type="text"
-                 name="documents_root"
-                 id="documents_root"
-                 class="form-control form-control-sm"
-                 value="{{ settings.documents_root or 'documents' }}">
-          <div class="form-text small mt-1">
-            You can enter a folder name (for example <code>documents</code>) to store files inside the app folder,
-            or a full absolute path (for example <code>/Users/yourname/IMC_Documents</code>) to store files elsewhere
-            on this computer.
-          </div>
-          <div class="alert alert-warning mt-2 mb-0 py-2 px-3 small">
-            <strong>HIPAA / privacy note:</strong> Use a local, non-synced folder only.
-            Do <em>not</em> store documents on iCloud Drive, Dropbox, OneDrive, Google Drive, or any other cloud
-            service unless you have a signed HIPAA-compliant agreement with that provider.
-          </div>
+      <div id="rolesSection" class="collapse show">
+        <div class="card-body">
+          <textarea name="contact_roles" rows="6" class="form-control form-control-sm">{{ contact_roles_text }}</textarea>
         </div>
       </div>
     </div>
 
-    <!-- Lists & code tables -->
+    <!-- File Storage -->
     <div class="card shadow-sm mb-3">
-      <div class="card-header">
-        <h2 class="h6 mb-0">Lists &amp; Code Tables</h2>
+      <div class="card-header" data-bs-toggle="collapse" data-bs-target="#fileSection" style="cursor:pointer;">
+        <h2 class="h6 mb-0">File Storage</h2>
       </div>
-      <div class="card-body">
-        <p class="text-muted small">
-          Manage reusable lists used throughout the app, such as report barriers and billable activity codes.
-        </p>
-        <ul class="mb-0">
-          <li>
-            <a href="{{ url_for('main.settings_barriers') }}">
-              Manage Barrier Options
-            </a>
-          </li>
-          <li>
-            <a href="{{ url_for('main.settings_billables') }}">
-              Manage Billable Activity Codes
-            </a>
-          </li>
-        </ul>
+      <div id="fileSection" class="collapse show">
+        <div class="card-body">
+
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Documents Root Folder (local storage only)</label>
+            <input type="text" name="documents_root"
+                   class="form-control form-control-sm"
+                   value="{{ settings.documents_root or '' }}">
+          </div>
+
+          <div class="alert alert-warning small mb-0">
+            <strong>HIPAA / privacy note:</strong> Use a local, non-synced folder only.
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Lists & Code Tables -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header" data-bs-toggle="collapse" data-bs-target="#listsSection" style="cursor:pointer;">
+        <h2 class="h6 mb-0">Lists & Code Tables</h2>
+      </div>
+      <div id="listsSection" class="collapse show">
+        <div class="card-body">
+          <ul class="mb-0">
+            <li><a href="{{ url_for('main.settings_barriers') }}">Manage Barrier Options</a></li>
+            <li><a href="{{ url_for('main.settings_billables') }}">Manage Billable Activity Codes</a></li>
+          </ul>
+        </div>
       </div>
     </div>
 
@@ -298,53 +298,7 @@
         Save Settings
       </button>
     </div>
+
   </form>
 </div>
-<script>
-function formatPhone(value) {
-  const digits = value.replace(/\D/g, "").slice(0, 10);
-  const parts = [];
-  if (digits.length > 0) parts.push("(" + digits.slice(0, 3));
-  if (digits.length >= 4) parts[0] += ") ";
-  if (digits.length >= 4) parts.push(digits.slice(3, 6));
-  if (digits.length >= 7) parts[1] += "-";
-  if (digits.length >= 7) parts.push(digits.slice(6, 10));
-  return parts.join("");
-}
-
-function attachPhoneFormatter(input) {
-  input.addEventListener("input", function (e) {
-    const start = input.selectionStart;
-    const digitsBefore = input.value.slice(0, start).replace(/\D/g, "").length;
-
-    const formatted = formatPhone(input.value);
-    input.value = formatted;
-
-    let digitCount = 0;
-    let caret = 0;
-    while (caret < formatted.length && digitCount < digitsBefore) {
-      if (/\d/.test(formatted[caret])) digitCount++;
-      caret++;
-    }
-    input.setSelectionRange(caret, caret);
-  });
-}
-
-document.addEventListener("DOMContentLoaded", function () {
-  document.querySelectorAll('input[name="phone"], input[name="fax"]').forEach(attachPhoneFormatter);
-
-  const aiEnabled = document.getElementById("ai_enabled");
-  const allowProviderNames = document.getElementById("ai_allow_provider_names");
-  if (aiEnabled && allowProviderNames) {
-    const syncAI = () => {
-      allowProviderNames.disabled = !aiEnabled.checked;
-      if (!aiEnabled.checked) {
-        allowProviderNames.checked = false;
-      }
-    };
-    aiEnabled.addEventListener("change", syncAI);
-    syncAI();
-  }
-});
-</script>
 {% endblock %}

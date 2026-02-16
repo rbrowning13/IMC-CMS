@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Face Sheet – {{ claim.claimant_display_name }}</title>
+
+    <style>
+        @page {
+            size: Letter;
+            margin: 0.75in;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 12px;
+            color: #000;
+        }
+
+        h1 {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        h2 {
+            font-size: 14px;
+            margin-top: 18px;
+            margin-bottom: 6px;
+            border-bottom: 1px solid #000;
+            padding-bottom: 2px;
+        }
+
+        .section {
+            margin-bottom: 10px;
+        }
+
+        .row {
+            display: flex;
+            margin-bottom: 4px;
+        }
+
+        .label {
+            width: 180px;
+            font-weight: bold;
+        }
+
+        .value {
+            flex: 1;
+        }
+
+        .two-col {
+            display: flex;
+            gap: 40px;
+        }
+
+        .col {
+            flex: 1;
+        }
+
+        .footer {
+            margin-top: 40px;
+            font-size: 10px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Patient Face Sheet</h1>
+    <div>{{ settings.business_name }}</div>
+
+    <h2>Claimant Information</h2>
+
+    <div class="section">
+        <div class="row">
+            <div class="label">Name:</div>
+            <div class="value">
+                {{ claim.claimant_display_name }}
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="label">Date of Birth:</div>
+            <div class="value">
+                {{ claim.dob.strftime("%m/%d/%Y") if claim.dob else "" }}
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="label">Injured Body Part:</div>
+            <div class="value">
+                {{ claim.injured_body_part or "" }}
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="label">Date of Injury:</div>
+            <div class="value">
+                {{ claim.doi.strftime("%m/%d/%Y") if claim.doi else "" }}
+            </div>
+        </div>
+    </div>
+
+    <h2>Claim Information</h2>
+
+    <div class="section">
+        <div class="row">
+            <div class="label">Claim Number:</div>
+            <div class="value">{{ claim.claim_number }}</div>
+        </div>
+
+        <div class="row">
+            <div class="label">Claim State:</div>
+            <div class="value">{{ claim.claim_state }}</div>
+        </div>
+
+        <div class="row">
+            <div class="label">Telephonic Claim:</div>
+            <div class="value">
+                {{ "Yes" if claim.is_telephonic else "No" }}
+            </div>
+        </div>
+    </div>
+
+    <h2>Carrier Information</h2>
+
+    <div class="section">
+        <div class="row">
+            <div class="label">Carrier:</div>
+            <div class="value">
+                {{ claim.carrier.name if claim.carrier else "" }}
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="label">Adjuster:</div>
+            <div class="value">
+                {{ claim.carrier_contact.name if claim.carrier_contact else "" }}
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="label">Adjuster Email:</div>
+            <div class="value">
+                {{ claim.carrier_contact.email if claim.carrier_contact else "" }}
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="label">Adjuster Phone:</div>
+            <div class="value">
+                {{ claim.carrier_contact.phone_display if claim.carrier_contact else "" }}
+            </div>
+        </div>
+    </div>
+
+    <h2>Employer Information</h2>
+
+    <div class="section">
+        <div class="row">
+            <div class="label">Employer:</div>
+            <div class="value">
+                {{ claim.employer.name if claim.employer else "" }}
+            </div>
+        </div>
+    </div>
+
+    <h2>Case Management Contact</h2>
+
+    <div class="section">
+        <div class="row">
+            <div class="label">Case Manager:</div>
+            <div class="value">{{ settings.business_name }}</div>
+        </div>
+
+        <div class="row">
+            <div class="label">Phone:</div>
+            <div class="value">{{ settings.phone or "" }}</div>
+        </div>
+
+        <div class="row">
+            <div class="label">Email:</div>
+            <div class="value">{{ settings.email or "" }}</div>
+        </div>
+    </div>
+
+    <div class="footer">
+        This face sheet is provided to assist the clinic in opening the patient file and verifying workers' compensation claim information.
+    </div>
+
+</body>
+</html>

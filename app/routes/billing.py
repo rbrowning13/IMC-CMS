@@ -5,14 +5,15 @@ This module intentionally focuses on BillableItem CRUD and related helpers.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import timedelta, datetime
 
 import inspect
 
 from flask import current_app, flash, redirect, render_template, request, url_for
 
 from app import db
-from app.models import BillableItem, BillingActivityCode, Claim, Invoice, Payment, Settings
+from app.models import BillableItem, BillingActivityCode, Claim, Invoice, Payment, Settings, now, today
+from app.models import system_now, system_today
 
 from . import bp
 try:
@@ -186,7 +187,7 @@ def billing_list():
             return 30
 
     terms_days = _terms_days(settings)
-    today = date.today()
+    today = system_today()
 
     invoice_math_by_id: dict[int, dict] = {}
 
@@ -407,7 +408,7 @@ def payment_create():
     )
 
     if paid_date is None:
-        paid_date = datetime.utcnow().date()
+        paid_date = system_today()
 
     if not amount_raw:
         flash("Payment amount is required.", "danger")
