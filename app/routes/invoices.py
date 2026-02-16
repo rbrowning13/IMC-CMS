@@ -24,6 +24,9 @@ from sqlalchemy import func
 
 from .. import db
 from ..models import BillableItem, Claim, Invoice, Report
+
+from app.services.human_projection import update_claim_projection
+
 # Optional: PDF artifacts (newer versions)
 try:
     from ..models import DocumentArtifact  # type: ignore
@@ -35,7 +38,7 @@ try:
     from playwright.sync_api import sync_playwright
 except Exception:  # pragma: no cover
     sync_playwright = None
-    
+
 # Payments are defined in some versions of this project; keep optional.
 try:
     from ..models import Payment  # type: ignore
@@ -1118,6 +1121,9 @@ def invoice_pdf(invoice_id: int):
     pdf_path = _get_invoice_pdf_path(invoice, filename)
     with open(pdf_path, "wb") as f:
         f.write(pdf_bytes)
+
+    # Refresh human-readable SMB projection for this claim
+    update_claim_projection(invoice.claim)
 
     resp = send_file(
         BytesIO(pdf_bytes),

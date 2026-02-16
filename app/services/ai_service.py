@@ -1,5 +1,6 @@
 import re
 from typing import Any, Dict, List, Optional, Tuple, Iterable, Sequence
+from app.ai.permissions import AIPrivacyRules
 # -----------------------------------------------------------------------------
 # Deterministic Clarity routing (fast-paths that do NOT use the LLM)
 # -----------------------------------------------------------------------------
