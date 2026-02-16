@@ -26,7 +26,10 @@ from sqlalchemy import func
 from .. import db
 from ..models import BillableItem, Claim, Invoice, Report
 
-from app.services.human_projection import update_claim_projection
+try:
+    from app.services.human_projection import update_claim_projection
+except Exception:
+    update_claim_projection = None
 
 # Optional: PDF artifacts (newer versions)
 try:
@@ -1340,7 +1343,11 @@ def invoice_pdf(invoice_id: int):
         f.write(pdf_bytes)
 
     # Refresh human-readable SMB projection for this claim
-    update_claim_projection(invoice.claim)
+    if update_claim_projection:
+        try:
+            update_claim_projection(invoice.claim)
+        except Exception:
+            pass
 
     resp = send_file(
         BytesIO(pdf_bytes),
