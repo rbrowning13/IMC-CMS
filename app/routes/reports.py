@@ -1282,10 +1282,8 @@ def report_edit(claim_id, report_id):
     claim = Claim.query.get_or_404(claim_id)
     report = Report.query.filter_by(id=report_id, claim_id=claim.id).first_or_404()
 
-    # Display number for this report within the claim (Initial should be #1)
     display_report_number = _compute_claim_report_number(claim.id, report.id)
 
-    # Convenience for templates that prefer attribute access
     try:
         setattr(report, "display_report_number", display_report_number)
     except Exception:
@@ -1294,13 +1292,13 @@ def report_edit(claim_id, report_id):
     page_title = _build_report_page_title(claim, report, display_report_number)
     claim_surgeries = _claim_load_surgeries(claim)
 
-    # --- PCP / Family Doctor field back-compat ---
-    # DB/schema may store this as `initial_primary_care_provider` (preferred) but
-    # older templates/logic may still reference `primary_care_provider`.
     if hasattr(report, "initial_primary_care_provider"):
         try:
-            # Provide a runtime alias for templates expecting `report.primary_care_provider`
-            setattr(report, "primary_care_provider", getattr(report, "initial_primary_care_provider") or None)
+            setattr(
+                report,
+                "primary_care_provider",
+                getattr(report, "initial_primary_care_provider") or None,
+            )
         except Exception:
             pass
 
@@ -1312,59 +1310,26 @@ def report_edit(claim_id, report_id):
 
         dos_start_raw = (request.form.get("dos_start") or "").strip() or None
         dos_end_raw = (request.form.get("dos_end") or "").strip() or None
+        next_report_due_raw = (request.form.get("next_report_due") or "").strip()
+
         work_status = (request.form.get("work_status") or "").strip() or None
         case_management_plan = (request.form.get("case_management_plan") or "").strip() or None
-        next_report_due_raw = (request.form.get("next_report_due") or "").strip() or None
-
         status_treatment_plan = (request.form.get("status_treatment_plan") or "").strip() or None
         employment_status = (request.form.get("employment_status") or "").strip() or None
-        # PCP / Family Doctor is ONLY captured on the Initial Report (report-level only).
-        # Do not persist PCP on Progress/Closure.
+
         primary_care_provider = (request.form.get("primary_care_provider") or "").strip() or None
-        if report_type_raw and report_type_raw.strip().lower() in {"progress", "closure"}:
+        if report_type in {"progress", "closure"}:
             primary_care_provider = None
 
-        # Initial-specific clinical content
-        initial_diagnosis = (request.form.get("initial_diagnosis") or "").strip() or None
-        initial_mechanism_of_injury = (request.form.get("initial_mechanism_of_injury") or "").strip() or None
-        initial_coexisting_conditions = (request.form.get("initial_coexisting_conditions") or "").strip() or None
-        initial_surgical_history = (request.form.get("initial_surgical_history") or "").strip() or None
-        initial_medications = (request.form.get("initial_medications") or "").strip() or None
-        initial_diagnostics = (request.form.get("initial_diagnostics") or "").strip() or None
+        # ---- DATE PARSING FIX ----
 
-        # Next appointment (initial report): split date and time fields
-        initial_next_appt_date_raw = (request.form.get("initial_next_appt_date") or "").strip()
-        initial_next_appt_time_raw = (request.form.get("initial_next_appt_time") or "").strip()
-        initial_next_appt_datetime_raw = (request.form.get("initial_next_appt_datetime") or "").strip()
-        # Explicitly assign initial_next_appt_provider_id and name from form, parse as int or None
-        raw_initial_next_appt_provider_id = request.form.get("initial_next_appt_provider_id", "").strip()
-        if raw_initial_next_appt_provider_id == "":
-            initial_next_appt_provider_id = None
-        else:
-            try:
-                initial_next_appt_provider_id = int(raw_initial_next_appt_provider_id)
-            except Exception:
-                initial_next_appt_provider_id = None
-        initial_next_appt_notes = (request.form.get("initial_next_appt_notes") or "").strip() or None
-        # Optionally, for display purposes, keep the provider name (resolved below)
-        raw_initial_next_appt_provider_name = request.form.get("initial_next_appt_provider_name", "").strip()
-        initial_next_appt_provider_name = raw_initial_next_appt_provider_name or None
+        def _as_date(value):
+            if value is None:
+                return None
+            if isinstance(value, datetime):
+                return value.date()
+            return value
 
-        # Closure-specific fields
-        closure_reason = (request.form.get("closure_reason") or "").strip() or None
-        closure_details = (request.form.get("closure_details") or "").strip() or None
-        closure_case_management_impact = (request.form.get("closure_case_management_impact") or "").strip() or None
-
-        # Barriers: list of selected BarrierOption IDs
-        barrier_ids_raw = request.form.getlist("barrier_ids")
-        barrier_ids: list[int] = []
-        for raw_id in barrier_ids_raw:
-            try:
-                barrier_ids.append(int(raw_id))
-            except (TypeError, ValueError):
-                continue
-
-        # Use MMDDYYYY parser for the three report date fields
         dos_start = None
         dos_end = None
         next_report_due = None
@@ -1373,165 +1338,82 @@ def report_edit(claim_id, report_id):
             dos_start, err = _parse_mmddyyyy(dos_start_raw, "DOS Start")
             if err and not error:
                 error = err
-            dos_start = to_system_timezone(dos_start)
+            dos_start = _as_date(dos_start)
 
         if dos_end_raw:
             dos_end, err = _parse_mmddyyyy(dos_end_raw, "DOS End")
             if err and not error:
                 error = err
-            dos_end = to_system_timezone(dos_end)
+            dos_end = _as_date(dos_end)
 
         if next_report_due_raw:
-            next_report_due, err = _parse_mmddyyyy(next_report_due_raw, "Next Report Due")
+            parsed, err = _parse_mmddyyyy(next_report_due_raw, "Next Report Due")
             if err and not error:
                 error = err
-            next_report_due = to_system_timezone(next_report_due)
+            next_report_due = _as_date(parsed)
+        else:
+            # Explicitly allow clearing the field
+            next_report_due = None
 
-        valid_types = {"initial", "progress", "closure"}
-        if not report_type or report_type not in valid_types:
+        # ---- VALIDATION ----
+
+        if not report_type:
             error = "Report type is required."
 
         if not error and dos_start and dos_end and dos_start > dos_end:
             error = "DOS Start cannot be after DOS End."
 
         if not error:
-            overlaps = _find_overlapping_reports(claim.id, dos_start, dos_end, exclude_report_id=report.id)
+            overlaps = _find_overlapping_reports(
+                claim.id, dos_start, dos_end, exclude_report_id=report.id
+            )
             if overlaps:
                 parts = []
                 for r in overlaps[:3]:
                     rt = (r.report_type or "report").title()
-                    parts.append(f"{rt} #{r.id} ({r.dos_start.strftime('%m/%d/%Y')}–{r.dos_end.strftime('%m/%d/%Y')})")
+                    parts.append(
+                        f"{rt} #{r.id} ({r.dos_start.strftime('%m/%d/%Y')}–{r.dos_end.strftime('%m/%d/%Y')})"
+                    )
                 more = "" if len(overlaps) <= 3 else f" (+{len(overlaps) - 3} more)"
                 error = "Report dates overlap an existing report on this claim: " + ", ".join(parts) + more
 
-        if error:
-            # NOTE: Do not `flash()` here because the template already renders the
-            # `error` variable. Flashing would duplicate the message (banner + toast).
-            pass
-        else:
+        # ---- SAVE ----
+
+        if not error:
             report.report_type = report_type
             report.dos_start = dos_start
             report.dos_end = dos_end
             report.work_status = work_status
             report.case_management_plan = case_management_plan
-            claim.next_report_due = next_report_due
-            db.session.add(claim)
-
-            # Remove fallback that sets treating_provider_id to avoid overwriting
-            # report.treating_provider_id assignment is not performed here
-
             report.status_treatment_plan = status_treatment_plan
             report.employment_status = employment_status
 
-            # Persist initial-style clinical fields for all report types
-            report.initial_diagnosis = initial_diagnosis
-            report.initial_mechanism_of_injury = initial_mechanism_of_injury
-            report.initial_coexisting_conditions = initial_coexisting_conditions
-            report.initial_surgical_history = initial_surgical_history
-            report.initial_medications = initial_medications
-            report.initial_diagnostics = initial_diagnostics
+            # THIS is the critical line
+            claim.next_report_due = next_report_due
 
-            # --- Next appointment: parse separate date (MM/DD/YYYY) and time (h:mm AM/PM) ---
-            dt_val = None
-
-            if initial_next_appt_date_raw or initial_next_appt_time_raw:
-                appt_date = None
-                appt_time = None
-
-                # Parse MM/DD/YYYY
-                if initial_next_appt_date_raw:
-                    try:
-                        appt_date = datetime.strptime(
-                            initial_next_appt_date_raw, "%m/%d/%Y"
-                        ).date()
-                    except Exception:
-                        appt_date = None
-
-                # Parse 12-hour time with AM/PM (e.g., 3:45 PM)
-                if initial_next_appt_time_raw:
-                    try:
-                        appt_time = datetime.strptime(
-                            initial_next_appt_time_raw, "%I:%M %p"
-                        ).time()
-                    except Exception:
-                        appt_time = None
-
-                if appt_date and appt_time:
-                    dt_val = datetime.combine(appt_date, appt_time)
-                elif appt_date:
-                    dt_val = datetime.combine(appt_date, time(0, 0))
-                elif appt_time:
-                    dt_val = datetime.combine(system_today(), appt_time)
-
-                report.initial_next_appt_datetime = (
-                    to_system_timezone(dt_val) if dt_val else None
-                )
-
-            else:
-                report.initial_next_appt_datetime = None
-            # Persist notes as before
-            report.initial_next_appt_notes = initial_next_appt_notes
-
-            # Explicitly assign initial_next_appt_provider_id and name from form to model
-            report.initial_next_appt_provider_id = initial_next_appt_provider_id
-            report.initial_next_appt_provider_name = initial_next_appt_provider_name
-
-            # If provider_id is set, optionally resolve and update provider name (overriding if necessary)
-            if initial_next_appt_provider_id is not None:
-                provider_row = Provider.query.get(initial_next_appt_provider_id)
-                if provider_row and getattr(provider_row, "name", None):
-                    report.initial_next_appt_provider_name = (provider_row.name or "").strip()
-            elif initial_next_appt_provider_name == "":
-                report.initial_next_appt_provider_name = None
-
-            report.closure_reason = closure_reason
-            report.closure_details = closure_details
-            report.closure_case_management_impact = closure_case_management_impact
-
-            if barrier_ids:
-                report.barriers_json = json.dumps(barrier_ids)
-            else:
-                report.barriers_json = None
-
-            # PCP / Family Doctor is report-only (Initial Report). Do not write to Claim.
-            # Persist only for Initial reports; clear it for other types.
-            pcp_value = primary_care_provider if (report.report_type or "").lower() == "initial" else None
-
-            # Preferred schema field name
-            if hasattr(report, "initial_primary_care_provider"):
-                report.initial_primary_care_provider = pcp_value
-
-            # Back-compat schema field name (if present)
-            if hasattr(report, "primary_care_provider"):
-                report.primary_care_provider = pcp_value
-
-            # Keep runtime alias in sync for templates
-            try:
-                setattr(report, "primary_care_provider", pcp_value)
-            except Exception:
-                pass
+            db.session.add(claim)
+            db.session.add(report)
 
             db.session.commit()
             flash("Saved.", "success")
-            return redirect(url_for("main.report_edit", claim_id=claim.id, report_id=report.id))
+            return redirect(
+                url_for(
+                    "main.report_edit",
+                    claim_id=claim.id,
+                    report_id=report.id,
+                )
+            )
 
     barriers_by_category = _get_barrier_options_grouped()
     selected_barrier_ids = set()
     if report.barriers_json:
         try:
-            data = json.loads(report.barriers_json)
-            selected_barrier_ids = {int(x) for x in data}
-        except (TypeError, ValueError):
+            selected_barrier_ids = {int(x) for x in json.loads(report.barriers_json)}
+        except Exception:
             selected_barrier_ids = set()
 
     claim_providers = _claim_load_providers(claim)
-    # Standardize time display for key fields
-    if hasattr(report, "initial_next_appt_datetime"):
-        report.initial_next_appt_datetime = to_system_timezone(report.initial_next_appt_datetime)
-    if hasattr(report, "dos_start"):
-        report.dos_start = to_system_timezone(report.dos_start)
-    if hasattr(report, "dos_end"):
-        report.dos_end = to_system_timezone(report.dos_end)
+
     return render_template(
         "report_edit.html",
         active_page="claims",
