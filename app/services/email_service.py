@@ -216,18 +216,42 @@ def send_smtp_email(settings, to_email, subject, body, attachments=None):
 
     ssl_context = ssl.create_default_context()
 
-    if settings.smtp_encryption == "ssl":
-        with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, context=ssl_context) as server:
-            if settings.smtp_username:
-                server.login(settings.smtp_username, settings.smtp_password)
-            server.send_message(msg)
-    else:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-            if settings.smtp_encryption == "tls":
-                server.starttls(context=ssl_context)
-            if settings.smtp_username:
-                server.login(settings.smtp_username, settings.smtp_password)
-            server.send_message(msg)
+    current_app.logger.info(
+        "Attempting SMTP send | host=%s port=%s user=%s to=%s encryption=%s",
+        settings.smtp_host,
+        settings.smtp_port,
+        settings.smtp_username,
+        to_email,
+        settings.smtp_encryption,
+    )
+
+    try:
+        if (settings.smtp_encryption or "").lower() == "ssl":
+            with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, context=ssl_context) as server:
+                if settings.smtp_username:
+                    server.login(settings.smtp_username, settings.smtp_password)
+                    current_app.logger.info("SMTP login successful, sending message to %s", to_email)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+                if (settings.smtp_encryption or "").lower() == "tls":
+                    server.starttls(context=ssl_context)
+                if settings.smtp_username:
+                    server.login(settings.smtp_username, settings.smtp_password)
+                    current_app.logger.info("SMTP login successful, sending message to %s", to_email)
+                server.send_message(msg)
+
+        current_app.logger.info("SMTP email sent successfully to %s", to_email)
+        current_app.logger.info(
+            "Email details | subject=%s attachments=%s",
+            subject,
+            [a[0] for a in attachments] if attachments else [],
+        )
+        return True
+
+    except Exception as e:
+        current_app.logger.exception("SMTP email failed to send to %s", to_email)
+        raise
 
 
 # Backwards-compatible wrapper used by invoice/report routes.

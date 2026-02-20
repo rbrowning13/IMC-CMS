@@ -354,7 +354,7 @@
       </div>
       {% if report.report_type in ['initial', 'progress'] %}
         <div class="rp-sub">
-          Next report due: {% if report.next_report_due %}{{ report.next_report_due|format_date('%m/%d/%Y') }}{% else %}—{% endif %}
+          Next report due: {% if claim.next_report_due %}{{ claim.next_report_due|format_date('%m/%d/%Y') }}{% else %}—{% endif %}
         </div>
       {% endif %}
     </div>
@@ -414,14 +414,16 @@
 
             {% if _surgeries and _surgeries|length > 0 %}
               {% for s in _surgeries %}
+                {% set _date = s.surgery_date if s.surgery_date is defined else (s['surgery_date'] if 'surgery_date' in s else None) %}
+                {% set _desc = s.description if s.description is defined else (s['description'] if 'description' in s else None) %}
                 <div>
-                  {% if s.surgery_date is defined and s.surgery_date %}
-                    {{ s.surgery_date|format_date('%m/%d/%Y') }}
+                  {% if _date %}
+                    {{ _date|format_date('%m/%d/%Y') }}
                   {% else %}
                     —
                   {% endif %}
-                  {% if s.description is defined and s.description %}
-                    <span class="rp-na">— {{ s.description }}</span>
+                  {% if _desc %}
+                    <span class="rp-na">— {{ _desc }}</span>
                   {% endif %}
                 </div>
               {% endfor %}

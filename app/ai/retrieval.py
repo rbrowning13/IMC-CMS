@@ -287,7 +287,8 @@ def _report_chunk(report: Any, idx: int = 0) -> RetrievedChunk:
 
     dos_start = _first_attr(report, "dos_start", "date_of_service_start")
     dos_end = _first_attr(report, "dos_end", "date_of_service_end")
-    next_due = _first_attr(report, "next_report_due", "next_due")
+    # next_report_due now lives at the Claim level (not Report)
+    next_due = ""
 
     treating_provider_name = ""
     tp = getattr(report, "treating_provider", None)
@@ -481,7 +482,8 @@ def _claim_status_derived_chunk(*, claim: Claim, reports: list[Any]) -> Optional
     latest_type = _first_attr(latest, "report_type", "type") if latest else ""
     latest_dos_start = _first_attr(latest, "dos_start", "date_of_service_start") if latest else ""
     latest_dos_end = _first_attr(latest, "dos_end", "date_of_service_end") if latest else ""
-    latest_next_due = _first_attr(latest, "next_report_due", "next_due") if latest else ""
+    # next_report_due is authoritative at Claim level
+    latest_next_due = _first_attr(claim, "next_report_due")
 
     # Try to surface work status if present; keep it short
     latest_work_status = ""
@@ -2051,6 +2053,7 @@ def _retrieve_context_structured(
             "surgery_date": _first_attr(claim, "surgery_date"),
             "injured_body_part": _first_attr(claim, "injured_body_part"),
             "status": _first_attr(claim, "status"),
+            "next_report_due": _first_attr(claim, "next_report_due"),
         }
 
         # Optional linked entities (best-effort)
@@ -2175,7 +2178,7 @@ def _retrieve_context_structured(
                     "updated_at": str(getattr(r, "updated_at", "") or "") or None,
                     "dos_start": str(getattr(r, "dos_start", "") or "") or None,
                     "dos_end": str(getattr(r, "dos_end", "") or "") or None,
-                    "next_report_due": str(getattr(r, "next_report_due", "") or "") or None,
+                    # next_report_due is claim-level; expose once via header only
                 }
 
                 # Treating provider (name only)

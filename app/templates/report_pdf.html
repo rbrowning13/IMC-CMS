@@ -124,6 +124,23 @@
         {% endif %}
         <br>
       {% endif %}
+      {% if claim_surgeries is defined and claim_surgeries and claim_surgeries|length > 0 %}
+        <strong>Surgery Date{% if claim_surgeries|length > 1 %}s{% endif %}:</strong>
+        <ul style="margin: 0.15rem 0 0.35rem 1.1rem;">
+          {% for s in claim_surgeries %}
+            <li>
+              {% if s.surgery_date %}
+                {{ s.surgery_date|format_date }}
+              {% else %}
+                —
+              {% endif %}
+              {% if s.description %}
+                &nbsp;— {{ s.description }}
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
     </p>
   </div>
 </div>

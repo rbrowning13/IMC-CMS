@@ -190,41 +190,90 @@ def _claim_surgery_table_name() -> str | None:
 
 
 def _claim_load_surgeries(claim: Claim) -> list[dict]:
-    """Return ordered surgery rows for a claim (best-effort)."""
+    """Return ordered surgery rows for a claim (best-effort).
+
+    Supports:
+    - Raw join table lookup (legacy/dev DBs)
+    - ORM relationship fallback (e.g., claim.surgeries)
+    """
     t = _claim_surgery_table_name()
-    if not t:
-        return []
 
-    try:
-        rows = db.session.execute(
-            text(
-                f"""
-                SELECT id, surgery_date, description, sort_order
-                FROM public.{t}
-                WHERE claim_id = :claim_id
-                ORDER BY sort_order NULLS LAST, surgery_date NULLS LAST, id
-                """
-            ),
-            {"claim_id": claim.id},
-        ).fetchall()
-    except Exception:
+    # --- 1️⃣ Raw table lookup (preferred when table exists) ---
+    if t:
         try:
-            db.session.rollback()
-        except Exception:
-            pass
-        return []
+            rows = db.session.execute(
+                text(
+                    f"""
+                    SELECT
+                        id,
+                        surgery_date,
+                        description,
+                        sort_order
+                    FROM {t}
+                    WHERE claim_id = :claim_id
+                    ORDER BY sort_order NULLS LAST, surgery_date NULLS LAST, id
+                    """
+                ),
+                {"claim_id": claim.id},
+            ).fetchall()
 
-    out = []
-    for r in rows:
-        out.append(
-            {
-                "id": r[0],
-                "surgery_date": r[1],
-                "description": r[2],
-                "sort_order": r[3],
-            }
-        )
-    return out
+            if rows:
+                return [
+                    {
+                        "id": r[0],
+                        "surgery_date": r[1],
+                        "description": r[2],
+                        "sort_order": r[3],
+                    }
+                    for r in rows
+                ]
+        except Exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+
+    # --- 2️⃣ ORM relationship fallback (if model defines it) ---
+    try:
+        rel = getattr(claim, "surgeries", None)
+        if rel:
+            out = []
+            for s in rel:
+                out.append(
+                    {
+                        "id": getattr(s, "id", None),
+                        "surgery_date": getattr(s, "surgery_date", None),
+                        "description": getattr(s, "description", None),
+                        "sort_order": getattr(s, "sort_order", None),
+                    }
+                )
+            return sorted(
+                out,
+                key=lambda x: (
+                    x.get("sort_order") or 0,
+                    x.get("surgery_date") or date.min,
+                    x.get("id") or 0,
+                ),
+            )
+    except Exception:
+        pass
+
+    # --- 3️⃣ Legacy single-date fallback (Claim.surgery_date) ---
+    try:
+        legacy_date = getattr(claim, "surgery_date", None)
+        if legacy_date:
+            return [
+                {
+                    "id": None,
+                    "surgery_date": legacy_date,
+                    "description": None,
+                    "sort_order": None,
+                }
+            ]
+    except Exception:
+        pass
+
+    return []
 
 def _allowed_file(filename: str) -> bool:
     allowed = {
@@ -950,8 +999,6 @@ def report_detail(claim_id, report_id):
         report.dos_start = to_system_timezone(report.dos_start)
     if hasattr(report, "dos_end"):
         report.dos_end = to_system_timezone(report.dos_end)
-    if hasattr(report, "next_report_due"):
-        report.next_report_due = to_system_timezone(report.next_report_due)
 
     return render_template(
         "report_detail.html",
@@ -1245,6 +1292,7 @@ def report_edit(claim_id, report_id):
         pass
 
     page_title = _build_report_page_title(claim, report, display_report_number)
+    claim_surgeries = _claim_load_surgeries(claim)
 
     # --- PCP / Family Doctor field back-compat ---
     # DB/schema may store this as `initial_primary_care_provider` (preferred) but
@@ -1366,7 +1414,8 @@ def report_edit(claim_id, report_id):
             report.dos_end = dos_end
             report.work_status = work_status
             report.case_management_plan = case_management_plan
-            report.next_report_due = next_report_due
+            claim.next_report_due = next_report_due
+            db.session.add(claim)
 
             # Remove fallback that sets treating_provider_id to avoid overwriting
             # report.treating_provider_id assignment is not performed here
@@ -1483,14 +1532,13 @@ def report_edit(claim_id, report_id):
         report.dos_start = to_system_timezone(report.dos_start)
     if hasattr(report, "dos_end"):
         report.dos_end = to_system_timezone(report.dos_end)
-    if hasattr(report, "next_report_due"):
-        report.next_report_due = to_system_timezone(report.next_report_due)
     return render_template(
         "report_edit.html",
         active_page="claims",
         claim=claim,
         report=report,
         claim_providers=claim_providers,
+        claim_surgeries=claim_surgeries,
         error=error,
         barriers_by_category=barriers_by_category,
         selected_barrier_ids=selected_barrier_ids,
@@ -1781,8 +1829,6 @@ def report_print(claim_id, report_id):
         report.dos_start = to_system_timezone(report.dos_start)
     if hasattr(report, "dos_end"):
         report.dos_end = to_system_timezone(report.dos_end)
-    if hasattr(report, "next_report_due"):
-        report.next_report_due = to_system_timezone(report.next_report_due)
 
     return render_template(
         "report_print.html",
@@ -2014,6 +2060,9 @@ def report_email(claim_id, report_id):
     display_report_number = _compute_claim_report_number(claim.id, report.id)
     pdf_filename = _build_report_pdf_filename(claim, report, display_report_number)
 
+    # Load claim-level surgeries for preview/PDF consistency
+    claim_surgeries = _claim_load_surgeries(claim)
+
     # Build token context (resilient to signature changes)
     try:
         import inspect
@@ -2137,8 +2186,6 @@ def report_email(claim_id, report_id):
         report.dos_start = to_system_timezone(report.dos_start)
     if hasattr(report, "dos_end"):
         report.dos_end = to_system_timezone(report.dos_end)
-    if hasattr(report, "next_report_due"):
-        report.next_report_due = to_system_timezone(report.next_report_due)
     return render_template(
         "report_email_preview.html",
         claim=claim,
@@ -2149,6 +2196,7 @@ def report_email(claim_id, report_id):
         subject_template=subject_template,
         body_template=body_template,
         display_report_number=display_report_number,
+        claim_surgeries=claim_surgeries,
     )
 
 

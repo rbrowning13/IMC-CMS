@@ -204,24 +204,21 @@ def get_reports_due(*, days_ahead: int = 7, period: Optional[str] = None) -> Dic
         today = start_period
         end = end_period
 
-    if not hasattr(Report, "next_report_due"):
+    if not hasattr(Claim, "next_report_due"):
         return {"overdue": [], "next_7": []}
 
-    due_col = Report.next_report_due
+    due_col = Claim.next_report_due
 
     query_columns = [
-        Report.id.label("report_id"),
-        Report.claim_id.label("claim_id"),
+        Claim.id.label("claim_id"),
         Claim.claimant_last_name.label("last_name"),
         Claim.claimant_first_name.label("first_name"),
         Claim.claim_number.label("claim_number"),
-        Report.report_type.label("report_type"),
         due_col.label("due_date"),
     ]
 
     q = (
         db.session.query(*query_columns)
-        .join(Claim, Claim.id == Report.claim_id)
         .filter(due_col.isnot(None))
     )
 
@@ -238,63 +235,18 @@ def get_reports_due(*, days_ahead: int = 7, period: Optional[str] = None) -> Dic
         .all()
     )
 
-    # ---------------------------------------------------------
-    # Compute per-claim report sequence (match Claim Detail)
-    # ---------------------------------------------------------
-    claim_ids = {r.claim_id for r in overdue_rows} | {r.claim_id for r in next_rows}
-    report_sequence_map = {}
-
-    if claim_ids:
-        all_reports = (
-            db.session.query(
-                Report.id,
-                Report.claim_id,
-                Report.created_at,
-            )
-            .filter(Report.claim_id.in_(claim_ids))
-            .order_by(
-                Report.claim_id.asc(),
-                Report.created_at.asc(),
-                Report.id.asc(),
-            )
-            .all()
-        )
-
-        current_claim = None
-        seq = 0
-
-        for rep in all_reports:
-            if rep.claim_id != current_claim:
-                current_claim = rep.claim_id
-                seq = 1
-            else:
-                seq += 1
-
-            report_sequence_map[rep.id] = seq
-
     def _to_row_dict(r) -> Dict[str, Any]:
-        raw_type = (r.report_type or "").strip().upper()
-        if raw_type.startswith("I"):
-            short_type = "IR"
-        elif raw_type.startswith("P"):
-            short_type = "PR"
-        elif raw_type.startswith("C"):
-            short_type = "CR"
-        else:
-            short_type = raw_type[:2] if raw_type else ""
-
-        # Format due_date as MM/DD/YYYY (naive server-local)
         due_date_val = r.due_date
         due_date_fmt = due_date_val.strftime("%m/%d/%Y") if due_date_val else ""
 
         return {
-            "report_id": int(r.report_id),
+            "report_id": None,
             "claim_id": int(r.claim_id),
             "last_name": (r.last_name or "").strip(),
             "first_name": (r.first_name or "").strip(),
             "claim_number": (r.claim_number or "").strip(),
-            "report_type": short_type,
-            "report_number": str(report_sequence_map.get(r.report_id, "")),
+            "report_type": "",
+            "report_number": "",
             "due_date": due_date_fmt,
         }
 

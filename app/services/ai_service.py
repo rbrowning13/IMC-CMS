@@ -1340,16 +1340,26 @@ def ask_clarity(question: str, context: dict) -> Dict[str, Any]:
                         }
 
                 # Generic latest report summary (compact)
+                # Pull next_report_due from claim-level field (authoritative)
+                claim_obj = context.get("claim") or {}
+                claim_next_due = None
+                if isinstance(claim_obj, dict):
+                    claim_next_due = claim_obj.get("next_report_due")
+
                 bits: List[str] = []
                 for key, label in [
                     ("report_type", "Type"),
                     ("dos_start", "DOS start"),
                     ("dos_end", "DOS end"),
-                    ("next_report_due", "Next due"),
                 ]:
                     line = _format_kv_line(label, r0.get(key))
                     if line:
                         bits.append(line)
+
+                # Append claim-level Next due if present
+                next_due_line = _format_kv_line("Next due", claim_next_due)
+                if next_due_line:
+                    bits.append(next_due_line)
 
                 stp = (r0.get("status_treatment_plan") or "").strip()
                 ws = (r0.get("work_status") or "").strip()
@@ -2387,7 +2397,6 @@ def build_context(
             "report_type": getattr(report, "report_type", None),
             "dos_start": _safe_date(getattr(report, "dos_start", None)),
             "dos_end": _safe_date(getattr(report, "dos_end", None)),
-            "next_report_due": _safe_date(getattr(report, "next_report_due", None)),
         },
         "prior_reports": prior_reports_enriched,
         "billables": billables,
@@ -2457,7 +2466,6 @@ def collect_prior_reports(
             "created_at": _safe_dt(getattr(r, "created_at", None)),
             "dos_start": _safe_date(getattr(r, "dos_start", None)),
             "dos_end": _safe_date(getattr(r, "dos_end", None)),
-            "next_report_due": _safe_date(getattr(r, "next_report_due", None)),
             "closure_reason": getattr(r, "reason_for_closure", None),
             "barriers_json": getattr(r, "barriers_json", None),
             # Provider is conditionally allowed; include name and redact later if needed.
@@ -2670,8 +2678,12 @@ def _deterministic_claim_summary(context: Dict[str, Any]) -> str:
     report_type = current_report.get("report_type") or header.get("report_type")
     dos_start = current_report.get("dos_start") or header.get("dos_start")
     dos_end = current_report.get("dos_end") or header.get("dos_end")
-    next_report_due = current_report.get("next_report_due") or header.get("next_report_due")
-
+        # next_report_due is authoritative at the Claim level
+    claim_obj = context.get("claim") or {}
+    if isinstance(claim_obj, dict):
+        next_report_due = claim_obj.get("next_report_due")
+    else:
+        next_report_due = None
     meta_bits: List[str] = []
     if claim_state:
         meta_bits.append(f"State: {claim_state}")

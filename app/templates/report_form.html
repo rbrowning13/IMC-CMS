@@ -31,6 +31,31 @@
           {% endif %}
 
           <form method="post">
+            <!-- Surgery Dates (Claim-level, read-only) -->
+            <div class="mb-3">
+              <label class="form-label form-label-sm">Surgery Date(s)</label>
+              <div class="border rounded p-2 bg-light small">
+                {% if claim_surgeries and claim_surgeries|length > 0 %}
+                  {% for s in claim_surgeries %}
+                    <div>
+                      {% if s.surgery_date %}
+                        {{ s.surgery_date|format_date }}
+                      {% else %}
+                        —
+                      {% endif %}
+                      {% if s.description %}
+                        <span class="text-muted"> — {{ s.description }}</span>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </div>
+              <div class="form-text small">
+                Surgery dates are managed at the Claim level.
+              </div>
+            </div>
             <!-- Dates of Service -->
             <div class="row g-2 mb-2">
               <div class="col-sm-6">
@@ -60,7 +85,7 @@
                   type="date"
                   name="next_report_due"
                   class="form-control form-control-sm"
-                  value="{{ form_data.get('next_report_due', report.next_report_due if report and report.next_report_due else '') }}"
+                  value="{{ form_data.get('next_report_due', claim.next_report_due if claim and claim.next_report_due else '') }}"
                 >
               </div>
             {% endif %}

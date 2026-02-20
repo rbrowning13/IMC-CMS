@@ -259,6 +259,15 @@
                   {% endif %}
                 </dd>
 
+                <dt class="col-sm-5 claim-summary-label">Report Due</dt>
+                <dd class="col-sm-7 claim-summary-value">
+                  {% if claim.next_report_due %}
+                    {{ claim.next_report_due|format_date }}
+                  {% else %}
+                    <span class="claim-summary-missing">—</span>
+                  {% endif %}
+                </dd>
+
                 <dt class="col-sm-5 claim-summary-label">Address</dt>
                 <dd class="col-sm-7 claim-summary-value">
                   {% if claim.claimant_address1 %}
@@ -767,7 +776,7 @@
                         {% endif %}
                       </td>
                       <td class="small">
-                        {{ r.next_report_due|format_date or "—" }}
+                        {{ claim.next_report_due|format_date if claim.next_report_due else "—" }}
                       </td>
                       <td class="text-end">
                         <a href="{{ url_for('main.report_edit', claim_id=claim.id, report_id=r.id) }}"

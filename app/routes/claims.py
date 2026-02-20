@@ -682,20 +682,12 @@ def claims_list():
             db.session.rollback()
 
     # ------------------------------------------------------------
-    # Next Report Due per claim (latest report only)
+    # Next Report Due per claim (claim-level field)
     # ------------------------------------------------------------
     next_report_due_map: dict[int, date | None] = {}
 
     for c in claims:
-        latest_report = (
-            Report.query.filter_by(claim_id=c.id)
-            .order_by(Report.created_at.desc())
-            .first()
-        )
-        if latest_report and getattr(latest_report, "next_report_due", None):
-            next_report_due_map[c.id] = latest_report.next_report_due
-        else:
-            next_report_due_map[c.id] = None
+        next_report_due_map[c.id] = getattr(c, "next_report_due", None)
 
     today_value = today()
 
@@ -793,6 +785,8 @@ def new_claim():
 
         dob = _parse_date(dob_raw)
         doi = _parse_date(doi_raw)
+        next_report_due_raw = (request.form.get("next_report_due") or "").strip()
+        next_report_due = _parse_date(next_report_due_raw)
         # Multi-surgery dates
         surgery_dates_raw = request.form.getlist("surgery_date")
         surgery_desc_raw = request.form.getlist("surgery_desc")
@@ -810,9 +804,6 @@ def new_claim():
         # For re-render on validation errors
         claim_surgeries = surgeries_payload
 
-        # Legacy single-column (keep for backward compatibility)
-        surgery_date = surgeries_payload[0]["surgery_date"] if surgeries_payload else None
-
         if not claimant_name or not claim_number:
             error = "Claimant name and claim number are required."
         else:
@@ -827,9 +818,9 @@ def new_claim():
                     claim_number=claim_number,
                     dob=dob,
                     doi=doi,
-                    surgery_date=surgery_date,
                     injured_body_part=injured_body_part,
                     claim_state=claim_state,
+                    next_report_due=next_report_due,
                     is_telephonic=False,
                     claimant_address1=claimant_address1,
                     claimant_address2=claimant_address2,
@@ -895,6 +886,8 @@ def new_claim():
                         db.session.commit()
                     return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
+    # Default Report Due (writes to Report.next_report_due on first report)
+    default_report_due = today() + timedelta(days=30)
     return render_template(
         "claim_new.html",
         active_page="claims",
@@ -905,6 +898,7 @@ def new_claim():
         providers=providers,
         error=error,
         claim_surgeries=claim_surgeries,
+        latest_report_next_due=default_report_due,
     )
 
 
@@ -941,6 +935,7 @@ def claim_edit(claim_id: int):
 
         dob = _parse_date(request.form.get("dob"))
         doi = _parse_date(request.form.get("doi"))
+        next_report_due = _parse_date(request.form.get("next_report_due"))
         # surgery_date = _parse_date(request.form.get("surgery_date"))
 
         # Multi-surgery dates
@@ -960,9 +955,6 @@ def claim_edit(claim_id: int):
         # For re-render on validation errors
         if error:
             claim_surgeries = surgeries_payload
-
-        # Legacy single-column (keep for backward compatibility)
-        surgery_date = surgeries_payload[0]["surgery_date"] if surgeries_payload else None
 
         claim_state = (request.form.get("claim_state") or "").strip() or None
 
@@ -1039,10 +1031,11 @@ def claim_edit(claim_id: int):
 
             claim.dob = dob
             claim.doi = doi
-            claim.surgery_date = surgery_date
+            next_report_due = next_report_due
             claim.injured_body_part = injured_body_part
 
             claim.claim_state = claim_state
+            claim.next_report_due = next_report_due
 
             claim.claimant_address1 = claimant_address1
             claim.claimant_address2 = claimant_address2
@@ -1874,6 +1867,10 @@ def report_new_from_claim(claim_id: int):
     db.session.flush()  # ensures rpt.id exists for join-table inserts
 
     _apply_report_carry_forward(claim_id=claim.id, new_report=rpt)
+
+    # Ensure claim-level next_report_due is initialized for first Initial report
+    if report_type == "initial" and not getattr(claim, "next_report_due", None):
+        claim.next_report_due = today_value + timedelta(days=30)
 
     db.session.commit()
 

@@ -103,6 +103,30 @@
             </div>
 
 
+            <!-- Surgery Dates (Claim-level) -->
+            <pre>{{ claim_surgeries }}</pre>
+            <div class="col-12">
+              <div class="small text-muted mb-1">Surgery Date(s)</div>
+              <div class="fw-semibold">
+                {% if claim_surgeries is defined and claim_surgeries %}
+                  {% for s in claim_surgeries %}
+                    <div>
+                      {% if s.surgery_date %}
+                        {{ s.surgery_date|format_date }}
+                      {% else %}
+                        —
+                      {% endif %}
+                      {% if s.description %}
+                        <span class="text-muted">— {{ s.description }}</span>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </div>
+            </div>
+
             <!-- DOS range -->
             <div class="col-md-4">
               <label class="form-label form-label-sm mb-0">DOS Start</label>
@@ -128,7 +152,7 @@
                      name="next_report_due"
                      class="form-control form-control-sm js-date"
                      placeholder="MM/DD/YYYY"
-                     value="{{ report.next_report_due.strftime('%m/%d/%Y') if report and report.next_report_due else '' }}">
+                     value="{{ claim.next_report_due.strftime('%m/%d/%Y') if claim and claim.next_report_due else '' }}">
             </div>
 
             </div>

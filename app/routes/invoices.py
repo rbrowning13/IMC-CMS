@@ -616,7 +616,12 @@ def _invoice_pdf_filename(invoice: Invoice) -> str:
 
 # Filesystem storage helpers for invoice PDFs
 def _get_documents_root() -> str:
-    """Return configured documents_root from Settings."""
+    """Return configured documents_root from Settings.
+
+    In production, this must be set in Settings.
+    In local development, fall back to a safe instance/documents folder
+    so PDF preview does not crash.
+    """
     try:
         from ..models import Settings
         s = Settings.query.first()
@@ -625,7 +630,21 @@ def _get_documents_root() -> str:
             return root
     except Exception:
         pass
-    raise RuntimeError("documents_root not configured")
+
+    # Development fallback: use instance/documents
+    try:
+        from flask import current_app
+        instance_path = current_app.instance_path
+        fallback = os.path.join(instance_path, "documents")
+        os.makedirs(fallback, exist_ok=True)
+        return fallback
+    except Exception:
+        pass
+
+    # Absolute last resort (should never hit in normal app context)
+    fallback = os.path.abspath("./documents")
+    os.makedirs(fallback, exist_ok=True)
+    return fallback
 
 
 def _get_claim_upload_dir(claim: Claim) -> str:
@@ -867,7 +886,67 @@ def invoice_email_preview(invoice_id: int):
             regen=1,
             ts=int(system_now(settings).timestamp()),  # cache bust
         )
-        report_filename = f"Report-{report.id}.pdf"
+        # Build report filename as:
+        # <LastName>, <ClaimNumber>, <ReportType(IR/PR/CR)><Report#>.pdf
+
+        last = ""
+        claim_number = ""
+        try:
+            full_name = getattr(claim, "claimant_name", "") or ""
+            parts = full_name.strip().split()
+            if parts:
+                last = parts[-1].strip()
+
+            claim_number = getattr(claim, "claim_number", "") or ""
+        except Exception:
+            last = ""
+            claim_number = ""
+
+        raw_type = (getattr(report, "report_type", "") or "").strip().lower()
+
+        # Map to IR / PR / CR
+        if raw_type.startswith("initial"):
+            type_code = "IR"
+        elif raw_type.startswith("progress"):
+            type_code = "PR"
+        elif raw_type.startswith("closure"):
+            type_code = "CR"
+        else:
+            type_code = "R"
+
+        # Determine per-claim report sequence number (matches Claim Detail ordering)
+        report_number = ""
+        try:
+            q = (
+                Report.query
+                .filter_by(claim_id=claim.id)
+                .order_by(getattr(Report, "created_at", Report.id).asc(), Report.id.asc())
+                .with_entities(Report.id)
+                .all()
+            )
+            ordered_ids = [rid for (rid,) in q]
+            if report.id in ordered_ids:
+                report_number = str(ordered_ids.index(report.id) + 1)
+        except Exception:
+            report_number = ""
+
+        if not report_number:
+            report_number = str(getattr(report, "id", "") or "")
+
+        parts = []
+        if last:
+            parts.append(last)
+        if claim_number:
+            parts.append(claim_number)
+
+        parts.append(f"{type_code}{report_number}")
+
+        base = ", ".join(parts)
+
+        # Sanitize but preserve commas, spaces, dash, underscore
+        safe_base = re.sub(r"[^A-Za-z0-9,._\- ]+", "", base).strip()
+
+        report_filename = f"{safe_base}.pdf"
 
     # Determine scenario
     if report:
@@ -915,10 +994,11 @@ def invoice_email_preview(invoice_id: int):
             body = request.form.get("body") or ""
 
             # ------------------------------------------------------------------
-            # FIRST: Mark invoice as Sent and set invoice_date (if not already set)
-            # This must happen BEFORE generating the PDF so the PDF reflects
-            # the correct status/date.
+            # FIRST: Persist "Sent" state to DB so Playwright print view sees it
             # ------------------------------------------------------------------
+            original_status = getattr(invoice, "status", None)
+            original_date = getattr(invoice, "invoice_date", None)
+
             try:
                 if hasattr(invoice, "status"):
                     invoice.status = "Sent"
@@ -929,15 +1009,16 @@ def invoice_email_preview(invoice_id: int):
                     invoice.invoice_date = system_today(settings)
 
                 db.session.commit()
+
             except Exception:
                 db.session.rollback()
-                flash("Failed to update invoice status/date before sending email.", "danger")
+                flash("Failed to update invoice status/date before sending.", "danger")
                 return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
             attachments = []
 
             # ------------------------------------------------------------------
-            # Generate fresh Invoice PDF (do NOT reuse old artifact)
+            # Generate fresh Invoice PDF (now DB reflects SENT)
             # ------------------------------------------------------------------
             try:
                 invoice_print_url = url_for(
@@ -946,17 +1027,24 @@ def invoice_email_preview(invoice_id: int):
                     _external=True,
                 )
                 invoice_bytes = _render_pdf_from_url_playwright(invoice_print_url)
+
                 attachments.append(
                     (invoice_filename, invoice_bytes, "application/pdf")
                 )
+
             except Exception:
+                # Revert invoice back to Draft if PDF generation fails
+                db.session.rollback()
+                invoice.status = original_status
+                invoice.invoice_date = original_date
+                db.session.commit()
+
                 current_app.logger.exception("Failed to generate invoice PDF for email")
-                flash("Invoice PDF could not be generated.", "danger")
+                flash("Invoice PDF could not be generated. Invoice reverted to Draft.", "danger")
                 return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
             # ------------------------------------------------------------------
-            # Attach report PDF if exists (render from PRINT view to avoid
-            # stale artifact reuse and ensure fresh generation)
+            # Attach report PDF if exists
             # ------------------------------------------------------------------
             if report:
                 try:
@@ -980,15 +1068,44 @@ def invoice_email_preview(invoice_id: int):
                     flash("Warning: Report PDF could not be attached to email.", "warning")
 
             # ------------------------------------------------------------------
-            # Send email (single call, single message)
+            # Attempt to send email
             # ------------------------------------------------------------------
-            send_email_with_attachments(
-                settings=settings,
-                to_email=to_email,
-                subject=subject,
-                body=body,
-                attachments=attachments,
-            )
+            try:
+                send_email_with_attachments(
+                    settings=settings,
+                    to_email=to_email,
+                    subject=subject,
+                    body=body,
+                    attachments=attachments,
+                )
+            except Exception:
+                # Email failed → revert invoice back to Draft
+                invoice.status = original_status
+                invoice.invoice_date = original_date
+                db.session.commit()
+
+                current_app.logger.exception("Email send failed")
+                flash("Email failed to send. Invoice reverted to Draft.", "danger")
+                return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
+
+            # ------------------------------------------------------------------
+            # SUCCESS: Persist SENT PDF artifact to filesystem
+            # ------------------------------------------------------------------
+            try:
+                pdf_path = _get_invoice_pdf_path(invoice, invoice_filename)
+                with open(pdf_path, "wb") as f:
+                    f.write(invoice_bytes)
+
+                if update_claim_projection:
+                    try:
+                        update_claim_projection(invoice.claim)
+                    except Exception:
+                        pass
+
+            except Exception:
+                current_app.logger.exception("Failed finalizing sent invoice artifact")
+                flash("Invoice was emailed but PDF persistence encountered an issue.", "warning")
+                return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
 
             flash("Invoice email sent successfully.", "success")
             return redirect(url_for("main.invoice_detail_invoices", invoice_id=invoice.id))
@@ -1337,17 +1454,19 @@ def invoice_pdf(invoice_id: int):
         flash(f"Invoice PDF generation failed: {e}", "danger")
         return redirect(url_for("main.invoice_print_invoices", invoice_id=invoice.id))
 
-    # Save to filesystem (RAID-backed)
-    pdf_path = _get_invoice_pdf_path(invoice, filename)
-    with open(pdf_path, "wb") as f:
-        f.write(pdf_bytes)
+    # Save to filesystem (RAID-backed) ONLY when not in preview (view mode).
+    # Preview (view=1) should render in-memory and NOT persist a draft PDF.
+    if not view:
+        pdf_path = _get_invoice_pdf_path(invoice, filename)
+        with open(pdf_path, "wb") as f:
+            f.write(pdf_bytes)
 
-    # Refresh human-readable SMB projection for this claim
-    if update_claim_projection:
-        try:
-            update_claim_projection(invoice.claim)
-        except Exception:
-            pass
+        # Refresh human-readable SMB projection for this claim
+        if update_claim_projection:
+            try:
+                update_claim_projection(invoice.claim)
+            except Exception:
+                pass
 
     resp = send_file(
         BytesIO(pdf_bytes),

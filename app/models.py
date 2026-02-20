@@ -298,6 +298,7 @@ class Claim(db.Model):
     # Additional claim-level context shown in claim + report headers
     injured_body_part = db.Column(db.String(255))
     surgery_date = db.Column(db.Date)
+    next_report_due = db.Column(db.Date)
 
     # Treating Providers are claim-owned (multi-select) via a join table.
     # We intentionally keep this out of the ORM for now because the production DB has
@@ -560,7 +561,6 @@ class Report(db.Model):
     referral_date = db.Column(db.Date)
     dos_start = db.Column(db.Date)
     dos_end = db.Column(db.Date)
-    next_report_due = db.Column(db.Date)
 
     # Treating provider per report
     treating_provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"))
