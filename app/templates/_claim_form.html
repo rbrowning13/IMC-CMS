@@ -58,11 +58,8 @@
     placeholder="MM/DD/YYYY"
     inputmode="numeric"
     data-flatpickr="1"
-    value="{{ claim.next_report_due.strftime('%m/%d/%Y') if claim and claim.next_report_due else '' }}"
+    value="{% if claim and claim.next_report_due %}{{ claim.next_report_due.strftime('%m/%d/%Y') }}{% elif next_report_due %}{{ next_report_due.strftime('%m/%d/%Y') }}{% else %}{% endif %}"
   >
-  <div class="form-text">
-    Stored at the claim level. Used as the default for new reports.
-  </div>
 </div>
 
 

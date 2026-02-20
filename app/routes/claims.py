@@ -886,8 +886,9 @@ def new_claim():
                         db.session.commit()
                     return redirect(url_for("main.claim_detail", claim_id=claim.id))
 
-    # Default Report Due (writes to Report.next_report_due on first report)
-    default_report_due = today() + timedelta(days=30)
+    # Default claim-level next_report_due for display (GET only)
+    default_next_report_due = today() + timedelta(days=30)
+
     return render_template(
         "claim_new.html",
         active_page="claims",
@@ -898,7 +899,7 @@ def new_claim():
         providers=providers,
         error=error,
         claim_surgeries=claim_surgeries,
-        latest_report_next_due=default_report_due,
+        next_report_due=default_next_report_due,
     )
 
 

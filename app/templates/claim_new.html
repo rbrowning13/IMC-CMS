@@ -94,6 +94,18 @@
           dateFormat: 'm/d/Y'
         });
       }
+
+      // Prefill Next Report Due (claim-level) if provided by server
+      const nextDueInput = document.querySelector('input[name="next_report_due"]');
+      {% if next_report_due %}
+        if (nextDueInput && !nextDueInput.value) {
+          const d = new Date("{{ next_report_due.strftime('%Y-%m-%d') }}");
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const yyyy = d.getFullYear();
+          nextDueInput.value = `${mm}/${dd}/${yyyy}`;
+        }
+      {% endif %}
     });
   </script>
   <script>
