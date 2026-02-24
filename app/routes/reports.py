@@ -1321,6 +1321,12 @@ def report_edit(claim_id, report_id):
         if report_type in {"progress", "closure"}:
             primary_care_provider = None
 
+        # ---- NEXT APPOINTMENT FIELDS ----
+        initial_next_appt_date_raw = (request.form.get("initial_next_appt_date") or "").strip()
+        initial_next_appt_time_raw = (request.form.get("initial_next_appt_time") or "").strip()
+        initial_next_appt_provider_name = (request.form.get("initial_next_appt_provider_name") or "").strip() or None
+        initial_next_appt_notes = (request.form.get("initial_next_appt_notes") or "").strip() or None
+
         # ---- DATE PARSING FIX ----
 
         def _as_date(value):
@@ -1387,6 +1393,33 @@ def report_edit(claim_id, report_id):
             report.case_management_plan = case_management_plan
             report.status_treatment_plan = status_treatment_plan
             report.employment_status = employment_status
+
+            # ---- SAVE NEXT APPOINTMENT ----
+            combined_datetime = None
+            if initial_next_appt_date_raw:
+                appt_date, appt_err = _parse_mmddyyyy(initial_next_appt_date_raw, "Next Appointment Date")
+                if appt_err and not error:
+                    error = appt_err
+                if appt_date:
+                    if initial_next_appt_time_raw:
+                        try:
+                            # Expect HH:MM (24-hour or 12-hour already normalized by UI)
+                            parsed_time = datetime.strptime(initial_next_appt_time_raw, "%H:%M").time()
+                        except ValueError:
+                            try:
+                                parsed_time = datetime.strptime(initial_next_appt_time_raw, "%I:%M %p").time()
+                            except ValueError:
+                                parsed_time = None
+                        if parsed_time:
+                            combined_datetime = datetime.combine(appt_date, parsed_time)
+                        else:
+                            combined_datetime = datetime.combine(appt_date, time(0, 0))
+                    else:
+                        combined_datetime = datetime.combine(appt_date, time(0, 0))
+
+            report.initial_next_appt_datetime = combined_datetime
+            report.initial_next_appt_provider_name = initial_next_appt_provider_name
+            report.initial_next_appt_notes = initial_next_appt_notes
 
             # THIS is the critical line
             claim.next_report_due = next_report_due
@@ -1981,14 +2014,25 @@ def report_email(claim_id, report_id):
     subject = render_email_template(subject_template, context)
     body = render_email_template(body_template, context)
 
-    # Default recipient (GET): auto-fill from claim.carrier_contact (adjuster)
-    default_to_email = ""
+    # Default recipients (GET):
+    # Reports go to adjuster only.
+    # (Invoices will additionally include carrier billing email in their own route.)
+    recipient_list: list[str] = []
+
     try:
         adjuster = getattr(claim, "carrier_contact", None)
         if adjuster and getattr(adjuster, "email", None):
-            default_to_email = (adjuster.email or "").strip()
+            email = (adjuster.email or "").strip()
+            if email:
+                recipient_list.append(email)
     except Exception:
-        default_to_email = ""
+        pass
+
+    # Deduplicate while preserving order
+    seen = set()
+    recipient_list = [e for e in recipient_list if not (e in seen or seen.add(e))]
+
+    default_to_email = ", ".join(recipient_list)
 
     to_email = request.form.get("to_email") if request.method == "POST" else default_to_email
 
@@ -2014,6 +2058,15 @@ def report_email(claim_id, report_id):
             subject = request.form.get("subject") or subject
             body = request.form.get("body") or body
             to_email = request.form.get("to_email") or ""
+            # Normalize multiple recipients (comma or semicolon separated)
+            raw_recipients = (to_email or "").replace(";", ",")
+            emails = [e.strip() for e in raw_recipients.split(",") if e.strip()]
+
+            # Deduplicate while preserving order
+            seen = set()
+            emails = [e for e in emails if not (e in seen or seen.add(e))]
+
+            to_email = ", ".join(emails)
 
             if not to_email:
                 flash("Recipient email is required.", "danger")

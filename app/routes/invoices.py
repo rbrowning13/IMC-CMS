@@ -989,7 +989,40 @@ def invoice_email_preview(invoice_id: int):
             )
 
         if action == "send":
-            to_email = (request.form.get("to_email") or "").strip()
+            raw_to_email = (request.form.get("to_email") or "").strip()
+
+            # ---------------------------------------------------------------
+            # Normalize recipients (allow comma or semicolon separated list)
+            # ---------------------------------------------------------------
+            recipients = []
+            if raw_to_email:
+                split_list = re.split(r"[;,]+", raw_to_email)
+                recipients.extend([e.strip() for e in split_list if e.strip()])
+
+            # ---------------------------------------------------------------
+            # Auto-append carrier Billing Email (Carrier.email)
+            # ---------------------------------------------------------------
+            try:
+                carrier = getattr(claim, "carrier", None)
+                billing_email = getattr(carrier, "email", None) if carrier else None
+                if billing_email:
+                    split_billing = re.split(r"[;,]+", billing_email)
+                    recipients.extend([e.strip() for e in split_billing if e.strip()])
+            except Exception:
+                pass
+
+            # ---------------------------------------------------------------
+            # Deduplicate while preserving order
+            # ---------------------------------------------------------------
+            seen = set()
+            normalized = []
+            for e in recipients:
+                e_lower = e.lower()
+                if e_lower not in seen:
+                    seen.add(e_lower)
+                    normalized.append(e)
+
+            to_email = ", ".join(normalized)
             subject = request.form.get("subject") or ""
             body = request.form.get("body") or ""
 
@@ -1114,6 +1147,38 @@ def invoice_email_preview(invoice_id: int):
     subject = render_template_string_safe(subject_template, context)
     body = render_template_string_safe(body_template, context)
 
+    # ---------------------------------------------------------------
+    # Include carrier Billing Email in preview (GET)
+    # ---------------------------------------------------------------
+    try:
+        carrier = getattr(claim, "carrier", None)
+        billing_email = getattr(carrier, "email", None) if carrier else None
+    except Exception:
+        billing_email = None
+
+    preview_recipients = []
+
+    if default_to_email:
+        preview_recipients.extend(
+            [e.strip() for e in re.split(r"[;,]+", default_to_email) if e.strip()]
+        )
+
+    if billing_email:
+        preview_recipients.extend(
+            [e.strip() for e in re.split(r"[;,]+", billing_email) if e.strip()]
+        )
+
+    # Deduplicate while preserving order
+    seen = set()
+    normalized_preview = []
+    for e in preview_recipients:
+        el = e.lower()
+        if el not in seen:
+            seen.add(el)
+            normalized_preview.append(e)
+
+    combined_default_to = ", ".join(normalized_preview)
+
     return render_template(
         "invoice_email_preview.html",
         invoice=invoice,
@@ -1121,7 +1186,7 @@ def invoice_email_preview(invoice_id: int):
         report=report,
         subject=subject,
         body=body,
-        to_email=default_to_email,
+        to_email=combined_default_to,
         invoice_pdf_url=invoice_pdf_url,
         report_pdf_url=report_pdf_url,
         scenario=scenario,
