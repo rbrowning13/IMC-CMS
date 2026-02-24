@@ -1292,15 +1292,6 @@ def report_edit(claim_id, report_id):
     page_title = _build_report_page_title(claim, report, display_report_number)
     claim_surgeries = _claim_load_surgeries(claim)
 
-    if hasattr(report, "initial_primary_care_provider"):
-        try:
-            setattr(
-                report,
-                "primary_care_provider",
-                getattr(report, "initial_primary_care_provider") or None,
-            )
-        except Exception:
-            pass
 
     error = None
 
@@ -1321,14 +1312,27 @@ def report_edit(claim_id, report_id):
         if report_type in {"progress", "closure"}:
             primary_care_provider = None
 
+        # ---- INITIAL-SPECIFIC FIELDS ----
+        initial_diagnosis = (request.form.get("initial_diagnosis") or "").strip() or None
+        initial_mechanism_of_injury = (request.form.get("initial_mechanism_of_injury") or "").strip() or None
+        initial_coexisting_conditions = (request.form.get("initial_coexisting_conditions") or "").strip() or None
+        initial_surgical_history = (request.form.get("initial_surgical_history") or "").strip() or None
+        initial_medications = (request.form.get("initial_medications") or "").strip() or None
+        initial_diagnostics = (request.form.get("initial_diagnostics") or "").strip() or None
+
+        # ---- CLOSURE-SPECIFIC FIELDS ----
+        closure_details = (request.form.get("closure_details") or "").strip() or None
+        closure_case_management_impact = (
+            (request.form.get("closure_case_management_impact") or "").strip() or None
+        )
+
         # ---- NEXT APPOINTMENT FIELDS ----
         initial_next_appt_date_raw = (request.form.get("initial_next_appt_date") or "").strip()
         initial_next_appt_time_raw = (request.form.get("initial_next_appt_time") or "").strip()
         initial_next_appt_provider_name = (request.form.get("initial_next_appt_provider_name") or "").strip() or None
         initial_next_appt_notes = (request.form.get("initial_next_appt_notes") or "").strip() or None
 
-        # ---- DATE PARSING FIX ----
-
+        # ---- DATE PARSING ----
         def _as_date(value):
             if value is None:
                 return None
@@ -1358,11 +1362,36 @@ def report_edit(claim_id, report_id):
                 error = err
             next_report_due = _as_date(parsed)
         else:
-            # Explicitly allow clearing the field
             next_report_due = None
 
-        # ---- VALIDATION ----
+        # ---- NEXT APPOINTMENT PARSING (VALIDATE BEFORE SAVE) ----
+        combined_datetime = None
+        if initial_next_appt_date_raw:
+            appt_date, appt_err = _parse_mmddyyyy(
+                initial_next_appt_date_raw,
+                "Next Appointment Date"
+            )
+            if appt_err and not error:
+                error = appt_err
 
+            if appt_date:
+                parsed_time = None
+                if initial_next_appt_time_raw:
+                    try:
+                        parsed_time = datetime.strptime(initial_next_appt_time_raw, "%H:%M").time()
+                    except ValueError:
+                        try:
+                            parsed_time = datetime.strptime(initial_next_appt_time_raw, "%I:%M %p").time()
+                        except ValueError:
+                            if not error:
+                                error = "Next Appointment Time is invalid."
+
+                if parsed_time:
+                    combined_datetime = datetime.combine(appt_date, parsed_time)
+                else:
+                    combined_datetime = datetime.combine(appt_date, time(0, 0))
+
+        # ---- VALIDATION ----
         if not report_type:
             error = "Report type is required."
 
@@ -1383,8 +1412,7 @@ def report_edit(claim_id, report_id):
                 more = "" if len(overlaps) <= 3 else f" (+{len(overlaps) - 3} more)"
                 error = "Report dates overlap an existing report on this claim: " + ", ".join(parts) + more
 
-        # ---- SAVE ----
-
+        # ---- SAVE (ONLY IF NO ERROR) ----
         if not error:
             report.report_type = report_type
             report.dos_start = dos_start
@@ -1394,40 +1422,67 @@ def report_edit(claim_id, report_id):
             report.status_treatment_plan = status_treatment_plan
             report.employment_status = employment_status
 
-            # ---- SAVE NEXT APPOINTMENT ----
-            combined_datetime = None
-            if initial_next_appt_date_raw:
-                appt_date, appt_err = _parse_mmddyyyy(initial_next_appt_date_raw, "Next Appointment Date")
-                if appt_err and not error:
-                    error = appt_err
-                if appt_date:
-                    if initial_next_appt_time_raw:
-                        try:
-                            # Expect HH:MM (24-hour or 12-hour already normalized by UI)
-                            parsed_time = datetime.strptime(initial_next_appt_time_raw, "%H:%M").time()
-                        except ValueError:
-                            try:
-                                parsed_time = datetime.strptime(initial_next_appt_time_raw, "%I:%M %p").time()
-                            except ValueError:
-                                parsed_time = None
-                        if parsed_time:
-                            combined_datetime = datetime.combine(appt_date, parsed_time)
-                        else:
-                            combined_datetime = datetime.combine(appt_date, time(0, 0))
-                    else:
-                        combined_datetime = datetime.combine(appt_date, time(0, 0))
+            # ---- SAVE BARRIERS ----
+            selected_barrier_ids = request.form.getlist("barrier_ids")
+            clean_barrier_ids = []
+            for x in selected_barrier_ids:
+                try:
+                    clean_barrier_ids.append(int(x))
+                except (TypeError, ValueError):
+                    continue
+            report.barriers_json = json.dumps(clean_barrier_ids) if clean_barrier_ids else None
+
+            # ---- SAVE TYPE-SPECIFIC FIELDS ----
+            if report_type == "initial":
+                report.initial_diagnosis = initial_diagnosis
+                report.initial_mechanism_of_injury = initial_mechanism_of_injury
+                report.initial_coexisting_conditions = initial_coexisting_conditions
+                report.initial_surgical_history = initial_surgical_history
+                report.initial_medications = initial_medications
+                report.initial_diagnostics = initial_diagnostics
+
+                # Persist Primary Care Provider
+                report.primary_care_provider = primary_care_provider
+
+                # Ensure closure fields are cleared on non-closure reports
+                report.closure_details = None
+                report.closure_case_management_impact = None
+
+            elif report_type == "closure":
+                report.closure_details = closure_details
+                report.closure_case_management_impact = closure_case_management_impact
+
+                # Ensure initial-only fields are cleared on closure reports
+                report.initial_diagnosis = None
+                report.initial_mechanism_of_injury = None
+                report.initial_coexisting_conditions = None
+                report.initial_surgical_history = None
+                report.initial_medications = None
+                report.initial_diagnostics = None
+                report.primary_care_provider = None
+
+            else:
+                # Progress reports should not retain initial or closure-only fields
+                report.initial_diagnosis = None
+                report.initial_mechanism_of_injury = None
+                report.initial_coexisting_conditions = None
+                report.initial_surgical_history = None
+                report.initial_medications = None
+                report.initial_diagnostics = None
+                report.closure_details = None
+                report.closure_case_management_impact = None
+                report.primary_care_provider = None
 
             report.initial_next_appt_datetime = combined_datetime
             report.initial_next_appt_provider_name = initial_next_appt_provider_name
             report.initial_next_appt_notes = initial_next_appt_notes
 
-            # THIS is the critical line
             claim.next_report_due = next_report_due
 
             db.session.add(claim)
             db.session.add(report)
-
             db.session.commit()
+
             flash("Saved.", "success")
             return redirect(
                 url_for(

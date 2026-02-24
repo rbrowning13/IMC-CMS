@@ -92,7 +92,7 @@
                 {% if claim_providers is defined and claim_providers %}
                   {% set ns = namespace(labels=[]) %}
                   {% for p in claim_providers %}
-                    {% set _label = (p.organization if (p.organization is defined and p.organization) else p.name) %}
+                    {% set _label = (p.name if (p.name is defined and p.name) else p.organization) %}
                     {% set ns.labels = ns.labels + [_label] %}
                   {% endfor %}
                   {{ ns.labels|join(', ') }}
@@ -104,7 +104,6 @@
 
 
             <!-- Surgery Dates (Claim-level) -->
-            <pre>{{ claim_surgeries }}</pre>
             <div class="col-12">
               <div class="small text-muted mb-1">Surgery Date(s)</div>
               <div class="fw-semibold">
@@ -185,7 +184,7 @@
                      name="primary_care_provider"
                      id="primary_care_provider_field"
                      class="form-control form-control-sm"
-                     value="{{ (report.primary_care_provider if report.primary_care_provider is defined else '') or (claim.primary_care_provider if claim.primary_care_provider is defined else '') or '' }}">
+                     value="{{ report.primary_care_provider or '' }}">
               <div class="form-text">Initial report only (not shown on later reports).</div>
             </div>
             <!-- Diagnosis -->
@@ -702,7 +701,7 @@
 
                 {% if claim_providers is defined and claim_providers %}
                   {% for p in claim_providers %}
-                    {% set _label = (p.organization if (p.organization is defined and p.organization) else p.name) %}
+                    {% set _label = (p.name if (p.name is defined and p.name) else p.organization) %}
                     <option value="{{ _label }}"
                             {% if report.initial_next_appt_provider_name == _label %}selected{% endif %}>
                       {{ _label }}
@@ -710,7 +709,7 @@
                   {% endfor %}
                 {% else %}
                   {% for p in providers %}
-                    {% set _label = (p.organization if (p.organization is defined and p.organization) else p.name) %}
+                    {% set _label = (p.name if (p.name is defined and p.name) else p.organization) %}
                     <option value="{{ _label }}"
                             {% if report.initial_next_appt_provider_name == _label %}selected{% endif %}>
                       {{ _label }}
