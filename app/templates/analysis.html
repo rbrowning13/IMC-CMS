@@ -249,7 +249,7 @@
             </div>
 
             <div class="small d-flex justify-content-between">
-              <span>Capacity Baseline</span>
+              <span>Target Range</span>
               <span id="productivityBaselineValue" class="fw-semibold"></span>
             </div>
 
@@ -633,9 +633,16 @@ function renderRollingProductivity() {
   const avgEl = document.getElementById("productivityAvgPerClaimValue");
 
   if (hoursEl) hoursEl.innerText = avgWeekly.toFixed(1);
-  if (baselineEl) baselineEl.innerText = maxWeekly
-      ? maxWeekly.toFixed(1) + " hrs"
-      : "—";
+  if (baselineEl) {
+    if (minWeekly && maxWeekly) {
+      baselineEl.innerText =
+        minWeekly.toFixed(1) + " – " + maxWeekly.toFixed(1) + " hrs";
+    } else if (maxWeekly) {
+      baselineEl.innerText = maxWeekly.toFixed(1) + " hrs";
+    } else {
+      baselineEl.innerText = "—";
+    }
+  }
 
   const rawUtil = meta.utilization_percent_raw || 0;
   const cappedUtil = meta.utilization_percent_capped || 0;

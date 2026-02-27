@@ -96,7 +96,7 @@
     <!-- Rates -->
     <div class="card shadow-sm mb-3">
       <div class="card-header" data-bs-toggle="collapse" data-bs-target="#ratesSection" style="cursor:pointer;">
-        <h2 class="h6 mb-0">Rates</h2>
+        <h2 class="h6 mb-0">Rates & Productivity Targets</h2>
       </div>
       <div id="ratesSection" class="collapse show">
         <div class="card-body">
@@ -115,6 +115,23 @@
               <label class="form-label form-label-sm">Mileage Rate (per mile)</label>
               <input type="text" name="mileage_rate" class="form-control form-control-sm"
                      value="{{ settings.mileage_rate or '' }}">
+            </div>
+          </div>
+
+          <hr class="my-3">
+
+          <div class="row">
+            <div class="col-md-6 mb-2">
+              <label class="form-label form-label-sm">Minimum Target Hours Per Week</label>
+              <input type="number" step="0.1" name="target_min_hours_per_week"
+                     class="form-control form-control-sm"
+                     value="{{ settings.target_min_hours_per_week or '' }}">
+            </div>
+            <div class="col-md-6 mb-2">
+              <label class="form-label form-label-sm">Maximum Target Hours Per Week</label>
+              <input type="number" step="0.1" name="target_max_hours_per_week"
+                     class="form-control form-control-sm"
+                     value="{{ settings.target_max_hours_per_week or '' }}">
             </div>
           </div>
         </div>

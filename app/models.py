@@ -190,6 +190,17 @@ class Provider(db.Model):
         foreign_keys="Report.treating_provider_id",
     )
 
+    claim_links = db.relationship(
+        "ClaimTreatingProvider",
+        back_populates="provider",
+        cascade="all, delete-orphan",
+        order_by="ClaimTreatingProvider.sort_order",
+    )
+
+    @property
+    def claims_as_treating_provider(self):
+        return [link.claim for link in (self.claim_links or [])]
+
     contacts = db.relationship(
         "Contact",
         backref="provider",
@@ -300,10 +311,29 @@ class Claim(db.Model):
     surgery_date = db.Column(db.Date)
     next_report_due = db.Column(db.Date)
 
-    # Treating Providers are claim-owned (multi-select) via a join table.
-    # We intentionally keep this out of the ORM for now because the production DB has
-    # had multiple historical join-table names. Routes use best-effort SQL helpers to
-    # read/write the join rows without breaking older installs.
+    # --------------------------------------------------------
+    # Surgeries (one-to-many)
+    # --------------------------------------------------------
+    surgeries = db.relationship(
+        "ClaimSurgery",
+        back_populates="claim",
+        cascade="all, delete-orphan",
+        order_by="ClaimSurgery.sort_order",
+    )
+
+    # --------------------------------------------------------
+    # Treating Providers (many-to-many via association table)
+    # --------------------------------------------------------
+    treating_provider_links = db.relationship(
+        "ClaimTreatingProvider",
+        back_populates="claim",
+        cascade="all, delete-orphan",
+        order_by="ClaimTreatingProvider.sort_order",
+    )
+
+    @property
+    def treating_providers(self):
+        return [link.provider for link in (self.treating_provider_links or [])]
 
     claim_state = db.Column(db.String(10))  # e.g. "ID"
 
@@ -388,6 +418,48 @@ class Claim(db.Model):
 
     def __repr__(self):
         return f"<Claim {self.claimant_display_name} — {self.claim_number}>"
+
+
+
+# ============================================================
+#  CLAIM SURGERIES (one-to-many)
+# ============================================================
+
+class ClaimSurgery(db.Model):
+    __tablename__ = "claim_surgery"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    claim_id = db.Column(db.Integer, db.ForeignKey("claim.id"), nullable=False)
+    claim = db.relationship("Claim", back_populates="surgeries")
+
+    surgery_date = db.Column(db.Date)
+    description = db.Column(db.Text)
+    sort_order = db.Column(db.Integer)
+
+    def __repr__(self):
+        return f"<ClaimSurgery claim={self.claim_id} date={self.surgery_date}>"
+
+
+# ============================================================
+#  CLAIM ↔ PROVIDER (Treating Providers Association)
+# ============================================================
+
+class ClaimTreatingProvider(db.Model):
+    __tablename__ = "claim_treating_provider"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    claim_id = db.Column(db.Integer, db.ForeignKey("claim.id"), nullable=False)
+    provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"), nullable=False)
+
+    sort_order = db.Column(db.Integer, default=0)
+
+    claim = db.relationship("Claim", back_populates="treating_provider_links")
+    provider = db.relationship("Provider", back_populates="claim_links")
+
+    def __repr__(self):
+        return f"<ClaimTreatingProvider claim={self.claim_id} provider={self.provider_id}>"
 
 
 # ============================================================

@@ -756,6 +756,9 @@ def settings_rates():
             progress_hours = parse_float("progress_report_hours")
             closure_hours = parse_float("closure_report_hours")
 
+            min_hours = parse_float("target_min_hours_per_week")
+            max_hours = parse_float("target_max_hours_per_week")
+
             if hourly is not None:
                 settings.hourly_rate = hourly
             if telephonic is not None:
@@ -769,6 +772,11 @@ def settings_rates():
                 settings.progress_report_hours = progress_hours
             if hasattr(settings, "closure_report_hours") and closure_hours is not None:
                 settings.closure_report_hours = closure_hours
+
+            if hasattr(settings, "target_min_hours_per_week") and min_hours is not None:
+                settings.target_min_hours_per_week = min_hours
+            if hasattr(settings, "target_max_hours_per_week") and max_hours is not None:
+                settings.target_max_hours_per_week = max_hours
 
             db.session.commit()
             flash("Rates updated successfully.", "success")
