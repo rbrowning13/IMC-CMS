@@ -7,15 +7,36 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
       :root {
-        --mobile-accent: var(--accent-color, #f5a623);
+        /* Use the app's accent color (from Settings) */
+        --mobile-accent: var(--accent-color);
+
+        /* Light theme defaults */
+        --mobile-bg: #f5f7fb;
+        --mobile-text: #111111;
+        --mobile-muted: rgba(17, 17, 17, 0.65);
+        --mobile-card-bg: #ffffff;
+        --mobile-border: rgba(17, 17, 17, 0.12);
+        --mobile-input-bg: #ffffff;
+        --mobile-input-border: rgba(17, 17, 17, 0.18);
+      }
+
+      /* Dark theme overrides */
+      body[data-theme="dark"] {
+        --mobile-bg: #0b0b0d;
+        --mobile-text: #f7f7f7;
+        --mobile-muted: rgba(247, 247, 247, 0.7);
+        --mobile-card-bg: #15151a;
+        --mobile-border: rgba(255, 255, 255, 0.13);
+        --mobile-input-bg: #141418;
+        --mobile-input-border: rgba(255, 255, 255, 0.18);
       }
 
       body {
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         margin: 0;
         padding: 0;
-        background: #0b0b0d;
-        color: #f7f7f7;
+        background: var(--mobile-bg);
+        color: var(--mobile-text);
       }
 
       .mobile-shell {
@@ -56,31 +77,43 @@
         font-size: 0.7rem;
         padding: 0.25rem 0.7rem;
         border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid var(--mobile-border);
+        background: rgba(0, 0, 0, 0.04);
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        color: #f7f7f7;
+        color: var(--mobile-text);
       }
 
       .mobile-search {
         width: 100%;
         display: flex;
         align-items: center;
+        gap: 0.75rem;
         margin-bottom: 0.75rem;
       }
 
       .mobile-search input {
         width: 100%;
         border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        background: #141418;
-        color: #f7f7f7;
+        border: 1px solid var(--mobile-input-border);
+        background: var(--mobile-input-bg);
+        color: var(--mobile-text);
         font-size: 0.85rem;
       }
 
       .mobile-search input::placeholder {
-        color: rgba(255, 255, 255, 0.45);
+        color: var(--mobile-muted);
+      }
+
+      .mobile-toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.7rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--mobile-muted);
+        white-space: nowrap;
       }
 
       .mobile-claims-list {
@@ -92,17 +125,22 @@
 
       .mobile-claim-card {
         border-radius: 1rem;
-        border: 1px solid rgba(255, 255, 255, 0.13);
-        background: #15151a;
+        border: 1px solid var(--mobile-border);
+        background: var(--mobile-card-bg);
         padding: 0.7rem 0.8rem;
         text-decoration: none;
         display: block;
-        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
+        box-shadow: 0 10px 18px rgba(0, 0, 0, 0.18);
         color: inherit;
+      }
+
+      body[data-theme="dark"] .mobile-claim-card {
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
       }
 
       .mobile-claim-card:hover {
         border-color: var(--mobile-accent);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--mobile-accent) 35%, transparent);
       }
 
       .mobile-claim-card-header {
@@ -116,11 +154,13 @@
       .mobile-claim-name {
         font-size: 0.95rem;
         font-weight: 600;
+        color: var(--mobile-accent);
       }
 
       .mobile-claim-number {
         font-size: 0.75rem;
-        opacity: 0.85;
+        color: var(--mobile-muted);
+        opacity: 1;
       }
 
       .mobile-claim-meta {
@@ -128,7 +168,8 @@
         flex-direction: column;
         gap: 0.15rem;
         font-size: 0.78rem;
-        opacity: 0.9;
+        color: var(--mobile-text);
+        opacity: 1;
       }
 
       .mobile-claim-meta strong {
@@ -141,8 +182,9 @@
         letter-spacing: 0.06em;
         padding: 0.15rem 0.55rem;
         border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--mobile-border);
+        background: color-mix(in srgb, var(--mobile-accent) 12%, transparent);
+        color: var(--mobile-text);
       }
 
       .mobile-switch {
@@ -165,7 +207,7 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background-color: rgba(255, 255, 255, 0.2);
+        background-color: var(--mobile-border);
         transition: 0.2s;
         border-radius: 999px;
       }
@@ -192,7 +234,7 @@
 
       .mobile-empty {
         font-size: 0.85rem;
-        opacity: 0.75;
+        color: var(--mobile-muted);
         margin-top: 0.75rem;
       }
 
@@ -204,23 +246,24 @@
         justify-content: space-between;
         align-items: center;
         gap: 0.5rem;
-        opacity: 0.7;
+        color: var(--mobile-muted);
       }
 
       .mobile-footer-links a {
         text-decoration: none;
-        font-weight: 500;
+        font-weight: 600;
         color: var(--mobile-accent);
       }
 
       .mobile-footer-links a:hover {
-        text-decoration: underline;
+        text-decoration: none;
+        opacity: 0.9;
       }
 
       .btn-mobile-primary {
         border-radius: 999px;
         border: 1px solid var(--mobile-accent);
-        background: rgba(245, 166, 35, 0.08);
+        background: color-mix(in srgb, var(--mobile-accent) 14%, transparent);
         color: var(--mobile-accent);
         padding: 0.25rem 0.9rem;
         font-size: 0.75rem;
@@ -231,7 +274,7 @@
       }
 
       .btn-mobile-primary:hover {
-        background: rgba(245, 166, 35, 0.16);
+        background: color-mix(in srgb, var(--mobile-accent) 24%, transparent);
       }
     </style>
 </head>
@@ -242,6 +285,14 @@
         <p class="mobile-title">Select Claim</p>
         <div class="mobile-badge">Billable Entry</div>
       </div>
+
+      <label class="mobile-toggle-label" style="margin-left:auto;">
+        <span>Dark</span>
+        <span class="mobile-switch">
+          <input type="checkbox" id="mobile-theme-toggle">
+          <span class="mobile-slider"></span>
+        </span>
+      </label>
     </header>
 
     <div class="mobile-search">
@@ -252,9 +303,7 @@
         placeholder="Search by name, claim number, carrier..."
         autocomplete="off"
       >
-      <label
-        style="margin-left: 0.5rem; display:flex; align-items:center; gap:0.35rem; font-size:0.7rem; letter-spacing:0.05em; text-transform:uppercase;"
-      >
+      <label class="mobile-toggle-label">
         <span>Show Closed</span>
         <span class="mobile-switch">
           <input type="checkbox" id="toggle-closed-switch">
@@ -329,6 +378,23 @@
 
   <script>
     (function () {
+      const themeToggle = document.getElementById('mobile-theme-toggle');
+      const storedTheme = localStorage.getItem('mobile-theme');
+
+      if (storedTheme) {
+        document.body.setAttribute('data-theme', storedTheme);
+      }
+
+      if (themeToggle) {
+        themeToggle.checked = document.body.getAttribute('data-theme') === 'dark';
+
+        themeToggle.addEventListener('change', () => {
+          const newTheme = themeToggle.checked ? 'dark' : 'light';
+          document.body.setAttribute('data-theme', newTheme);
+          localStorage.setItem('mobile-theme', newTheme);
+        });
+      }
+
       const searchInput = document.getElementById('mobile-claim-search');
       const toggleSwitch = document.getElementById('toggle-closed-switch');
       const rows = Array.from(document.querySelectorAll('.claim-row'));

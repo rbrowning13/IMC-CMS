@@ -481,6 +481,23 @@
       stroke: var(--accent-color);
     }
 
+    /* Alternating row striping for better scanability */
+    table tbody tr:nth-child(even) {
+      background-color: #f8f9fb;
+    }
+
+    /* Slightly darker striping in dark mode */
+    .dark-mode table tbody tr:nth-child(even) {
+      background-color: #1a1a1a;
+    }
+
+    /* Increase vertical padding for table cells */
+    table tbody tr td,
+    table tbody tr th {
+      padding-top: 12px;
+      padding-bottom: 12px;
+    }
+
   </style>
 </head>
 <body

@@ -10,12 +10,27 @@
 
   <style>
     :root {
-      --accent-color: {{ accent_color or '#ff9500' }};
-      --bg-color: #121212;
-      --card-bg: #1c1c1e;
-      --text-color: #f5f5f7;
-      --muted-color: #a1a1a7;
-      --border-color: #2c2c2e;
+      /* Accent comes from base injection; neutral fallback only */
+      --accent-color: {{ accent_color or '#7c3aed' }};
+
+      /* Light theme defaults */
+      --bg-color: #f5f7fb;
+      --card-bg: #ffffff;
+      --text-color: #111111;
+      --muted-color: rgba(17,17,17,0.6);
+      --border-color: rgba(17,17,17,0.15);
+      --input-bg: #ffffff;
+      --input-placeholder: rgba(17,17,17,0.4);
+    }
+
+    body[data-theme="dark"] {
+      --bg-color: #0b0b0d;
+      --card-bg: #15151a;
+      --text-color: #f7f7f7;
+      --muted-color: rgba(247,247,247,0.7);
+      --border-color: rgba(255,255,255,0.14);
+      --input-bg: #000000;
+      --input-placeholder: #5c5c60;
     }
 
     * {
@@ -38,6 +53,25 @@
 
     .page-header {
       padding: 1rem 1.25rem 0.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .header-left {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .theme-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted-color);
     }
 
     .page-title {
@@ -94,7 +128,7 @@
       width: 100%;
       border-radius: 12px;
       border: 1px solid var(--border-color);
-      background-color: #000;
+      background-color: var(--input-bg);
       color: var(--text-color);
       padding: 0.7rem 0.85rem;
       font-size: 0.95rem;
@@ -104,7 +138,7 @@
 
     input::placeholder,
     textarea::placeholder {
-      color: #5c5c60;
+      color: var(--input-placeholder);
     }
 
     input:focus,
@@ -124,7 +158,7 @@
       align-items: stretch;
       border-radius: 999px;
       border: 1px solid var(--border-color);
-      background-color: #000;
+      background-color: var(--input-bg);
       overflow: hidden;
     }
 
@@ -231,7 +265,15 @@
       border: 1px solid var(--border-color);
       border-radius: 14px;
       padding: 0.75rem 0.85rem;
-      background: rgba(0, 0, 0, 0.25);
+      background: var(--card-bg);
+    }
+
+    @media (hover: hover) {
+      .recent-item:hover {
+        border-color: var(--accent-color);
+        box-shadow: 0 0 0 1px var(--accent-color);
+        cursor: pointer;
+      }
     }
 
     .recent-item[data-invoiced="true"] {
@@ -316,7 +358,7 @@
 
     /* Ensure Flatpickr's injected input styling stays readable on dark UI */
     input.flatpickr-input {
-      background-color: #000 !important;
+      background-color: var(--input-bg) !important;
       color: var(--text-color) !important;
     }
 
@@ -367,17 +409,24 @@
     }
   </style>
 </head>
-<body>
+<body data-theme="light">
   <div class="page">
     <header class="page-header">
-      <h1 class="page-title">New Billable Activity</h1>
-      {% if claim %}
-        {% set claimant_display = (claim.claimant_name if claim.claimant_name is defined else (claim.claimant_full_name if claim.claimant_full_name is defined else claim.claimant)) %}
-        <p class="page-subtitle">
-          {{ claimant_display or "Unnamed Claimant" }}
-          {% if claim.claim_number %}&nbsp;·&nbsp;Claim #{{ claim.claim_number }}{% endif %}
-        </p>
-      {% endif %}
+      <div class="header-left">
+        <h1 class="page-title">New Billable Activity</h1>
+        {% if claim %}
+          {% set claimant_display = (claim.claimant_name if claim.claimant_name is defined else (claim.claimant_full_name if claim.claimant_full_name is defined else claim.claimant)) %}
+          <p class="page-subtitle">
+            {{ claimant_display or "Unnamed Claimant" }}
+            {% if claim.claim_number %}&nbsp;·&nbsp;Claim #{{ claim.claim_number }}{% endif %}
+          </p>
+        {% endif %}
+      </div>
+
+      <label class="theme-toggle">
+        <span>Dark</span>
+        <input type="checkbox" id="mobile-theme-toggle">
+      </label>
     </header>
 
     <main>
@@ -572,6 +621,25 @@
 
   <script>
     document.addEventListener('DOMContentLoaded', function () {
+      // -----------------------------
+      // Theme Sync (matches claim page)
+      // -----------------------------
+      const themeToggle = document.getElementById('mobile-theme-toggle');
+      const storedTheme = localStorage.getItem('mobile-theme');
+
+      if (storedTheme) {
+        document.body.setAttribute('data-theme', storedTheme);
+      }
+
+      if (themeToggle) {
+        themeToggle.checked = document.body.getAttribute('data-theme') === 'dark';
+
+        themeToggle.addEventListener('change', function () {
+          const newTheme = themeToggle.checked ? 'dark' : 'light';
+          document.body.setAttribute('data-theme', newTheme);
+          localStorage.setItem('mobile-theme', newTheme);
+        });
+      }
       const activitySelect = document.getElementById('activity_code');
       const qtyInput = document.getElementById('quantity');
       const qtyHelp = document.getElementById('quantity-help');
