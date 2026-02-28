@@ -647,8 +647,7 @@
             <tr>
               <th style="width: 105px;">Date</th>
               <th style="width: 80px;">Code</th>
-              <th style="width: 220px;">Description</th>
-              <th>Notes</th>
+              <th>Description</th>
             </tr>
           </thead>
           <tbody>
@@ -657,10 +656,15 @@
                 <td>{{ item.date_of_service|format_date('%m/%d/%Y') }}</td>
                 <td>{{ item.activity_code }}</td>
                 <td>{{ item.description or '—' }}</td>
-                <td>
+              </tr>
+              {% if item.notes and (item.notes|string).strip() != '' %}
+              <tr class="avoid-break">
+                <td colspan="3" style="padding-left: 18px;">
+                  <strong>Notes:</strong><br>
                   {{ rp_text(item.notes, empty='—') }}
                 </td>
               </tr>
+              {% endif %}
             {% endfor %}
           </tbody>
         </table>
