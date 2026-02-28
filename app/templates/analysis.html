@@ -235,8 +235,11 @@
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="mb-0 fw-semibold" style="color: var(--accent-color);">
-              Productivity
+              Work‑Life Range
             </h6>
+          </div>
+          <div class="small text-muted mb-2">
+            Shows whether your current weekly pacing is within your defined sustainable work range.
           </div>
           <canvas id="productivityGauge" height="150"></canvas>
           <div class="mt-2 text-start px-3">
@@ -253,9 +256,9 @@
               <span id="productivityBaselineValue" class="fw-semibold"></span>
             </div>
 
-            <div class="small d-flex justify-content-between mt-1">
-              <span>Utilization %</span>
-              <span id="productivityPercentValue" class="fw-semibold"></span>
+            <div class="small text-muted d-flex justify-content-between mt-1">
+              <span>Utilization (of max)</span>
+              <span id="productivityPercentValue" class="fw-normal"></span>
             </div>
 
             <div class="small d-flex justify-content-between mt-1">
@@ -536,7 +539,7 @@
 <script>
   let productivityChartInstance = null;
 
-  function renderProductivityGauge(percent) {
+  function renderProductivityGauge(positionPercent, minPercent, maxPercent) {
     const canvas = document.getElementById("productivityGauge");
     if (!canvas) return;
 
@@ -546,7 +549,12 @@
       productivityChartInstance.destroy();
     }
 
-    const capped = Math.min(Math.max(percent || 0, 0), 100);
+    const capped = Math.min(Math.max(positionPercent || 0, 0), 100);
+
+    // Keep visual thirds for cleaner gauge aesthetics
+    const leftRed = 33.33;
+    const green = 33.34;
+    const rightRed = 33.33;
 
     const needlePlugin = {
       id: "needle",
@@ -563,11 +571,6 @@
         ctx.translate(centerX, centerY);
         ctx.rotate(-Math.PI + angle);
 
-        let needleColor = "#dc3545";
-        if (capped >= 33 && capped <= 66) {
-          needleColor = "#ffffff";
-        }
-
         ctx.beginPath();
         ctx.moveTo(0, 0);
         ctx.lineTo(radius - 8, 0);
@@ -579,7 +582,7 @@
         ctx.moveTo(0, 0);
         ctx.lineTo(radius - 8, 0);
         ctx.lineWidth = 4;
-        ctx.strokeStyle = needleColor;
+        ctx.strokeStyle = "#ffffff";
         ctx.stroke();
 
         ctx.beginPath();
@@ -600,7 +603,7 @@
       type: "doughnut",
       data: {
         datasets: [{
-          data: [33, 33, 34],
+          data: [leftRed, green, rightRed],
           backgroundColor: ["#dc3545", "#28a745", "#dc3545"],
           borderWidth: 0,
           cutout: "75%"
@@ -652,8 +655,14 @@ function renderRollingProductivity() {
       ? meta.avg_hours_per_claim.toFixed(1)
       : "—";
 
-  const cappedPercent = meta.utilization_percent_capped || 0;
-  renderProductivityGauge(cappedPercent);
+  // Map weekly average into gauge scale
+  const scaleMax = maxWeekly ? maxWeekly * 1.5 : avgWeekly * 1.5 || 1;
+  const positionPercent = (avgWeekly / scaleMax) * 100;
+
+  const minPercent = (minWeekly / scaleMax) * 100;
+  const maxPercent = (maxWeekly / scaleMax) * 100;
+
+  renderProductivityGauge(positionPercent, minPercent, maxPercent);
 }
 
 function renderClaimEconomics() {

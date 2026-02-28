@@ -165,15 +165,24 @@
                         </td>
                         <td class="text-end">
                           {% if (invoice.status or "Draft") == "Draft" %}
-                            <form method="post"
-                                  action="{{ url_for('main.invoice_remove_item_invoices',
-                                                     invoice_id=invoice.id,
-                                                     item_id=item.id) }}"
-                                  onsubmit="return confirm('Remove this item from the invoice and return it to the claim?');">
-                              <button type="submit" class="btn btn-sm btn-outline-danger">
-                                Remove
-                              </button>
-                            </form>
+                            <div class="d-inline-flex gap-1">
+                              <a
+                                class="btn btn-sm btn-outline-secondary"
+                                href="{{ url_for('main.billable_edit', claim_id=item.claim_id, item_id=item.id, return_to=url_for('main.invoice_detail', invoice_id=invoice.id)) }}">
+                                Edit
+                              </a>
+
+                              <form method="post"
+                                    action="{{ url_for('main.invoice_remove_item_invoices',
+                                                       invoice_id=invoice.id,
+                                                       item_id=item.id) }}"
+                                    onsubmit="return confirm('Remove this item from the invoice and return it to the claim?');"
+                                    class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                  Remove
+                                </button>
+                              </form>
+                            </div>
                           {% else %}
                             <span class="text-muted small">Locked</span>
                           {% endif %}

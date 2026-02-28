@@ -519,13 +519,16 @@ def billable_edit(claim_id, item_id):
     claim = Claim.query.get_or_404(claim_id)
     item = BillableItem.query.filter_by(id=item_id, claim_id=claim.id).first_or_404()
 
+    # Support return_to param from GET or POST
+    return_to = (request.args.get("return_to") or request.form.get("return_to") or "").strip()
+
     if _billable_is_locked(item):
         flash(
             "This billable item is locked because it has been included on a sent invoice. "
             "Set the invoice back to Draft to edit it.",
             "error",
         )
-        return redirect(url_for("main.claim_detail", claim_id=claim.id))
+        return redirect(return_to or url_for("main.claim_detail", claim_id=claim.id))
 
     # Build billable activity choices from the BillingActivityCode table.
     db_codes = (
@@ -596,7 +599,19 @@ def billable_edit(claim_id, item_id):
             item.is_complete = is_complete
 
             db.session.commit()
-            return redirect(url_for("main.claim_detail", claim_id=claim.id))
+
+            # If this billable is attached to a Draft invoice, recalc totals
+            if item.invoice_id:
+                inv = Invoice.query.get(item.invoice_id)
+                if inv and (getattr(inv, "status", None) or "Draft") == "Draft":
+                    settings = Settings.query.first()
+                    math = _get_invoice_math(inv, settings)
+                    # Persist canonical totals
+                    if hasattr(inv, "total_amount"):
+                        inv.total_amount = math.get("invoice_total", 0.0)
+                    db.session.commit()
+
+            return redirect(return_to or url_for("main.claim_detail", claim_id=claim.id))
 
     return render_template(
         "billable_edit.html",
@@ -605,6 +620,7 @@ def billable_edit(claim_id, item_id):
         item=item,
         billable_activity_choices=billable_activity_choices,
         error=error,
+        return_to=return_to,
     )
 
 

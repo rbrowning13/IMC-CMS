@@ -1693,6 +1693,21 @@
         function restoreScroll() {
           try {
             if (!window.sessionStorage) return;
+
+            // Only restore scroll on browser back/forward navigation
+            var navEntries = (window.performance && performance.getEntriesByType)
+              ? performance.getEntriesByType('navigation')
+              : [];
+
+            var isBackForward = false;
+            if (navEntries && navEntries.length > 0) {
+              isBackForward = navEntries[0].type === 'back_forward';
+            }
+
+            if (!isBackForward) {
+              return; // Normal navigation: do NOT restore scroll
+            }
+
             var saved = window.sessionStorage.getItem(pathKey);
             if (saved !== null) {
               var y = parseInt(saved, 10);

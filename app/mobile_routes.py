@@ -90,6 +90,7 @@ def mobile_billable_new(claim_id):
     )
 
     if request.method == "POST":
+        billable_id_raw = (request.form.get("billable_id") or "").strip()
         activity_code = (request.form.get("activity_code") or "").strip()
         description = (request.form.get("description") or "").strip() or None
         notes = (request.form.get("notes") or "").strip() or None
@@ -110,21 +111,62 @@ def mobile_billable_new(claim_id):
         if error is None and not activity_code:
             error = "Activity code is required."
 
-        if error is None:
+        item = None
+
+        # -------------------------
+        # Editing existing item
+        # -------------------------
+        if error is None and billable_id_raw:
+            try:
+                billable_id = int(billable_id_raw)
+            except ValueError:
+                error = "Invalid billable ID."
+
+            if error is None:
+                item = BillableItem.query.get_or_404(billable_id)
+
+                # Safety: ensure it belongs to this claim
+                if item.claim_id != claim.id:
+                    error = "Invalid billable reference."
+
+                # Block editing invoiced billables
+                if error is None and item.invoice_id:
+                    flash("Invoiced billables cannot be edited.", "error")
+                    return redirect(
+                        url_for("mobile.mobile_billable_new", claim_id=claim.id)
+                    )
+
+        # -------------------------
+        # Creating new item
+        # -------------------------
+        if error is None and not billable_id_raw:
             item = BillableItem(
                 claim_id=claim.id,
-                activity_code=activity_code,
-                description=description,
-                notes=notes,
-                quantity=quantity,
-                date_of_service=service_date,
                 is_complete=True,
             )
             db.session.add(item)
+
+        # -------------------------
+        # Apply field updates
+        # -------------------------
+        if error is None and item:
+            item.activity_code = activity_code
+            item.description = description
+            item.notes = notes
+            item.quantity = quantity
+            item.date_of_service = service_date
+            item.is_complete = True
+
             db.session.commit()
-            # Keep user on the same claim so they can enter many items quickly
-            flash("Billable item added.", "success")
-            return redirect(url_for("mobile.mobile_billable_new", claim_id=claim.id))
+
+            if billable_id_raw:
+                flash("Billable item updated.", "success")
+            else:
+                flash("Billable item added.", "success")
+
+            return redirect(
+                url_for("mobile.mobile_billable_new", claim_id=claim.id)
+            )
 
     return render_template(
         "mobile_billables.html",

@@ -234,6 +234,14 @@
       background: rgba(0, 0, 0, 0.25);
     }
 
+    .recent-item[data-invoiced="true"] {
+      opacity: 0.45;
+    }
+
+    .recent-item[data-invoiced="true"] .recent-code {
+      text-decoration: line-through;
+    }
+
     .recent-top {
       display: flex;
       align-items: center;
@@ -379,6 +387,7 @@
         {% endif %}
 
         <form method="post" id="mobile-billable-form">
+          <input type="hidden" name="billable_id" id="billable_id" value="">
           <div class="field">
             <label for="service_date">Date of Service</label>
             <input
@@ -468,7 +477,7 @@
         </form>
       </div>
       <div class="buttons">
-        <button type="submit" form="mobile-billable-form" class="btn-primary">
+        <button type="submit" form="mobile-billable-form" class="btn-primary" id="mobile-submit-btn">
           Save Activity
         </button>
         {% if claim %}
@@ -484,9 +493,49 @@
             <p class="recent-sub">Last {{ recent_items|length }} for this claim</p>
           </div>
 
+          <div style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:0.75rem;">
+            <input
+              type="text"
+              id="recent-search"
+              placeholder="Search description or notes..."
+              style="border-radius:999px; padding:0.5rem 0.75rem;"
+            >
+
+            <div style="display:flex; gap:0.5rem;">
+              <select id="recent-activity-filter" style="flex:1;">
+                <option value="">All Activities</option>
+                {% for code, label in billable_activity_choices %}
+                  <option value="{{ code }}">{{ code }}</option>
+                {% endfor %}
+              </select>
+
+              <select id="recent-invoice-filter" style="flex:1;">
+                <option value="">All Items</option>
+                <option value="uninvoiced" selected>Unlocked Only</option>
+                <option value="invoiced">Locked Only</option>
+              </select>
+
+              <select id="recent-sort" style="flex:1;">
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="code">Activity Code</option>
+                <option value="quantity">Quantity</option>
+              </select>
+            </div>
+          </div>
+
           <div class="recent-list">
             {% for it in recent_items %}
-              <div class="recent-item">
+              <div
+                class="recent-item"
+                data-id="{{ it.id }}"
+                data-date="{{ it.date_of_service.strftime('%m/%d/%Y') if it.date_of_service else '' }}"
+                data-code="{{ it.activity_code or '' }}"
+                data-qty="{{ '%.2f'|format(it.quantity) if it.quantity is not none else '' }}"
+                data-description="{{ (it.description or '')|e }}"
+                data-notes="{{ (it.notes or '')|e }}"
+                data-invoiced="{{ 'true' if (it.invoice and (it.invoice.status or 'Draft') != 'Draft') else 'false' }}"
+              >
                 <div class="recent-top">
                   <div class="recent-meta">
                     <div class="recent-date">{{ it.date_of_service.strftime('%m/%d/%Y') if it.date_of_service else '' }}</div>
@@ -639,6 +688,128 @@
           autosize(notesEl, 10 * 24);
         });
       }
+
+      // -------------------------------
+      // Editing + Filtering + Sorting
+      // -------------------------------
+
+      const billableIdInput = document.getElementById('billable_id');
+      const submitBtn = document.getElementById('mobile-submit-btn');
+      const recentItems = Array.from(document.querySelectorAll('.recent-item'));
+      const recentList = document.querySelector('.recent-list');
+      const searchInput = document.getElementById('recent-search');
+      const activityFilter = document.getElementById('recent-activity-filter');
+      const invoiceFilter = document.getElementById('recent-invoice-filter');
+      const sortSelect = document.getElementById('recent-sort');
+
+      function scrollToTopSmooth() {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      function loadIntoForm(item) {
+        if (!item) return;
+
+        const isInvoiced = item.getAttribute('data-invoiced') === 'true';
+        if (isInvoiced) {
+          alert('This billable has already been invoiced and cannot be edited.');
+          return;
+        }
+
+        const id = item.getAttribute('data-id');
+        const date = item.getAttribute('data-date') || '';
+        const code = item.getAttribute('data-code') || '';
+        const qty = item.getAttribute('data-qty') || '';
+        const desc = item.getAttribute('data-description') || '';
+        const notesVal = item.getAttribute('data-notes') || '';
+
+        if (billableIdInput) billableIdInput.value = id;
+        if (dateInput) dateInput.value = date;
+        if (activitySelect) activitySelect.value = code;
+        if (qtyInput) qtyInput.value = qty;
+        if (descriptionEl) descriptionEl.value = desc;
+        if (notesEl) notesEl.value = notesVal;
+
+        updateQuantityHelp();
+
+        if (submitBtn) submitBtn.textContent = 'Update Activity';
+
+        scrollToTopSmooth();
+        if (dateInput) dateInput.focus();
+      }
+
+      recentItems.forEach(item => {
+        const isInvoiced = item.getAttribute('data-invoiced') === 'true';
+
+        if (!isInvoiced) {
+          item.style.cursor = 'pointer';
+          item.addEventListener('click', function () {
+            loadIntoForm(item);
+          });
+        } else {
+          item.style.cursor = 'default';
+        }
+      });
+
+      function applyRecentFilters() {
+        const searchVal = (searchInput?.value || '').toLowerCase();
+        const activityVal = activityFilter?.value || '';
+        const invoiceVal = invoiceFilter?.value || '';
+
+        recentItems.forEach(item => {
+          const desc = (item.getAttribute('data-description') || '').toLowerCase();
+          const notesVal = (item.getAttribute('data-notes') || '').toLowerCase();
+          const code = item.getAttribute('data-code') || '';
+          const isInvoiced = item.getAttribute('data-invoiced') === 'true';
+
+          const matchesSearch =
+            !searchVal || desc.includes(searchVal) || notesVal.includes(searchVal);
+
+          const matchesActivity =
+            !activityVal || code === activityVal;
+
+          let matchesInvoice = true;
+          if (invoiceVal === 'uninvoiced') {
+            matchesInvoice = !isInvoiced;
+          } else if (invoiceVal === 'invoiced') {
+            matchesInvoice = isInvoiced;
+          }
+
+          item.style.display =
+            (matchesSearch && matchesActivity && matchesInvoice) ? '' : 'none';
+        });
+      }
+
+      function applyRecentSort() {
+        const sortVal = sortSelect?.value || 'newest';
+
+        const sorted = [...recentItems];
+
+        sorted.sort((a, b) => {
+          const dateA = new Date(a.getAttribute('data-date'));
+          const dateB = new Date(b.getAttribute('data-date'));
+          const codeA = a.getAttribute('data-code') || '';
+          const codeB = b.getAttribute('data-code') || '';
+          const qtyA = parseFloat(a.getAttribute('data-qty') || 0);
+          const qtyB = parseFloat(b.getAttribute('data-qty') || 0);
+
+          if (sortVal === 'oldest') return dateA - dateB;
+          if (sortVal === 'code') return codeA.localeCompare(codeB);
+          if (sortVal === 'quantity') return qtyB - qtyA;
+
+          return dateB - dateA; // newest default
+        });
+
+        sorted.forEach(el => recentList.appendChild(el));
+      }
+
+      if (searchInput) searchInput.addEventListener('input', applyRecentFilters);
+      if (activityFilter) activityFilter.addEventListener('change', applyRecentFilters);
+      if (invoiceFilter) invoiceFilter.addEventListener('change', applyRecentFilters);
+      if (sortSelect) sortSelect.addEventListener('change', applyRecentSort);
+
+      // Apply default filtering and sorting on load
+      applyRecentFilters();
+      applyRecentSort();
     });
   </script>
 </body>
