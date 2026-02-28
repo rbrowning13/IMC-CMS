@@ -22,6 +22,51 @@
         {# Shared claim fields grid #}
         {% include "_claim_form.html" %}
 
+        <h2 class="h6 mb-3">IW Representation</h2>
+        <div class="border rounded p-3 mb-4">
+
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="is_represented" name="is_represented" value="1"
+              {% if claim.is_represented %}checked{% endif %}>
+            <label class="form-check-label" for="is_represented">
+              Injured Worker is represented by an attorney
+            </label>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm">Attorney Name</label>
+              <input type="text" name="attorney_name" class="form-control form-control-sm"
+                     value="{{ claim.attorney_name or '' }}">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm">Attorney Firm</label>
+              <input type="text" name="attorney_firm" class="form-control form-control-sm"
+                     value="{{ claim.attorney_firm or '' }}">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label form-label-sm">Attorney Phone</label>
+              <input type="text" name="attorney_phone" class="form-control form-control-sm"
+                     value="{{ claim.attorney_phone or '' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label form-label-sm">Attorney Email</label>
+              <input type="email" name="attorney_email" class="form-control form-control-sm"
+                     value="{{ claim.attorney_email or '' }}">
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="attorney_contact_allowed" name="attorney_contact_allowed" value="1"
+                  {% if claim.attorney_contact_allowed %}checked{% endif %}>
+                <label class="form-check-label" for="attorney_contact_allowed">
+                  Nurse contact allowed
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <h2 class="h6 mb-3">Claim Status</h2>
         <div class="border rounded p-3 mb-4">
           <label for="claim_is_closed" class="form-label form-label-sm mb-1">Open / Closed</label>

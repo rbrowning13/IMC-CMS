@@ -357,6 +357,23 @@ class Claim(db.Model):
     # PCP as free-text for now (captured on Initial report)
     primary_care_provider = db.Column(db.String(255))
 
+    # ========================================================
+    # IW Representation / Attorney Info
+    # ========================================================
+
+    is_represented = db.Column(db.Boolean, default=False)
+
+    attorney_name = db.Column(db.String(255))
+    attorney_firm = db.Column(db.String(255))
+    attorney_phone = db.Column(db.String(50))
+    attorney_email = db.Column(db.String(255))
+
+    # Some attorneys allow nurse contact; others do not
+    attorney_contact_allowed = db.Column(db.Boolean, default=True)
+
+    # Internal case manager notes (inward-facing only)
+    notes = db.Column(db.Text)
+
     # Future: PCP as a linked Provider
     pcp_provider_id = db.Column(db.Integer, db.ForeignKey("provider.id"))
     pcp_provider = db.relationship("Provider", back_populates="pcp_for_claims")

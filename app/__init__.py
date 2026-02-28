@@ -203,6 +203,32 @@ def create_app():
     app.jinja_env.filters["format_phone"] = _format_phone
     app.jinja_env.filters["format_fax"] = _format_phone
 
+    # ------------------------------------------------------------
+    # Invoice Color Helper (Deterministic by invoice.id)
+    # ------------------------------------------------------------
+    def _invoice_color(invoice_id):
+        """Return a deterministic color for an invoice based on its ID."""
+        palette = [
+            "#4C6EF5",  # blue
+            "#20C997",  # teal
+            "#F59F00",  # amber
+            "#E64980",  # pink
+            "#40C057",  # green
+            "#7950F2",  # purple
+            "#FA5252",  # red
+        ]
+
+        if not invoice_id:
+            return "#6c757d"  # neutral gray fallback
+
+        try:
+            idx = int(invoice_id) % len(palette)
+            return palette[idx]
+        except Exception:
+            return "#6c757d"
+
+    app.jinja_env.filters["invoice_color"] = _invoice_color
+
     # Register template globals
     try:
         from .routes.helpers import state_options

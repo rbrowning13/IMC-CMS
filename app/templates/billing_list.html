@@ -136,7 +136,11 @@
                 {% set _m = _math_map.get(inv.id) if _math_map else None %}
                 <tr>
                   <td>
-                    <a href="{{ url_for('main.invoice_detail', invoice_id=inv.id) }}">{{ row.invoice_number or inv.invoice_number }}</a>
+                    <a href="{{ url_for('main.invoice_detail', invoice_id=inv.id) }}"
+                       class="badge text-white text-decoration-none"
+                       style="background-color: {{ inv.id|invoice_color }};">
+                      {{ row.invoice_number or inv.invoice_number }}
+                    </a>
                   </td>
                   <td>
                     {% if inv.claim %}
@@ -219,7 +223,11 @@
                 {% set _m = _math_map.get(invoice.id) if _math_map else None %}
                 <tr>
                   <td>
-                    <a href="{{ url_for('main.invoice_detail', invoice_id=invoice.id) }}">{{ invoice.invoice_number }}</a>
+                    <a href="{{ url_for('main.invoice_detail', invoice_id=invoice.id) }}"
+                       class="badge text-white text-decoration-none"
+                       style="background-color: {{ invoice.id|invoice_color }};">
+                      {{ invoice.invoice_number }}
+                    </a>
                   </td>
                   <td>
                     {% if invoice.claim %}

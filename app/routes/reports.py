@@ -1325,6 +1325,7 @@ def report_edit(claim_id, report_id):
         closure_case_management_impact = (
             (request.form.get("closure_case_management_impact") or "").strip() or None
         )
+        closure_reason = (request.form.get("closure_reason") or "").strip() or None
 
         # ---- NEXT APPOINTMENT FIELDS ----
         initial_next_appt_date_raw = (request.form.get("initial_next_appt_date") or "").strip()
@@ -1449,6 +1450,7 @@ def report_edit(claim_id, report_id):
                 report.closure_case_management_impact = None
 
             elif report_type == "closure":
+                report.closure_reason = closure_reason
                 report.closure_details = closure_details
                 report.closure_case_management_impact = closure_case_management_impact
 
@@ -1469,6 +1471,7 @@ def report_edit(claim_id, report_id):
                 report.initial_surgical_history = None
                 report.initial_medications = None
                 report.initial_diagnostics = None
+                report.closure_reason = None
                 report.closure_details = None
                 report.closure_case_management_impact = None
                 report.primary_care_provider = None

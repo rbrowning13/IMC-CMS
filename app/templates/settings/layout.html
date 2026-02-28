@@ -2,11 +2,35 @@
 {% block title %}Settings - Impact CMS{% endblock %}
 
 {% block content %}
+<style>
+  .settings-sidebar {
+    background-color: var(--accent-color);
+  }
+
+  .settings-sidebar .nav-link {
+    color: #ffffff;
+    opacity: 0.85;
+  }
+
+  .settings-sidebar .nav-link:hover {
+    opacity: 1;
+  }
+
+  .settings-sidebar .nav-link.active {
+    background-color: rgba(255,255,255,0.15);
+    color: #ffffff;
+    font-weight: 600;
+  }
+
+  .settings-sidebar .text-muted {
+    color: rgba(255,255,255,0.7) !important;
+  }
+</style>
 <div class="container-fluid">
   <div class="row">
 
     <!-- Sidebar -->
-    <div class="col-md-3 col-lg-2 border-end bg-light min-vh-100 pt-3">
+    <div class="col-md-3 col-lg-2 border-end min-vh-100 pt-3 settings-sidebar">
       <h6 class="text-muted px-2 mb-3">Settings</h6>
       <ul class="nav flex-column nav-pills">
 

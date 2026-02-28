@@ -187,15 +187,47 @@
                   </td>
 
                   <td class="text-center text-nowrap">
-                    {# ---------- BILLING BADGE LOGIC ---------- #}
+                    {# ---------- BILLING BADGE LOGIC (ENHANCED) ---------- #}
                     {% if not summary or summary["total"] == 0 %}
                       <span class="badge bg-secondary">No invoices</span>
+
+                      {% if summary and summary["uninvoiced_total"] > 0 %}
+                        <div class="mt-1">
+                          <span class="badge bg-danger">
+                            ${{ "%.2f"|format(summary["uninvoiced_total"]) }} uninvoiced
+                          </span>
+                        </div>
+                      {% endif %}
+
                     {% elif summary["open"] > 0 %}
                       <span class="badge bg-warning text-dark">
-                        {{ summary["open"] }} open{% if summary["open"] != 1 %}s{% endif %}
+                        {{ summary["open"] }} open
                       </span>
+
+                      <div class="mt-1">
+                        <span class="badge bg-warning text-dark">
+                          ${{ "%.2f"|format(summary["open_total"] or 0) }}
+                        </span>
+                      </div>
+
+                      {% if summary["uninvoiced_total"] > 0 %}
+                        <div class="mt-1">
+                          <span class="badge bg-danger">
+                            ${{ "%.2f"|format(summary["uninvoiced_total"]) }} uninvoiced
+                          </span>
+                        </div>
+                      {% endif %}
+
                     {% else %}
                       <span class="badge bg-success">All closed</span>
+
+                      {% if summary["uninvoiced_total"] > 0 %}
+                        <div class="mt-1">
+                          <span class="badge bg-danger">
+                            ${{ "%.2f"|format(summary["uninvoiced_total"]) }} uninvoiced
+                          </span>
+                        </div>
+                      {% endif %}
                     {% endif %}
                   </td>
 

@@ -39,12 +39,28 @@
       opacity: 0.9;
     }
 
+    .billable-notes-preview {
+      max-height: 12.5em;   /* ~10 lines at ~1.25em line height */
+      overflow: hidden;
+      white-space: pre-wrap;
+      line-height: 1.25em;
+    }
+
+    .billable-notes-preview.expanded {
+      max-height: none;
+    }
+
     /* AI citation highlight color (prefer Settings accent_color; fallback to Bootstrap warning) */
     :root {
       --ai-highlight-color: {{
         (settings.accent_color
           if settings is defined and settings and settings.accent_color is defined and settings.accent_color
           else '#ffc107')
+      }};
+      --accent-color: {{
+        (settings.accent_color
+          if settings is defined and settings and settings.accent_color is defined and settings.accent_color
+          else '#0d6efd')
       }};
     }
 
@@ -162,10 +178,67 @@
 
   <!-- Claim summary row -->
   <div class="row mb-3">
-    <div class="col-md-7 mb-3">
-      <div class="card shadow-sm">
-        <div class="card-header">
+    <div class="col-12 mb-3">
+      <div class="card shadow-sm position-relative">
+        <div class="card-header d-flex justify-content-between align-items-center position-relative">
           <h2 class="h6 mb-0">Claim Summary</h2>
+          <div class="dropdown">
+            <button class="btn btn-sm rounded-pill dropdown-toggle"
+                    type="button"
+                    id="claimNotesDropdown"
+                    data-bs-toggle="dropdown"
+                    data-bs-auto-close="outside"
+                    aria-expanded="false"
+                    style="background-color: var(--accent-color); color: #fff; border: none;">
+              Notes
+            </button>
+            <div class="dropdown-menu dropdown-menu-end p-3 shadow"
+                 aria-labelledby="claimNotesDropdown"
+                 style="width: 840px; max-width: 95vw;">
+              <div class="card card-body small shadow-lg border-0" id="claimNotesCard">
+                <!-- Display Mode -->
+                <div id="claimNotesDisplay">
+                  {% if claim.notes %}
+                    <div style="white-space: pre-wrap;">{{ claim.notes }}</div>
+                  {% else %}
+                    <div class="claim-summary-missing">No notes yet.</div>
+                  {% endif %}
+                  <div class="text-end mt-2">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            onclick="toggleClaimNotesEdit(true)">
+                      Edit
+                    </button>
+                  </div>
+                </div>
+                <!-- Edit Mode -->
+                <div id="claimNotesEdit" style="display: none;">
+                  <form method="post"
+                        action="{{ url_for('main.claim_edit', claim_id=claim.id) }}">
+                    <input type="hidden" name="form_type" value="claim_notes_update">
+                    <div class="mb-2">
+                      <textarea id="claimNotesTextarea"
+                                name="notes"
+                                class="form-control form-control-sm"
+                                rows="6"
+                                data-original="{{ (claim.notes or '')|e }}"
+                                style="resize: vertical; max-height: 20em; overflow-y: auto;">{{ claim.notes or '' }}</textarea>
+                    </div>
+                    <div class="text-end">
+                      <button type="button"
+                              class="btn btn-sm btn-outline-secondary me-2"
+                              onclick="toggleClaimNotesEdit(false)">
+                        Cancel
+                      </button>
+                      <button type="submit" class="btn btn-sm btn-primary">
+                        Save
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="card-body small">
           {% set _is_closed = (claim.is_closed if claim.is_closed is defined else false) %}
@@ -285,6 +358,64 @@
                   {% else %}
                     <span class="badge bg-primary px-3">Open</span>
                   {% endif %}
+
+                  {% if claim.is_represented %}
+                    <div class="mt-2">
+                      <button class="badge bg-danger border-0"
+                              type="button"
+                              data-bs-toggle="collapse"
+                              data-bs-target="#attorneyInfoCollapse"
+                              aria-expanded="false"
+                              aria-controls="attorneyInfoCollapse"
+                              style="cursor: pointer;">
+                        REPRESENTED
+                      </button>
+
+                      <div class="collapse mt-2" id="attorneyInfoCollapse">
+                        <div class="card card-body small">
+                          <div><strong>Attorney:</strong>
+                            {% if claim.attorney_name %}
+                              {{ claim.attorney_name }}
+                            {% else %}
+                              <span class="claim-summary-missing">—</span>
+                            {% endif %}
+                          </div>
+
+                          <div><strong>Firm:</strong>
+                            {% if claim.attorney_firm %}
+                              {{ claim.attorney_firm }}
+                            {% else %}
+                              <span class="claim-summary-missing">—</span>
+                            {% endif %}
+                          </div>
+
+                          <div><strong>Phone:</strong>
+                            {% if claim.attorney_phone %}
+                              {{ claim.attorney_phone }}
+                            {% else %}
+                              <span class="claim-summary-missing">—</span>
+                            {% endif %}
+                          </div>
+
+                          <div><strong>Email:</strong>
+                            {% if claim.attorney_email %}
+                              {{ claim.attorney_email }}
+                            {% else %}
+                              <span class="claim-summary-missing">—</span>
+                            {% endif %}
+                          </div>
+
+                          <div><strong>Contact Allowed:</strong>
+                            {% if claim.attorney_contact_allowed %}
+                              Yes
+                            {% else %}
+                              No
+                            {% endif %}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  {% endif %}
                 </dd>
 
                 <dt class="col-sm-5 claim-summary-label">Report Due</dt>
@@ -353,12 +484,9 @@
               </dl>
             </div>
           </div>
-        </div>
-      </div>
     </div>
-
     <!-- Invoices for this claim -->
-    <div class="col-md-5 mb-3">
+    <div class="col-12 mb-3 px-2">
       <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h2 class="h6 mb-0">Invoices for this Claim</h2>
@@ -367,7 +495,7 @@
             Create Invoice from Billable Items
           </a>
         </div>
-        <div class="card-body small p-0">
+        <div class="card-body small px-3 py-2">
           {% if invoices %}
             <div class="table-responsive">
               <table class="table table-sm table-hover mb-0 align-middle">
@@ -384,7 +512,9 @@
                     {% set status = inv.status or "Draft" %}
                     <tr id="invoice-row-{{ inv.id }}">
                       <td>
-                        <a href="{{ url_for('main.invoice_detail', invoice_id=inv.id) }}">
+                        <a href="{{ url_for('main.invoice_detail', invoice_id=inv.id) }}"
+                           class="badge text-white text-decoration-none"
+                           style="background-color: {{ inv.id|invoice_color }};">
                           {{ inv.invoice_number }}
                         </a>
                       </td>
@@ -443,7 +573,7 @@
   </div>
 
   <!-- Accordions for Billable, Reports, Documents -->
-  <div class="accordion" id="claimAccordion">
+  <div class="accordion mt-2" id="claimAccordion">
 
     <!-- Billable Items -->
     <div class="accordion-item mb-2">
@@ -471,16 +601,14 @@
                   <table id="billables-table" class="table table-sm table-hover mb-0 align-middle">
                     <thead class="table-light">
                       <tr>
-                        <th class="sortable" data-sort-key="dos"><span>DOS</span> <span class="sort-indicator">
-                            ↕
-                          </span></th>
+                        <th class="sortable" data-sort-key="dos"><span>DOS</span> <span class="sort-indicator">↕</span></th>
                         <th class="sortable" data-sort-key="activity"><span>Activity</span> <span class="sort-indicator">↕</span></th>
                         <th class="sortable text-end" data-sort-key="qty"><span>Qty</span> <span class="sort-indicator">↕</span></th>
                         <th>Units</th>
                         <th class="sortable" data-sort-key="description"><span>Description</span> <span class="sort-indicator">↕</span></th>
                         <th><span>Notes</span></th>
-                        <th class="sortable" data-sort-key="invoice"><span>Invoice</span> <span class="sort-indicator">↕</span></th>
                         <th class="text-end">Actions</th>
+                        <th class="sortable" data-sort-key="invoice"><span>Invoice</span> <span class="sort-indicator">↕</span></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -573,28 +701,22 @@
                               <span class="text-muted fst-italic">No description</span>
                             {% endif %}
                           </td>
-                          <td style="max-width: 280px; white-space: normal; word-break: break-word;">
+                          <td style="max-width: 420px; white-space: normal;">
                             {% if item.notes %}
-                              <div class="small text-muted">
+                              <div id="billable-notes-{{ item.id }}"
+                                   class="billable-notes-preview"
+                                   data-expanded="false">
                                 {{ item.notes }}
                               </div>
+                              <div class="mt-1">
+                                <button type="button"
+                                        class="btn btn-link btn-sm p-0"
+                                        onclick="toggleBillableNotes({{ item.id }})">
+                                  Expand
+                                </button>
+                              </div>
                             {% else %}
-                              <span class="text-muted fst-italic">No notes</span>
-                            {% endif %}
-                          </td>
-                          <td>
-                            {% if item.invoice_id %}
-                              {% set inv = invoice_map.get(item.invoice_id) %}
-                              {% if inv %}
-                                <a href="{{ url_for('main.invoice_detail', invoice_id=inv.id) }}"
-                                   class="badge bg-info text-dark text-decoration-none">
-                                  {{ inv.invoice_number }} ({{ inv.status or 'Draft' }})
-                                </a>
-                              {% else %}
-                                <span class="badge bg-secondary">Invoiced</span>
-                              {% endif %}
-                            {% else %}
-                              <span class="badge bg-secondary">Not invoiced</span>
+                              <span class="text-muted fst-italic">—</span>
                             {% endif %}
                           </td>
                           <td class="text-end">
@@ -629,6 +751,22 @@
                                 Entered: —
                               {% endif %}
                             </div>
+                          </td>
+                          <td>
+                            {% if item.invoice_id %}
+                              {% set inv = invoice_map.get(item.invoice_id) %}
+                              {% if inv %}
+                                <a href="{{ url_for('main.invoice_detail', invoice_id=inv.id) }}"
+                                   class="badge text-white text-decoration-none"
+                                   style="background-color: {{ inv.id|invoice_color }};">
+                                  {{ inv.invoice_number }} ({{ inv.status or 'Draft' }})
+                                </a>
+                              {% else %}
+                                <span class="badge bg-secondary">Invoiced</span>
+                              {% endif %}
+                            {% else %}
+                              <span class="badge bg-secondary">Not invoiced</span>
+                            {% endif %}
                           </td>
                         </tr>
                       {% endfor %}
@@ -776,6 +914,7 @@
                     <th style="width: 22%" class="sortable" data-sort-key="dos"><span>DOS Range</span> <span class="sort-indicator">↕</span></th>
                     <th style="width: 18%" class="sortable" data-sort-key="next_appt"><span>Next Appointment</span> <span class="sort-indicator">↕</span></th>
                     <th style="width: 12%" class="sortable" data-sort-key="next_due"><span>Next Report</span> <span class="sort-indicator">↕</span></th>
+                    <th style="width: 14%">Invoice</th>
                     <th style="width: 15%" class="text-end">Actions</th>
                   </tr>
                 </thead>
@@ -806,6 +945,25 @@
                       <td class="small">
                         {{ claim.next_report_due|format_date if claim.next_report_due else "—" }}
                       </td>
+                      <td>
+                        {# Prefer direct relationship if available; fallback to invoice_map #}
+                        {% set inv = none %}
+                        {% if r.invoice is defined and r.invoice %}
+                          {% set inv = r.invoice %}
+                        {% elif r.invoice_id %}
+                          {% set inv = invoice_map.get(r.invoice_id) %}
+                        {% endif %}
+
+                        {% if inv %}
+                          <a href="{{ url_for('main.invoice_detail', invoice_id=inv.id) }}"
+                             class="badge text-white text-decoration-none"
+                             style="background-color: {{ inv.id|invoice_color }};">
+                            {{ inv.invoice_number }} ({{ inv.status or 'Draft' }})
+                          </a>
+                        {% else %}
+                          <span class="text-muted">—</span>
+                        {% endif %}
+                      </td>
                       <td class="text-end">
                         <a href="{{ url_for('main.report_edit', claim_id=claim.id, report_id=r.id) }}"
                            class="btn btn-sm btn-primary me-1">
@@ -825,7 +983,7 @@
                   {% endfor %}
                 {% else %}
                   <tr>
-                    <td colspan="6" class="text-center text-muted small py-3">
+                    <td colspan="7" class="text-center text-muted small py-3">
                       No reports yet for this claim.
                     </td>
                   </tr>
@@ -1672,5 +1830,61 @@ function _scrollToId(targetId) {
     }
   });
 });
+  // ----- Claim Notes UX -----
+
+  window.toggleClaimNotesEdit = function (editMode) {
+    var displayEl = document.getElementById('claimNotesDisplay');
+    var editEl = document.getElementById('claimNotesEdit');
+    var textarea = document.getElementById('claimNotesTextarea');
+    if (!displayEl || !editEl) return;
+
+      if (editMode) {
+        displayEl.style.display = 'none';
+        editEl.style.display = '';
+
+        if (textarea) {
+          textarea.focus();
+          textarea.selectionStart = textarea.value.length;
+          textarea.selectionEnd = textarea.value.length;
+
+          // Auto-size to existing content up to 20 visible lines
+          var content = textarea.value || '';
+          var lineCount = content.split('\n').length;
+
+          // Show up to 20 lines max, otherwise scroll
+          var visibleLines = Math.min(20, Math.max(6, lineCount));
+
+          textarea.rows = visibleLines;
+          textarea.style.overflowY = (lineCount > 20) ? 'auto' : 'hidden';
+        }
+      } else {
+      // Reset unsaved changes
+      if (textarea) {
+        var original = textarea.getAttribute('data-original') || '';
+        textarea.value = original;
+      }
+
+      displayEl.style.display = '';
+      editEl.style.display = 'none';
+    }
+  };
+
+</script>
+<script>
+window.toggleBillableNotes = function (id) {
+  var el = document.getElementById('billable-notes-' + id);
+  if (!el) return;
+
+  var btn = el.parentElement.querySelector('button');
+  var expanded = el.classList.contains('expanded');
+
+  if (expanded) {
+    el.classList.remove('expanded');
+    if (btn) btn.textContent = 'Expand';
+  } else {
+    el.classList.add('expanded');
+    if (btn) btn.textContent = 'Collapse';
+  }
+};
 </script>
 {% endblock %}

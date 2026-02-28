@@ -642,21 +642,118 @@ def claims_list():
         invoices = Invoice.query.filter(Invoice.claim_id.in_(claim_ids)).all()
 
         for cid in claim_ids:
-            billing_summary[cid] = {"total": 0, "open": 0, "closed": 0}
+            billing_summary[cid] = {
+                "total": 0,
+                "open": 0,
+                "closed": 0,
+                "open_total": 0.0,
+                "uninvoiced_total": 0.0,
+            }
 
+        # Preload billables for uninvoiced calculations
+        billables = BillableItem.query.filter(
+            BillableItem.claim_id.in_(claim_ids)
+        ).all()
+
+        # Build quick lookup per claim for billables
+        billables_by_claim = {}
+        for b in billables:
+            billables_by_claim.setdefault(b.claim_id, []).append(b)
+
+        # Compute invoice totals (open only)
         for inv in invoices:
             cid = inv.claim_id
             status = (inv.status or "Draft")
             entry = billing_summary.get(cid)
             if not entry:
-                entry = {"total": 0, "open": 0, "closed": 0}
-                billing_summary[cid] = entry
+                continue
 
+            # Count logic (existing behavior)
             entry["total"] += 1
             if status in ("Paid", "Void"):
                 entry["closed"] += 1
             else:
                 entry["open"] += 1
+
+                # Use canonical invoice financial calculation if available
+                fin = None
+                try:
+                    if callable(_helpers_compute_invoice_financials):
+                        settings_obj = _ensure_settings()
+                        claim_obj = next((c for c in claims if c.id == cid), None)
+
+                        # Try preferred signatures (match claim_detail logic)
+                        try:
+                            fin = _helpers_compute_invoice_financials(
+                                invoice=inv,
+                                settings=settings_obj,
+                                claim=claim_obj,
+                            )
+                        except TypeError:
+                            try:
+                                fin = _helpers_compute_invoice_financials(
+                                    inv,
+                                    settings_obj,
+                                    claim_obj,
+                                )
+                            except TypeError:
+                                fin = _helpers_compute_invoice_financials(inv)
+                except Exception:
+                    fin = None
+
+                if isinstance(fin, dict):
+                    total_val = fin.get("invoice_total") or fin.get("total") or 0.0
+                    try:
+                        entry["open_total"] += float(total_val or 0.0)
+                    except Exception:
+                        pass
+
+        # Compute uninvoiced totals (exclude NO BILL)
+        for cid in claim_ids:
+            entry = billing_summary.get(cid)
+            if not entry:
+                continue
+
+            claim_billables = billables_by_claim.get(cid, [])
+            for b in claim_billables:
+                if getattr(b, "invoice_id", None):
+                    continue
+
+                activity = (
+                    getattr(b, "activity_code", None)
+                    or getattr(b, "activity", None)
+                    or ""
+                ).upper()
+
+                if activity == "NO BILL":
+                    continue
+
+                qty = getattr(b, "quantity", None) or getattr(b, "qty", None)
+                if not qty:
+                    continue
+
+                try:
+                    qty_val = float(qty)
+                except Exception:
+                    continue
+
+                # Determine correct rate (telephonic-aware)
+                claim_obj = next((c for c in claims if c.id == cid), None)
+                if not claim_obj:
+                    continue
+
+                rate = (
+                    _ensure_settings().telephonic_rate
+                    if getattr(claim_obj, "is_telephonic", False)
+                    else _ensure_settings().hourly_rate
+                )
+
+                try:
+                    entry["uninvoiced_total"] += qty_val * float(rate or 0.0)
+                except Exception:
+                    pass
+
+        # NOTE: old invoice counting loop removed because it is now handled above
 
     # Add claim_status_map (Open/Closed) for each claim
     claim_status_map: dict[int, str] = {c.id: "Open" for c in claims}
@@ -923,6 +1020,13 @@ def claim_edit(claim_id: int):
         )
 
     if request.method == "POST":
+        # Handle claim-level internal notes update (bypass full validation)
+        form_type = (request.form.get("form_type") or "").strip()
+        if form_type == "claim_notes_update":
+            claim.notes = (request.form.get("notes") or "").strip() or None
+            db.session.commit()
+            flash("Claim notes updated.", "success")
+            return redirect(url_for("main.claim_detail", claim_id=claim.id))
         claimant_first_name = (request.form.get("claimant_first_name") or "").strip() or None
         claimant_last_name = (request.form.get("claimant_last_name") or "").strip() or None
         claimant_name_legacy = (request.form.get("claimant_name") or "").strip()
@@ -960,6 +1064,14 @@ def claim_edit(claim_id: int):
         claim_state = (request.form.get("claim_state") or "").strip() or None
 
         injured_body_part = (request.form.get("injured_body_part") or "").strip() or None
+
+        # IW representation / attorney fields
+        is_represented = True if request.form.get("is_represented") else False
+        attorney_name = (request.form.get("attorney_name") or "").strip() or None
+        attorney_firm = (request.form.get("attorney_firm") or "").strip() or None
+        attorney_phone = (request.form.get("attorney_phone") or "").strip() or None
+        attorney_email = (request.form.get("attorney_email") or "").strip() or None
+        attorney_contact_allowed = True if request.form.get("attorney_contact_allowed") else False
 
         claimant_address1 = (request.form.get("claimant_address1") or "").strip() or None
         claimant_address2 = (request.form.get("claimant_address2") or "").strip() or None
@@ -1035,6 +1147,14 @@ def claim_edit(claim_id: int):
             next_report_due = next_report_due
             claim.injured_body_part = injured_body_part
 
+            # Save IW representation / attorney fields
+            claim.is_represented = is_represented
+            claim.attorney_name = attorney_name
+            claim.attorney_firm = attorney_firm
+            claim.attorney_phone = attorney_phone
+            claim.attorney_email = attorney_email
+            claim.attorney_contact_allowed = attorney_contact_allowed
+
             claim.claim_state = claim_state
             claim.next_report_due = next_report_due
 
@@ -1107,6 +1227,13 @@ def claim_detail(claim_id: int):
 
     # Handle quick-add Billable Item form (POSTs back to this same page)
     if request.method == "POST":
+        # Handle claim-level internal notes update
+        form_type = (request.form.get("form_type") or "").strip()
+        if form_type == "claim_notes_update":
+            claim.notes = (request.form.get("notes") or "").strip() or None
+            db.session.commit()
+            flash("Claim notes updated.", "success")
+            return redirect(url_for("main.claim_detail", claim_id=claim.id))
         # Be tolerant of older/newer template field names
         dos_raw = (
             (request.form.get("date_of_service") or "")
@@ -1346,6 +1473,34 @@ def claim_detail(claim_id: int):
         1 for inv in invoices if (inv.status or "Draft") not in ("Paid", "Void")
     )
 
+    # -----------------------------------------------------------------
+    # Map reports -> their derived invoice (Invoice.report_id)
+    # Report does NOT own invoice_id; Invoice owns report_id.
+    # Build a lookup so the template can show the correct invoice badge.
+    # -----------------------------------------------------------------
+    report_invoice_map: dict[int, Invoice] = {}
+    for inv in invoices:
+        rid = getattr(inv, "report_id", None)
+        if rid:
+            try:
+                report_invoice_map[int(rid)] = inv
+            except Exception:
+                continue
+
+    # Attach invoice directly to report objects for simpler template logic
+    for r in reports:
+        rid = getattr(r, "id", None)
+        if rid is not None and int(rid) in report_invoice_map:
+            try:
+                setattr(r, "invoice", report_invoice_map[int(rid)])
+            except Exception:
+                pass
+        else:
+            try:
+                setattr(r, "invoice", None)
+            except Exception:
+                pass
+
     # Build billable activity choices from the BillingActivityCode table.
     activity_rows = (
         BillingActivityCode.query.order_by(
@@ -1384,6 +1539,7 @@ def claim_detail(claim_id: int):
         open_invoice_count=open_invoice_count,
         billable_activity_choices=billable_activity_choices,
         report_number_map=report_number_map,
+        report_invoice_map=report_invoice_map,
         claim_providers=claim_providers,
         claim_surgeries=claim_surgeries,
     )
